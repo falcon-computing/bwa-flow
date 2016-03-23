@@ -4,70 +4,53 @@
 
 using namespace kestrelFlow;
 
-template <typename U>
-class vector {
-public:
-  vector(int n): size(n) {
-    if (n>0) {
-      data = new U[n];
-    }
-  }
-  ~vector() {
-    if (data) delete [] data;
-  }
-  int size;
-  U* data;
-};
-
-typedef vector<double>* vector_ptr;
-
 class RandGenStage : 
-  public Stage<int, 32, vector_ptr, 32>
+  public Stage<int, std::vector<double>*>
 {
 public:
-  RandGenStage(int n): Stage<int, 32, vector_ptr, 32>(n) {;}
+  RandGenStage(int n): Stage<int, std::vector<double>*>(n) {;}
 
-  void compute() {
+  std::vector<double>* compute(int const & length) {
 
-    int length = readInput();
-
-    vector_ptr output = new vector<double>(length);
+    std::vector<double>* output = new std::vector<double>(length);
 
     for (int i=0; i<length; i++) {
-      output->data[i] = (double)rand()/RAND_MAX;
+      (*output)[i] = (double)rand()/RAND_MAX;
     }
 
-    writeOutput(output);
+    return output;
   }
 };
 
 class NormStage :
-  public Stage<vector_ptr, 32, double, 32> 
+  public Stage<std::vector<double>*, double> 
 {
 public:
-  NormStage(int n): Stage<vector_ptr, 32, double, 32>(n) {;}
+  NormStage(int n): Stage<std::vector<double>*, double>(n) {;}
 
-  void compute() {
+  double compute(std::vector<double>* const & input) {
 
-    vector_ptr input = readInput();
-    
     double norm = 0;
-    for (int i=0; i<input->size; i++) {
-      double val = input->data[i];
+    for (int i=0; i<input->size(); i++) {
+      double val = (*input)[i];
       norm += val*val;
     }
-
-    delete input;
-
-    writeOutput(norm);
+    return norm;
   }
 };
 
 
-int main() {
+int main(int argc, char** argv) {
 
-  int length = 8;
   int n = 8;
+  int length = 8;
+
+  if (argc > 1) {
+    n = atoi(argv[1]);
+  }
+  if (argc > 2) {
+    length = atoi(argv[2]);
+  }
 
   Pipeline norm_pipeline(2);
 
@@ -78,8 +61,10 @@ int main() {
   norm_pipeline.addStage(1, &stage2);
   norm_pipeline.start();
 
-  Queue<int, 32>* input_queue = dynamic_cast<Queue<int, 32>*>(norm_pipeline.getInputQueue());
-  Queue<double, 32>* output_queue = dynamic_cast<Queue<double, 32>*>(norm_pipeline.getOutputQueue());
+  Queue<int>* input_queue = static_cast<Queue<int>*>(
+                              norm_pipeline.getInputQueue());
+  Queue<double>* output_queue = static_cast<Queue<double>*>(
+                              norm_pipeline.getOutputQueue());
 
   for (int i=0; i<n; i++) {
     input_queue->push(length);

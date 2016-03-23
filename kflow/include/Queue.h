@@ -11,10 +11,7 @@ class QueueBase {
     virtual bool empty() = 0;
 };
 
-template <
-  typename U,
-  int DEPTH = 1024
->
+template <typename U, int DEPTH = 64>
 class Queue : public QueueBase {
   public:
     bool empty();

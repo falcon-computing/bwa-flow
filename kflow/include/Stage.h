@@ -1,6 +1,9 @@
 #ifndef STAGE_H
 #define STAGE_H
 
+#include <boost/type_traits.hpp>
+#include <typeinfo>
+
 #include "Common.h"
 #include "Queue.h"
 
@@ -12,18 +15,18 @@
 namespace kestrelFlow 
 {
 
+// base class for the template class Stage
 class StageBase {
   public:
     virtual void start() = 0;
     virtual void stop() = 0;
-
-    // produce a single output record
-    virtual void compute() = 0;
 };
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, 
+  typename V, 
+  int IN_DEPTH  = 64,
+  int OUT_DEPTH = 64 
 >
 class Stage : public StageBase 
 {
@@ -37,14 +40,14 @@ class Stage : public StageBase
     void stop();
 
   protected:
-    // blocking call to get one element from input_queue
-    U readInput();
-
-    // blocking call to put one element to output_queue
-    void writeOutput(V item);
+    // produce a single output record
+    virtual V compute(U const & in) = 0;
 
   private:
     void worker_func();
+
+    void deleteIfPtr(U &obj, boost::true_type);
+    void deleteIfPtr(U &obj, boost::false_type);
 
     int num_workers;
 
@@ -55,10 +58,10 @@ class Stage : public StageBase
 };
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-Stage<U, IN_DEPTH, V, OUT_DEPTH>::Stage(int _num_workers): 
+Stage<U, V, IN_DEPTH, OUT_DEPTH>::Stage(int _num_workers): 
   num_workers(_num_workers)
 {
   if (_num_workers<1) {
@@ -67,10 +70,10 @@ Stage<U, IN_DEPTH, V, OUT_DEPTH>::Stage(int _num_workers):
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-void Stage<U, IN_DEPTH, V, OUT_DEPTH>::start() {
+void Stage<U, V, IN_DEPTH, OUT_DEPTH>::start() {
 
   worker_threads.interrupt_all();
   worker_threads.join_all();
@@ -78,28 +81,43 @@ void Stage<U, IN_DEPTH, V, OUT_DEPTH>::start() {
   for (int i=0; i<num_workers; i++) 
   {
     worker_threads.create_thread(
-        boost::bind(&Stage<U, IN_DEPTH, V, OUT_DEPTH>::worker_func, this));
+        boost::bind(&Stage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func, this));
   }  
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-void Stage<U, IN_DEPTH, V, OUT_DEPTH>::stop() {
+void Stage<U, V, IN_DEPTH, OUT_DEPTH>::stop() {
   worker_threads.interrupt_all();
   worker_threads.join_all();
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-void Stage<U, IN_DEPTH, V, OUT_DEPTH>::worker_func() {
+void Stage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func() {
   
   while (true) {
     try {
-      compute(); 
+      // first read input from input queue
+      U input;
+      if (input_queue) {
+        input_queue->pop(input);
+      }
+
+      // call user-defined compute function
+      V output = compute(input); 
+
+      // write result to output_queue
+      if (output_queue) {
+        output_queue->push(output);
+      }
+
+      // free input if it is a pointer
+      deleteIfPtr(input, boost::is_pointer<U>());
     } 
     catch (boost::thread_interrupted &e) {
       DLOG(INFO) << "Worker thread is interrupted";
@@ -110,27 +128,22 @@ void Stage<U, IN_DEPTH, V, OUT_DEPTH>::worker_func() {
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-U Stage<U, IN_DEPTH, V, OUT_DEPTH>::readInput()
+void Stage<U, V, IN_DEPTH, OUT_DEPTH>::deleteIfPtr(U &obj, boost::true_type) 
 {
-  U ret;
-  if (input_queue) {
-    input_queue->pop(ret);
-  }
-  return ret;
+  delete obj;
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-void Stage<U, IN_DEPTH, V, OUT_DEPTH>::writeOutput(V item)
+void Stage<U, V, IN_DEPTH, OUT_DEPTH>::deleteIfPtr(U &obj, boost::false_type) 
 {
-  if (output_queue) {
-    output_queue->push(item);
-  }
+  ;
 }
-}
+
+} // namespace kestrelFlow
 #endif

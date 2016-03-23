@@ -17,9 +17,9 @@ class Pipeline
   public:
     Pipeline(int _num_stages);
 
-    template <typename U, int IN_DEPTH,  
-              typename V, int OUT_DEPTH> 
-    void addStage(int idx, Stage<U, IN_DEPTH, V, OUT_DEPTH> *stage);
+    template <typename U, typename V,
+              int IN_DEPTH,  int OUT_DEPTH> 
+    void addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
     
     void start();
     void stop();
@@ -34,20 +34,20 @@ class Pipeline
     std::vector<boost::shared_ptr<QueueBase> > queues;
 };
 
-Pipeline::Pipeline(int _num_stages
-    ): num_stages(_num_stages),
-       stages(_num_stages, NULL),
-       queues(_num_stages+1, NULL_QUEUE_PTR)
+Pipeline::Pipeline(int _num_stages): 
+  num_stages(_num_stages),
+  stages(_num_stages, NULL),
+  queues(_num_stages+1, NULL_QUEUE_PTR)
 {
   ;
 }
 
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 > 
 void Pipeline::addStage(int idx,
-    Stage<U, IN_DEPTH, V, OUT_DEPTH> *stage)
+    Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage)
 {
   if (idx < 0 || idx >= num_stages) {
     throw paramError("idx out of bound");
@@ -119,7 +119,6 @@ QueueBase* Pipeline::getOutputQueue() {
   return queues[num_stages].get();
 }
 
-}
-
+} // namespace kestrelFlow
 #endif
 
