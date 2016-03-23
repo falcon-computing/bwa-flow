@@ -1,5 +1,5 @@
 ROOT_DIR=../..
-include $(ROOT_DIR)/make.config
+include $(ROOT_DIR)/../config.mk
 
 CFLAGS  := -shared -fPIC -std=c++0x -m64 -g 
 COMPILE := $(CFLAGS) \
