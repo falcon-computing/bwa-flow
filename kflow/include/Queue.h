@@ -14,9 +14,29 @@ class QueueBase {
 template <typename U, int DEPTH = 64>
 class Queue : public QueueBase {
   public:
-    bool empty();
-    void pop(U &item);
-    void push(U item);
+    bool empty() {
+      return data_queue.empty();
+    }
+
+    void pop(U &item) {
+      while (!data_queue.pop(item)) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      }
+    }
+
+    void push(U item) {
+      while (!data_queue.push(item)) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      }
+    }
+
+    bool async_pop(U &item) {
+      return data_queue.pop(item);
+    }
+
+    bool async_push(U item) {
+      return data_queue.push(item);
+    }
 
   private:
     boost::lockfree::queue<U, boost::lockfree::capacity<DEPTH> 
@@ -24,25 +44,6 @@ class Queue : public QueueBase {
 };
 
 const boost::shared_ptr<QueueBase> NULL_QUEUE_PTR;
-
-template <typename U, int DEPTH>
-bool Queue<U, DEPTH>::empty() {
-  return data_queue.empty();
-}
-
-template <typename U, int DEPTH>
-void Queue<U, DEPTH>::pop(U &item) {
-  while (!data_queue.pop(item)) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-  }
-}
-
-template <typename U, int DEPTH>
-void Queue<U, DEPTH>::push(U item) {
-  while (!data_queue.push(item)) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-  }
-}
 
 } // namespace kestrelFlow
 

@@ -4,5 +4,6 @@
 #include "Pipeline.h"
 #include "Queue.h"
 #include "Stage.h"
+#include "MapStage.h"
 
 #endif
