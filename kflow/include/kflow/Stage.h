@@ -68,9 +68,6 @@ class Stage : public StageBase
     Stage(int _num_workers=1): StageBase(_num_workers) {}
 
   protected:
-    void deleteIfPtr(U &obj, boost::true_type) {delete obj;}
-    void deleteIfPtr(U &obj, boost::false_type) {}
-
     Queue<U, IN_DEPTH>*  input_queue;
     Queue<V, OUT_DEPTH>* output_queue;
 };

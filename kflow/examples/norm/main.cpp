@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
-#include "kflow.h"
+#include "kflow/Pipeline.h"
+#include "kflow/MapStage.h"
 
 using namespace kestrelFlow;
 

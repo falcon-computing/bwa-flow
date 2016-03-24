@@ -43,6 +43,12 @@ class Queue : public QueueBase {
       > data_queue;
 };
 
+template <>
+class Queue<void, 0> : public QueueBase {
+  public:
+    bool empty() { return true;}
+};
+
 const boost::shared_ptr<QueueBase> NULL_QUEUE_PTR;
 
 } // namespace kestrelFlow
