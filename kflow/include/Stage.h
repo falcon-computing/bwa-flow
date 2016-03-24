@@ -29,7 +29,7 @@ class StageBase
     void stop();
     void wait();
 
-    RecordBase* getConst(std::string key);
+    boost::any getConst(std::string key);
 
   protected:
     virtual void worker_func() = 0;

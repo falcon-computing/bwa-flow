@@ -4,19 +4,6 @@
 
 using namespace kestrelFlow;
 
-template <typename T>
-class ConstScalar: public RecordBase {
-  public:
-    ConstScalar(T &v): 
-      RecordBase(sizeof(T), 1),
-      val_(v) {}
-
-    T value() { return val_; }
-
-  private:
-    T val_;
-};
-
 class RandGenStage : 
   public MapStage<int, std::vector<double>*>
 {
@@ -25,20 +12,25 @@ public:
 
   std::vector<double>* compute(int const & l) {
 
-    ConstScalar<int>* length = dynamic_cast<ConstScalar<int>*>(
-        this->getConst("length"));
+    try {
+      boost::any constant = this->getConst("length");
+      int length = boost::any_cast<int>(constant);
 
-    if (!length) {
+      std::vector<double>* output = new std::vector<double>(length);
+
+      for (int i=0; i<length; i++) {
+        (*output)[i] = (double)rand()/RAND_MAX;
+      }
+      return output;
+    }
+    catch (paramError &e) {
+      LOG(ERROR) << e.what();
+      return NULL;
+    }
+    catch (boost::bad_any_cast &) {
       DLOG(ERROR) << "type of length mismatch";
+      return NULL;
     }
-
-    std::vector<double>* output = new std::vector<double>(length->value());
-
-    for (int i=0; i<length->value(); i++) {
-      (*output)[i] = (double)rand()/RAND_MAX;
-    }
-
-    return output;
   }
 };
 
@@ -75,11 +67,9 @@ int main(int argc, char** argv) {
     length = atoi(argv[2]);
   }
 
-  ConstScalar<int> const_length(length);
-
   Pipeline norm_pipeline(2);
 
-  norm_pipeline.addConst("length", &const_length);
+  norm_pipeline.addConst("length", length);
 
   RandGenStage stage1(8);
   NormStage stage2(8);

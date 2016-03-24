@@ -57,7 +57,7 @@ bool StageBase::isFinal() {
   return is_final.load();
 }
 
-RecordBase* StageBase::getConst(std::string key) {
+boost::any StageBase::getConst(std::string key) {
   return pipeline->getConst(key);
 }
 

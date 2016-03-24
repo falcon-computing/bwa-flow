@@ -12,18 +12,9 @@ void Pipeline::finalize() {
   stages[0]->final();
 }
 
-bool Pipeline::addConst(std::string key, RecordBase* val) {
-  if (constants.count(key)) {
-    LOG(ERROR) << key << " already exists in the constant table";
-    return false;
-  }
-  constants[key] = val;
-  return true;
-}
-
-RecordBase* Pipeline::getConst(std::string key) {
+boost::any Pipeline::getConst(std::string key) {
   if (!constants.count(key)) {
-    return NULL;
+    return 0;
   }
   else {
     return constants[key];

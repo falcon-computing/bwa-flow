@@ -1,6 +1,8 @@
 #ifndef PIPELINE_H
 #define PIPELINE_H
 
+#include <boost/any.hpp>
+
 #include "Common.h"
 #include "Stage.h"
 
@@ -22,9 +24,10 @@ class Pipeline
               int IN_DEPTH,  int OUT_DEPTH> 
     bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
     
-    bool addConst(std::string key, RecordBase* val);
+    template <typename T>
+    bool addConst(std::string key, T val);
 
-    RecordBase* getConst(std::string key);
+    boost::any getConst(std::string key);
 
     void start();
     void stop();
@@ -38,7 +41,7 @@ class Pipeline
     int num_stages;
     std::vector<StageBase*> stages;
     std::vector<boost::shared_ptr<QueueBase> > queues;
-    std::map<std::string, RecordBase*> constants;
+    std::map<std::string, boost::any> constants;
 };
 
 template <
@@ -86,6 +89,17 @@ bool Pipeline::addStage(int idx,
 
   return true;
 }
+
+template <typename T>
+bool Pipeline::addConst(std::string key, T val) {
+  if (constants.count(key)) {
+    LOG(ERROR) << key << " already exists in the constant table";
+    return false;
+  }
+  constants[key] = val;
+  return true;
+}
+
 } // namespace kestrelFlow
 #endif
 
