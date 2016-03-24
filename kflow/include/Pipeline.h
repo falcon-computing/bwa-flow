@@ -14,6 +14,7 @@ namespace kestrelFlow
 class Pipeline 
 {
   TEST_FRIENDS_LIST
+
   public:
     Pipeline(int _num_stages);
 
@@ -23,7 +24,8 @@ class Pipeline
     
     void start();
     void stop();
-    // TODO: find a way to terminate pipeline automatically
+    void wait();
+    void finalize();
 
     QueueBase* getInputQueue();
     QueueBase* getOutputQueue();
@@ -37,9 +39,10 @@ class Pipeline
 Pipeline::Pipeline(int _num_stages): 
   num_stages(_num_stages),
   stages(_num_stages, NULL),
-  queues(_num_stages+1, NULL_QUEUE_PTR)
-{
-  ;
+  queues(_num_stages+1, NULL_QUEUE_PTR) {}
+
+void Pipeline::finalize() {
+  stages[0]->final();
 }
 
 template <
@@ -79,6 +82,9 @@ void Pipeline::addStage(int idx,
       Queue<V, OUT_DEPTH>*>(output_queue.get());
   }
   stages[idx] = stage;
+  if (idx > 0) {
+    stages[idx-1]->next_stage = stage;
+  }
 }
 
 void Pipeline::start() 
@@ -108,6 +114,13 @@ void Pipeline::stop()
     else {
       stages[i]->stop();
     }
+  }
+}
+
+void Pipeline::wait() 
+{
+  if (stages[num_stages-1]) {
+    stages[num_stages-1]->wait();
   }
 }
 

@@ -5,10 +5,10 @@
 using namespace kestrelFlow;
 
 class RandGenStage : 
-  public Stage<int, std::vector<double>*>
+  public MapStage<int, std::vector<double>*>
 {
 public:
-  RandGenStage(int n): Stage<int, std::vector<double>*>(n) {;}
+  RandGenStage(int n): MapStage<int, std::vector<double>*>(n) {;}
 
   std::vector<double>* compute(int const & length) {
 
@@ -23,10 +23,10 @@ public:
 };
 
 class NormStage :
-  public Stage<std::vector<double>*, double> 
+  public MapStage<std::vector<double>*, double> 
 {
 public:
-  NormStage(int n): Stage<std::vector<double>*, double>(n) {;}
+  NormStage(int n): MapStage<std::vector<double>*, double>(n) {;}
 
   double compute(std::vector<double>* const & input) {
 
@@ -42,6 +42,9 @@ public:
 
 int main(int argc, char** argv) {
 
+  FLAGS_logtostderr = 1;
+  google::InitGoogleLogging(argv[0]);
+
   int n = 8;
   int length = 8;
 
@@ -54,8 +57,8 @@ int main(int argc, char** argv) {
 
   Pipeline norm_pipeline(2);
 
-  RandGenStage stage1(4);
-  NormStage stage2(2);
+  RandGenStage stage1(8);
+  NormStage stage2(8);
 
   norm_pipeline.addStage(0, &stage1);
   norm_pipeline.addStage(1, &stage2);
@@ -69,12 +72,16 @@ int main(int argc, char** argv) {
   for (int i=0; i<n; i++) {
     input_queue->push(length);
   }
+  norm_pipeline.finalize();
+
   for (int i=0; i<n; i++) {
     double out;
     output_queue->pop(out);
     std::cout << out << std::endl;
   }
-  norm_pipeline.stop();
+
+  // gracefully end the pipeline
+  norm_pipeline.wait();
   
   return 0;
 }
