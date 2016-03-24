@@ -4,17 +4,37 @@
 
 using namespace kestrelFlow;
 
+template <typename T>
+class ConstScalar: public RecordBase {
+  public:
+    ConstScalar(T &v): 
+      RecordBase(sizeof(T), 1),
+      val_(v) {}
+
+    T value() { return val_; }
+
+  private:
+    T val_;
+};
+
 class RandGenStage : 
   public MapStage<int, std::vector<double>*>
 {
 public:
   RandGenStage(int n): MapStage<int, std::vector<double>*>(n) {;}
 
-  std::vector<double>* compute(int const & length) {
+  std::vector<double>* compute(int const & l) {
 
-    std::vector<double>* output = new std::vector<double>(length);
+    ConstScalar<int>* length = dynamic_cast<ConstScalar<int>*>(
+        this->getConst("length"));
 
-    for (int i=0; i<length; i++) {
+    if (!length) {
+      DLOG(ERROR) << "type of length mismatch";
+    }
+
+    std::vector<double>* output = new std::vector<double>(length->value());
+
+    for (int i=0; i<length->value(); i++) {
       (*output)[i] = (double)rand()/RAND_MAX;
     }
 
@@ -55,7 +75,11 @@ int main(int argc, char** argv) {
     length = atoi(argv[2]);
   }
 
+  ConstScalar<int> const_length(length);
+
   Pipeline norm_pipeline(2);
+
+  norm_pipeline.addConst("length", &const_length);
 
   RandGenStage stage1(8);
   NormStage stage2(8);
@@ -70,7 +94,7 @@ int main(int argc, char** argv) {
                               norm_pipeline.getOutputQueue());
 
   for (int i=0; i<n; i++) {
-    input_queue->push(length);
+    input_queue->push(0);
   }
   norm_pipeline.finalize();
 
