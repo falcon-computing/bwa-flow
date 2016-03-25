@@ -26,15 +26,18 @@ class QueueBase;
 // base class of a data record
 class RecordBase {
   public: 
-    RecordBase(int _s = 0, int _n = 0): 
-      size_(_s), n_elements_(_n) {}
+    RecordBase(int _id): id_(_id) {}
 
     virtual ~RecordBase() {}
 
   protected:
-    int size_;
-    int n_elements_;
+    int id_;
 };
+
+
+// helper functions
+uint64_t getUs();
+uint64_t getMs();
 
 // custom exceptions
 class paramError : public std::runtime_error {

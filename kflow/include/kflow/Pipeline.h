@@ -34,6 +34,8 @@ class Pipeline
     void wait();
     void finalize();
 
+    void printPerf();
+
     QueueBase* getInputQueue();
     QueueBase* getOutputQueue();
 
@@ -42,6 +44,10 @@ class Pipeline
     std::vector<StageBase*> stages;
     std::vector<boost::shared_ptr<QueueBase> > queues;
     std::map<std::string, boost::any> constants;
+
+    // beginning and end timestamps of all stage workers
+    uint64_t  start_ts;
+    uint64_t  end_ts;
 };
 
 template <

@@ -166,6 +166,8 @@ int main(int argc, char** argv) {
 
   // gracefully end the pipeline
   norm.wait();
+
+  norm.printPerf();
   
   return 0;
 }

@@ -27,7 +27,7 @@ class FSourceStage : public Stage<void, V, 0, OUT_DEPTH>
     void pushOutput(V const & item);
 
   private:
-    void worker_func();
+    void worker_func(int wid);
 
     Queue<V, OUT_DEPTH>* dst_queue;
 };
@@ -49,7 +49,7 @@ class FSinkStage :
     bool getInput(U &item);
 
   private:
-    void worker_func();    
+    void worker_func(int wid);
     Queue<U, IN_DEPTH>* src_queue;
 };
 
@@ -68,7 +68,11 @@ void FSourceStage<V, OUT_DEPTH>::pushOutput(V const & item)
 }
 
 template <typename V, int OUT_DEPTH>
-void FSourceStage<V, OUT_DEPTH>::worker_func() {
+void FSourceStage<V, OUT_DEPTH>::worker_func(int wid) 
+{
+#ifndef DISABLE_PROFILING
+  uint64_t start_ts = getUs();
+#endif
 
   if (!this->output_queue) {
     LOG(ERROR) << "Empty output queue is not allowed";
@@ -84,8 +88,16 @@ void FSourceStage<V, OUT_DEPTH>::worker_func() {
   }
 
   try {
+#ifndef DISABLE_PROFILING
+    uint64_t start_ts = getUs();
+#endif
     // call user-defined compute function
     compute(); 
+
+#ifndef DISABLE_PROFILING
+    // record compute time
+    this->perf_meters[wid][1] += getUs() - start_ts;
+#endif
   } 
   catch (boost::thread_interrupted &e) {
     VLOG(2) << "Worker thread is interrupted";
@@ -94,6 +106,15 @@ void FSourceStage<V, OUT_DEPTH>::worker_func() {
   // inform the next Stage there will be no more
   // output records
   this->finalize();
+
+#ifndef DISABLE_PROFILING
+  // fix compute time
+  this->perf_meters[wid][1] -= this->perf_meters[wid][2];
+
+  // record total time
+  this->perf_meters[wid][3] = getUs()-start_ts;
+#endif
+  this->end_ts = getUs();
 
   DLOG(INFO) << "Worker thread is terminated";
 }
@@ -104,7 +125,8 @@ FSinkStage<U, IN_DEPTH>::FSinkStage():
 {}
 
 template <typename U, int IN_DEPTH>
-bool FSinkStage<U, IN_DEPTH>::getInput(U &item) {
+bool FSinkStage<U, IN_DEPTH>::getInput(U &item) 
+{
   if (!src_queue) {
     return false; 
   }
@@ -112,7 +134,11 @@ bool FSinkStage<U, IN_DEPTH>::getInput(U &item) {
 }
 
 template <typename U, int IN_DEPTH>
-void FSinkStage<U, IN_DEPTH>::worker_func() {
+void FSinkStage<U, IN_DEPTH>::worker_func(int wid) {
+
+#ifndef DISABLE_PROFILING
+  uint64_t start_ts = getUs();
+#endif
 
   if (!this->input_queue) {
     LOG(ERROR) << "Empty input queue is not allowed";
@@ -127,9 +153,18 @@ void FSinkStage<U, IN_DEPTH>::worker_func() {
     return;
   }
 
-  try {
+  try 
+  {
+#ifndef DISABLE_PROFILING
+    uint64_t start_ts = getUs();
+#endif
     // call user-defined compute function
     compute(); 
+
+#ifndef DISABLE_PROFILING
+    // record compute time
+    this->perf_meters[wid][1] += getUs() - start_ts;
+#endif
   } 
   catch (boost::thread_interrupted &e) {
     VLOG(2) << "Worker thread is interrupted";
@@ -138,6 +173,12 @@ void FSinkStage<U, IN_DEPTH>::worker_func() {
   // inform the next Stage there will be no more
   // output records
   this->finalize();
+
+#ifndef DISABLE_PROFILING
+  // record total time
+  this->perf_meters[wid][3] = getUs()-start_ts;
+#endif
+  this->end_ts = getUs();
 
   DLOG(INFO) << "Worker thread is terminated";
 }

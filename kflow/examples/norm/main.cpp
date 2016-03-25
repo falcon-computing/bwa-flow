@@ -20,7 +20,7 @@ public:
       std::vector<double>* output = new std::vector<double>(length);
 
       for (int i=0; i<length; i++) {
-        (*output)[i] = (double)rand()/RAND_MAX;
+        (*output)[i] = (double)i;
       }
       return output;
     }
@@ -60,6 +60,8 @@ int main(int argc, char** argv) {
 
   int n = 8;
   int length = 8;
+  int stage1_workers = 4;
+  int stage2_workers = 1;
 
   if (argc > 1) {
     n = atoi(argv[1]);
@@ -67,16 +69,23 @@ int main(int argc, char** argv) {
   if (argc > 2) {
     length = atoi(argv[2]);
   }
+  if (argc > 3) {
+    stage1_workers = atoi(argv[3]); 
+  }
+  if (argc > 4) {
+    stage2_workers = atoi(argv[4]); 
+  }
 
   Pipeline norm_pipeline(2);
 
   norm_pipeline.addConst("length", length);
 
-  RandGenStage stage1(8);
-  NormStage stage2(8);
+  RandGenStage stage1(stage1_workers);
+  NormStage stage2(stage2_workers);
 
   norm_pipeline.addStage(0, &stage1);
   norm_pipeline.addStage(1, &stage2);
+
   norm_pipeline.start();
 
   Queue<int>* input_queue = static_cast<Queue<int>*>(
@@ -84,19 +93,21 @@ int main(int argc, char** argv) {
   Queue<double>* output_queue = static_cast<Queue<double>*>(
                               norm_pipeline.getOutputQueue());
 
-  for (int i=0; i<n; i++) {
-    input_queue->push(0);
+  for (int i=0; i<n; i+=64) {
+    for (int k=0; k<64; k++) {
+      input_queue->push(0);
+    }
+    for (int k=0; k<64; k++) {
+      double out;
+      output_queue->pop(out);
+    }
   }
   norm_pipeline.finalize();
 
-  for (int i=0; i<n; i++) {
-    double out;
-    output_queue->pop(out);
-    std::cout << out << std::endl;
-  }
-
   // gracefully end the pipeline
   norm_pipeline.wait();
-  
+
+  norm_pipeline.printPerf();
+
   return 0;
 }

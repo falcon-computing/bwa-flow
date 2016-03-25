@@ -1,18 +1,26 @@
 ROOT_DIR=..
 include $(ROOT_DIR)/../config.mk
 
-CFLAGS  := -c -fPIC -std=c++0x -m64 -g 
-COMPILE := $(CFLAGS) \
-				 	 -I$(ROOT_DIR)/include/kflow \
-				 	 -I$(BOOST_DIR)/include \
-				 	 -I$(GLOG_DIR)/include
-LINK		:= -L$(BOOST_DIR)/lib \
-					 -lboost_system -lboost_thread -lboost_iostreams -lboost_filesystem -lboost_regex \
-					 -L$(GLOG_DIR)/lib -lglog \
-					 -lpthread -lm -ldl
+CFLAGS  := -c -fPIC -std=c++0x -m64
 
-DEPS		:= Pipeline.o \
-					 Stage.o 
+ifeq ($(DEBUG),)
+CFLAGS  := $(CFLAGS) -O2 -DNDEBUG
+else
+CFLAGS  := $(CFLAGS) -g
+endif
+
+COMPILE := $(CFLAGS) \
+					 -I$(ROOT_DIR)/include/kflow \
+					 -I$(BOOST_DIR)/include \
+					 -I$(GLOG_DIR)/include
+LINK		:= -L$(BOOST_DIR)/lib \
+           -lboost_system -lboost_thread -lboost_iostreams -lboost_filesystem -lboost_regex \
+           -L$(GLOG_DIR)/lib -lglog \
+           -lpthread -lm -ldl
+
+DEPS    := Common.o \
+					 Pipeline.o \
+           Stage.o 
 
 DEST		:= $(ROOT_DIR)/lib/libkflow.so
 

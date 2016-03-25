@@ -24,15 +24,18 @@ class StageBase
 
   public:
     StageBase(int _num_workers=1);
+    ~StageBase();
 
     void start();
     void stop();
     void wait();
 
+    std::string printPerf();
+
     boost::any getConst(std::string key);
 
   protected:
-    virtual void worker_func() = 0;
+    virtual void worker_func(int) = 0;
 
     void final();
 
@@ -41,6 +44,14 @@ class StageBase
     void finalize();
 
     bool isFinal();
+
+    // profiling counters for each worker:
+    // <read_block_time, compute_time, write_block_time, total_time>
+    uint64_t **perf_meters;
+
+    // beginning and end timestamps of all stage workers
+    uint64_t  start_ts;
+    uint64_t  end_ts;
 
   private:
     int                 num_workers;
