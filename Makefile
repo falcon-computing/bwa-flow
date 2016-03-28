@@ -1,7 +1,7 @@
 include config.mk
 
 CFLAGS			:= -Wall -Wno-unused-function -O2
-WRAP_MALLOC := -DUSE_MALLOC_WRAPPERS
+WRAP_MALLOC	:= -DUSE_MALLOC_WRAPPERS
 DFLAGS			:= -DHAVE_PTHREAD $(WRAP_MALLOC)
 
 INCLUDES		:= -Ibwa
@@ -25,7 +25,7 @@ OBJS				:= ./src/bntseq_newflow.o \
 all: $(DST)
 
 ./bin/bwa: $(OBJS)
-		$(PP) $(CFLAGS) $(DFLAGS) $(OBJS) -o $@ $(LIBS)
+	$(PP) $(CFLAGS) $(DFLAGS) $(OBJS) -o $@ $(LIBS)
 
 %.o: %.cpp
 	$(PP) $(COMPILE) $< -o $@
