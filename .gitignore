@@ -1,2 +1,5 @@
-*.o
 app
+*.o
+*.err
+*.txt
+*.out
