@@ -1,95 +1,113 @@
 #include <iostream>
 #include <vector>
-#include "kflow.h"
+#include "kflow/Pipeline.h"
+#include "kflow/MapStage.h"
 
 using namespace kestrelFlow;
 
-template <typename U>
-class vector {
-public:
-  vector(int n): size(n) {
-    if (n>0) {
-      data = new U[n];
-    }
-  }
-  ~vector() {
-    if (data) delete [] data;
-  }
-  int size;
-  U* data;
-};
-
-typedef vector<double>* vector_ptr;
-
 class RandGenStage : 
-  public Stage<int, 32, vector_ptr, 32>
+  public MapStage<int, std::vector<double>*>
 {
 public:
-  RandGenStage(int n): Stage<int, 32, vector_ptr, 32>(n) {;}
+  RandGenStage(int n): MapStage<int, std::vector<double>*>(n) {;}
 
-  void compute() {
+  std::vector<double>* compute(int const & l) {
 
-    int length = readInput();
+    try {
+      boost::any constant = this->getConst("length");
+      int length = boost::any_cast<int>(constant);
 
-    vector_ptr output = new vector<double>(length);
+      std::vector<double>* output = new std::vector<double>(length);
 
-    for (int i=0; i<length; i++) {
-      output->data[i] = (double)rand()/RAND_MAX;
+      for (int i=0; i<length; i++) {
+        (*output)[i] = (double)i;
+      }
+      return output;
     }
-
-    writeOutput(output);
+    catch (paramError &e) {
+      LOG(ERROR) << e.what();
+      return NULL;
+    }
+    catch (boost::bad_any_cast &) {
+      DLOG(ERROR) << "type of length mismatch";
+      return NULL;
+    }
   }
 };
 
 class NormStage :
-  public Stage<vector_ptr, 32, double, 32> 
+  public MapStage<std::vector<double>*, double> 
 {
 public:
-  NormStage(int n): Stage<vector_ptr, 32, double, 32>(n) {;}
+  NormStage(int n): MapStage<std::vector<double>*, double>(n) {;}
 
-  void compute() {
+  double compute(std::vector<double>* const & input) {
 
-    vector_ptr input = readInput();
-    
     double norm = 0;
-    for (int i=0; i<input->size; i++) {
-      double val = input->data[i];
+    for (int i=0; i<input->size(); i++) {
+      double val = (*input)[i];
       norm += val*val;
     }
-
-    delete input;
-
-    writeOutput(norm);
+    return norm;
   }
 };
 
 
-int main() {
+int main(int argc, char** argv) {
 
-  int length = 8;
+  FLAGS_logtostderr = 1;
+  google::InitGoogleLogging(argv[0]);
+
   int n = 8;
+  int length = 8;
+  int stage1_workers = 4;
+  int stage2_workers = 1;
+
+  if (argc > 1) {
+    n = atoi(argv[1]);
+  }
+  if (argc > 2) {
+    length = atoi(argv[2]);
+  }
+  if (argc > 3) {
+    stage1_workers = atoi(argv[3]); 
+  }
+  if (argc > 4) {
+    stage2_workers = atoi(argv[4]); 
+  }
 
   Pipeline norm_pipeline(2);
 
-  RandGenStage stage1(4);
-  NormStage stage2(2);
+  norm_pipeline.addConst("length", length);
+
+  RandGenStage stage1(stage1_workers);
+  NormStage stage2(stage2_workers);
 
   norm_pipeline.addStage(0, &stage1);
   norm_pipeline.addStage(1, &stage2);
+
   norm_pipeline.start();
 
-  Queue<int, 32>* input_queue = dynamic_cast<Queue<int, 32>*>(norm_pipeline.getInputQueue());
-  Queue<double, 32>* output_queue = dynamic_cast<Queue<double, 32>*>(norm_pipeline.getOutputQueue());
+  Queue<int>* input_queue = static_cast<Queue<int>*>(
+                              norm_pipeline.getInputQueue());
+  Queue<double>* output_queue = static_cast<Queue<double>*>(
+                              norm_pipeline.getOutputQueue());
 
-  for (int i=0; i<n; i++) {
-    input_queue->push(length);
+  for (int i=0; i<n; i+=64) {
+    for (int k=0; k<64; k++) {
+      input_queue->push(0);
+    }
+    for (int k=0; k<64; k++) {
+      double out;
+      output_queue->pop(out);
+    }
   }
-  for (int i=0; i<n; i++) {
-    double out;
-    output_queue->pop(out);
-    std::cout << out << std::endl;
-  }
-  norm_pipeline.stop();
-  
+  norm_pipeline.finalize();
+
+  // gracefully end the pipeline
+  norm_pipeline.wait();
+
+  norm_pipeline.printPerf();
+
   return 0;
 }

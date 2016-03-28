@@ -1,6 +1,8 @@
 #ifndef PIPELINE_H
 #define PIPELINE_H
 
+#include <boost/any.hpp>
+
 #include "Common.h"
 #include "Stage.h"
 
@@ -14,16 +16,25 @@ namespace kestrelFlow
 class Pipeline 
 {
   TEST_FRIENDS_LIST
+
   public:
     Pipeline(int _num_stages);
 
-    template <typename U, int IN_DEPTH,  
-              typename V, int OUT_DEPTH> 
-    void addStage(int idx, Stage<U, IN_DEPTH, V, OUT_DEPTH> *stage);
+    template <typename U, typename V,
+              int IN_DEPTH,  int OUT_DEPTH> 
+    bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
     
+    template <typename T>
+    bool addConst(std::string key, T val);
+
+    boost::any getConst(std::string key);
+
     void start();
     void stop();
-    // TODO: find a way to terminate pipeline automatically
+    void wait();
+    void finalize();
+
+    void printPerf();
 
     QueueBase* getInputQueue();
     QueueBase* getOutputQueue();
@@ -32,25 +43,23 @@ class Pipeline
     int num_stages;
     std::vector<StageBase*> stages;
     std::vector<boost::shared_ptr<QueueBase> > queues;
+    std::map<std::string, boost::any> constants;
+
+    // beginning and end timestamps of all stage workers
+    uint64_t  start_ts;
+    uint64_t  end_ts;
 };
 
-Pipeline::Pipeline(int _num_stages
-    ): num_stages(_num_stages),
-       stages(_num_stages, NULL),
-       queues(_num_stages+1, NULL_QUEUE_PTR)
-{
-  ;
-}
-
 template <
-  typename U, int IN_DEPTH,
-  typename V, int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 > 
-void Pipeline::addStage(int idx,
-    Stage<U, IN_DEPTH, V, OUT_DEPTH> *stage)
+bool Pipeline::addStage(int idx,
+    Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage)
 {
   if (idx < 0 || idx >= num_stages) {
-    throw paramError("idx out of bound");
+    LOG(ERROR) << "index out of bound";
+    return false;
   }
   if (stages[idx]) {
     LOG(WARNING) << "Overwritting existing stage at idx=" << idx;
@@ -69,7 +78,7 @@ void Pipeline::addStage(int idx,
   // create output queue for the stage
   if (idx < num_stages-1 && OUT_DEPTH <= 0) {
     LOG(ERROR) << "Intermediate stage must have an output queue";
-    return;
+    return false;
   }
   if (OUT_DEPTH > 0) {
     boost::shared_ptr<QueueBase> output_queue(new Queue<V, OUT_DEPTH>);
@@ -79,47 +88,24 @@ void Pipeline::addStage(int idx,
       Queue<V, OUT_DEPTH>*>(output_queue.get());
   }
   stages[idx] = stage;
-}
-
-void Pipeline::start() 
-{
-  bool initialized = true;
-  for (int i=0; i<num_stages; i++) {
-    if (!stages[i]) {
-      LOG(ERROR) << "Stage " << i << " is uninitialized";
-      initialized = false;
-    }
+  if (idx > 0) {
+    stages[idx-1]->next_stage = stage;
   }
-  if (!initialized) {
-    LOG(ERROR) << "Cannot start the pipeline due to previous errors";
+  stage->pipeline = this;
+
+  return true;
+}
+
+template <typename T>
+bool Pipeline::addConst(std::string key, T val) {
+  if (constants.count(key)) {
+    LOG(ERROR) << key << " already exists in the constant table";
+    return false;
   }
-  for (int i=0; i<num_stages; i++) {
-    stages[i]->start();
-    VLOG(1) << "Start workers for stage " << i;
-  }
+  constants[key] = val;
+  return true;
 }
 
-void Pipeline::stop() 
-{
-  for (int i=0; i<num_stages; i++) {
-    if (!stages[i]) {
-      LOG(WARNING) << "Stage " << i << " is uninitialized";
-    }
-    else {
-      stages[i]->stop();
-    }
-  }
-}
-
-QueueBase* Pipeline::getInputQueue() {
-  return queues[0].get();;
-}
-
-QueueBase* Pipeline::getOutputQueue() {
-  return queues[num_stages].get();
-}
-
-}
-
+} // namespace kestrelFlow
 #endif
 

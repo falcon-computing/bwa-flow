@@ -18,6 +18,27 @@
 
 namespace kestrelFlow 
 {
+
+class Pipeline;
+class StageBase;
+class QueueBase;
+
+// base class of a data record
+class RecordBase {
+  public: 
+    RecordBase(int _id): id_(_id) {}
+
+    virtual ~RecordBase() {}
+
+  protected:
+    int id_;
+};
+
+
+// helper functions
+uint64_t getUs();
+uint64_t getMs();
+
 // custom exceptions
 class paramError : public std::runtime_error {
 public:
