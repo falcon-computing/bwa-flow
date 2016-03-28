@@ -2,7 +2,8 @@
 #include <fstream>
 #include <vector>
 #include "kflow/Pipeline.h"
-#include "kflow/IOStage.h"
+#include "kflow/SourceStage.h"
+#include "kflow/SinkStage.h"
 #include "kflow/MapStage.h"
 
 using namespace kestrelFlow;
@@ -19,10 +20,10 @@ class Record {
 };
 
 class Load : 
-  public FSourceStage<Record<std::vector<double> >*>
+  public SourceStage<Record<std::vector<double> >*>
 {
 public:
-  Load(): FSourceStage<Record<std::vector<double> >*>() {;}
+  Load(): SourceStage<Record<std::vector<double> >*>() {;}
 
   void compute() {
 
@@ -61,10 +62,10 @@ public:
 
 template <int BSIZE = 64>
 class Store : 
-  public FSinkStage<Record<double>*, BSIZE>
+  public SinkStage<Record<double>*, BSIZE>
 {
   public:
-    Store(): FSinkStage<Record<double>*, BSIZE>() {}
+    Store(): SinkStage<Record<double>*, BSIZE>() {}
 
     void compute() {
       try {
