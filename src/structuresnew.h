@@ -69,8 +69,6 @@ public:
     size_t n, m; mem_chain_t *a;
  } ;
 
-
-
 int pre_process(int argc, char *argv[]);
 
 int load_reads();
