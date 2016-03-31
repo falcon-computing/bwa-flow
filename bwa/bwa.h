@@ -27,16 +27,10 @@ typedef struct {
 	uint8_t  *mem;
 } bwaidx_t;
 
-/*typedef struct {
+typedef struct {
 	int l_seq, id;
 	char *name, *comment, *seq, *qual, *sam;
-} bseq1_t;*/
-
-class bseq1_t {
-public:
-	int l_seq, id;
-	char *name, *comment, *seq, *qual, *sam;
-} ;
+} bseq1_t;
 
 extern int bwa_verbose;
 extern char bwa_rg_id[256];

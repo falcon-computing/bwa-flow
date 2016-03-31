@@ -12,12 +12,11 @@
 #include "utils.h"
 #include "bntseq.h"
 #include "kseq.h"
-#include "structuresnew.h"
-//KSEQ_DECLARE(gzFile)
+#include "bwa_wrapper.h"
+
 
 extern unsigned char nst_nt4_table[256];
 
-    extern ktp_aux_t aux;
     extern gzFile fp_idx, fp2_read2 ;
     extern void *ko_read1 , *ko_read2 ;
 
@@ -73,27 +72,19 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0)
 }
 
 
-//int pre_process(int argc, char *argv[],ktp_aux_t* aux)
-int pre_process(int argc, char *argv[])
+int pre_process(int argc, char *argv[],ktp_aux_t* aux)
+//int pre_process(int argc, char *argv[])
 {
-    extern ktp_aux_t aux;
 	mem_opt_t *opt, opt0;
 	int fd, fd2, i, c, ignore_alt = 0, no_mt_io = 0;
 	int fixed_chunk_size = -1;
-  //  extern ktp_aux_t aux;
-
-	//gzFile fp, fp2 = 0;
 	char *p, *rg_line = 0, *hdr_line = 0;
 	const char *mode = 0;
-	//void *ko = 0, *ko2 = 0;
 	mem_pestat_t pes[4];
-	//ktp_aux_t aux;
-
-	//memset(&aux, 0, sizeof(ktp_aux_t));
 	memset(pes, 0, 4 * sizeof(mem_pestat_t));
 	for (i = 0; i < 4; ++i) pes[i].failed = 1;
 
-	aux.opt = opt = mem_opt_init();
+	aux->opt = opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
 	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
@@ -124,7 +115,7 @@ int pre_process(int argc, char *argv[])
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
 		else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
 		else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
-		else if (c == 'C') aux.copy_comment = 1;
+		else if (c == 'C') aux->copy_comment = 1;
 		else if (c == 'K') fixed_chunk_size = atoi(optarg);
 		else if (c == 'X') opt->mask_level = atof(optarg);
 		else if (c == 'h') {
@@ -171,7 +162,7 @@ int pre_process(int argc, char *argv[])
 				}
 			} else hdr_line = bwa_insert_header(optarg, hdr_line);
 		} else if (c == 'I') { // specify the insert size distribution
-			aux.pes0 = pes;
+			aux->pes0 = pes;
 			pes[1].failed = 0;
 			pes[1].avg = strtod(optarg, &p);
 			pes[1].std = pes[1].avg * .1;
@@ -282,14 +273,14 @@ int pre_process(int argc, char *argv[])
 	} else update_a(opt, &opt0);
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
 
-	aux.idx = 0;
-	if (aux.idx == 0) {
-		if ((aux.idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) return 1; // FIXME: memory leak
+	aux->idx = 0;
+	if (aux->idx == 0) {
+		if ((aux->idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) return 1; // FIXME: memory leak
 	} else if (bwa_verbose >= 3)
 		fprintf(stderr, "[M::%s] load the bwa index from shared memory\n", __func__);
 	if (ignore_alt)
-		for (i = 0; i < aux.idx->bns->n_seqs; ++i)
-			aux.idx->bns->anns[i].is_alt = 0;
+		for (i = 0; i < aux->idx->bns->n_seqs; ++i)
+			aux->idx->bns->anns[i].is_alt = 0;
 
 	ko_read1 = kopen(argv[optind + 1], &fd);
 	if (ko_read1 == 0) {
@@ -297,7 +288,7 @@ int pre_process(int argc, char *argv[])
 		return 1;
 	}
 	fp_idx = gzdopen(fd, "r");
-	aux.ks = kseq_init(fp_idx);
+	aux->ks = kseq_init(fp_idx);
 	if (optind + 2 < argc) {
 		if (opt->flag&MEM_F_PE) {
 			if (bwa_verbose >= 2)
@@ -309,11 +300,13 @@ int pre_process(int argc, char *argv[])
 				return 1;
 			}
 			fp2_read2 = gzdopen(fd2, "r");
-			aux.ks2 = kseq_init(fp2_read2);
+			aux->ks2 = kseq_init(fp2_read2);
 			opt->flag |= MEM_F_PE;
 		}
 	}
-	bwa_print_sam_hdr(aux.idx->bns, hdr_line);
-	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+	bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+	aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
 	return 0;
 }
+
+

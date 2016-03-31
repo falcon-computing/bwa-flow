@@ -74,16 +74,7 @@ typedef struct {
 	uint64_t hash;
 } mem_alnreg_t;
 
-//typedef struct { size_t n, m; mem_alnreg_t *a; } mem_alnreg_v;
-
-class mem_alnreg_v
-{
-public:
-    size_t n,m;
-    mem_alnreg_t *a;
-    int id_read;
-
-};
+typedef struct { size_t n, m; mem_alnreg_t *a; } mem_alnreg_v;
 
 typedef struct {
 	int low, high;   // lower and upper bounds within which a read pair is considered to be properly paired
