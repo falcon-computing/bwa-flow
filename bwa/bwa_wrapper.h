@@ -119,7 +119,9 @@ int kclose(void *a);
 
 int pre_process(int argc, char *argv[],ktp_aux_t *aux );
 
-//int load_reads();
+void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num);
+
+void chain2reg_testhw(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw);
 
 void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM);
 
@@ -129,11 +131,7 @@ void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *aln
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
 
-//void intv2chain(smem_aux_t *SMEM,mem_chain_v *chain);
 
-//void chain2reg(mem_chain_v *chn,mem_alnreg_v *alnreg);
-
-//void reg2sam(mem_alnreg_v *alnreg);
 
 
 
