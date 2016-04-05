@@ -116,12 +116,9 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 int kclose(void *a);
 }
 
-
 int pre_process(int argc, char *argv[],ktp_aux_t *aux );
 
 void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num);
-
-void chain2reg_testhw(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw);
 
 void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM);
 
@@ -130,10 +127,6 @@ MemChainVector seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg);
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
-
-
-
-
 
 smem_aux_t *smem_aux_init();
 void smem_aux_destroy(smem_aux_t *a);

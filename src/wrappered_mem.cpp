@@ -77,125 +77,110 @@ void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *aln
 	}
 }
 
-void mem_chain2aln_hw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
+void mem_chain2aln_hw(
+    ktp_aux_t *aux,
+    const bseq1_t *seqs, 
+    const MemChainVector* chains, 
+    mem_alnreg_v *av,
+    int batch_num)
 {
+  for(int i=0; i<batch_num; i++)
+  {
+    kv_init(av[i]);
+    for (int j=0; j<chains[i].n; j++) {
+      mem_chain_t *p = &chains[i].a[j];
 
-    mem_chain2aln(opt, bns, pac, l_query, query, c, av);
-
+      // call mem_chain2aln to compute baseline
+		  mem_chain2aln(aux->opt, aux->idx->bns, aux->idx->pac, 
+          seqs[i].l_seq, (uint8_t*)seqs[i].seq, p, av+i);
+    }
+  }
 }
-
-
-
-
-
-
-void chain2reg_testhw(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw)
-{
-    int id = chn.id_read;
-    int i;
-
-	kv_init(*alnreg);
-	kv_init(*alnreg_hw);
-
-	for (i = 0; i < chn.n; ++i) {
-		mem_chain_t *p = &chn.a[i];
-
-		mem_chain2aln(aux->opt, aux->idx->bns, aux->idx->pac, seqs[id].l_seq, (uint8_t*)seqs[id].seq, p, alnreg);
-
-		mem_chain2aln_hw(aux->opt, aux->idx->bns, aux->idx->pac, seqs[id].l_seq, (uint8_t*)seqs[id].seq, p, alnreg_hw);   // the fpga version of
-
-		free(chn.a[i].seeds);
-	}
-	free(chn.a);
-}
-
-
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg)
 {
-    int i ;
-    mem_pestat_t pes[4];
-    mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);               // the operation between worker1 and worker2
-    for (i=0; i<batch_num/2; i++)
-        {
-            mem_sam_pe(aux->opt,aux->idx->bns,aux->idx->pac,pes,n_processed+i,&seqs[i<<1],&alnreg[i<<1]);
-            free(alnreg[i<<1|0].a); free(alnreg[i<<1|1].a);
-        }
-    free(alnreg);
-        // print
-    for (i = 0; i < batch_num; ++i)
-        {
-			if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
-			free(seqs[i].name); free(seqs[i].comment);
-			free(seqs[i].seq); free(seqs[i].qual); free(seqs[i].sam);
-        }
-    free(seqs);
-
+  int i ;
+  mem_pestat_t pes[4];
+  mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);               // the operation between worker1 and worker2
+  for (i=0; i<batch_num/2; i++)
+  {
+    mem_sam_pe(aux->opt,aux->idx->bns,aux->idx->pac,pes,n_processed+i,&seqs[i<<1],&alnreg[i<<1]);
+    free(alnreg[i<<1|0].a); free(alnreg[i<<1|1].a);
+  }
+  free(alnreg);
+  // print
+  for (i = 0; i < batch_num; ++i)
+  {
+    if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+    free(seqs[i].name); free(seqs[i].comment);
+    free(seqs[i].seq); free(seqs[i].qual); free(seqs[i].sam);
+  }
+  free(seqs);
 }
 
 
 
 void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num)
 {
-// print the software result
-	FILE *fp_old = xopen("reg_sw.txt","wb");
-	FILE *fp_new = xopen("reg_hw.txt","wb");
-	int i = 0;
-	int j = 0;
-	for(j=0;j<batch_num;j++)
-{
-         	for(i=0;i<alnreg->n;i++)
-         	{
-         		err_fwrite(&alnreg->a[i].rb,sizeof(int64_t),1,fp_old);
-         		err_fwrite(&alnreg->a[i].re,sizeof(int64_t),1,fp_old);
-         		err_fwrite(&alnreg->a[i].qb,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].qe,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].rid,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].score,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].sub,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].alt_sc,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].csub,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].sub_n,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].w,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].seedcov,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].secondary,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].secondary_all,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].seedlen0,sizeof(int),1,fp_old);
-//         		err_fwrite(&alnreg->a[i].n_comp,sizeof(int),1,fp_old);
-//         		err_fwrite(&alnreg->a[i].is_alt,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].frac_rep,sizeof(int),1,fp_old);
-         		err_fwrite(&alnreg->a[i].hash,sizeof(uint64_t),1,fp_old);
-                err_fwrite("\r\n",1,2,fp_old);
-         	}
-// print the hardware result
-        	for(i=0;i<alnreg_hw->n;i++)
-        	{
-        		err_fwrite(&alnreg_hw->a[i].rb,sizeof(int64_t),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].re,sizeof(int64_t),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].qb,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].qe,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].rid,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].score,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].sub,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].alt_sc,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].csub,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].sub_n,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].w,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].seedcov,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].secondary,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].secondary_all,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].seedlen0,sizeof(int),1,fp_new);
-//              err_fwrite(&alnreg_hw->a[i].n_comp,sizeof(int),1,fp_new);
-//        		err_fwrite(&alnreg_hw->a[i].is_alt,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].frac_rep,sizeof(int),1,fp_new);
-        		err_fwrite(&alnreg_hw->a[i].hash,sizeof(uint64_t),1,fp_new);
-        		err_fwrite("\r\n",1,2,fp_new);
-        	}
-}
-       	err_fflush(fp_old);
-       	err_fclose(fp_old);
-	err_fflush(fp_new);
-	err_fclose(fp_new);
+  // print the software result
+  FILE *fp_old = xopen("reg_sw.txt","wb");
+  FILE *fp_new = xopen("reg_hw.txt","wb");
+  int i = 0;
+  int j = 0;
+  for(j=0;j<batch_num;j++)
+  {
+    for(i=0;i<alnreg->n;i++)
+    {
+      err_fwrite(&alnreg->a[i].rb,sizeof(int64_t),1,fp_old);
+      err_fwrite(&alnreg->a[i].re,sizeof(int64_t),1,fp_old);
+      err_fwrite(&alnreg->a[i].qb,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].qe,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].rid,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].score,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].sub,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].alt_sc,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].csub,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].sub_n,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].w,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].seedcov,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].secondary,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].secondary_all,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].seedlen0,sizeof(int),1,fp_old);
+      //         		err_fwrite(&alnreg->a[i].n_comp,sizeof(int),1,fp_old);
+      //         		err_fwrite(&alnreg->a[i].is_alt,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].frac_rep,sizeof(int),1,fp_old);
+      err_fwrite(&alnreg->a[i].hash,sizeof(uint64_t),1,fp_old);
+      err_fwrite("\r\n",1,2,fp_old);
+    }
+    // print the hardware result
+    for(i=0;i<alnreg_hw->n;i++)
+    {
+      err_fwrite(&alnreg_hw->a[i].rb,sizeof(int64_t),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].re,sizeof(int64_t),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].qb,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].qe,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].rid,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].score,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].sub,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].alt_sc,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].csub,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].sub_n,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].w,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].seedcov,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].secondary,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].secondary_all,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].seedlen0,sizeof(int),1,fp_new);
+      //              err_fwrite(&alnreg_hw->a[i].n_comp,sizeof(int),1,fp_new);
+      //        		err_fwrite(&alnreg_hw->a[i].is_alt,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].frac_rep,sizeof(int),1,fp_new);
+      err_fwrite(&alnreg_hw->a[i].hash,sizeof(uint64_t),1,fp_new);
+      err_fwrite("\r\n",1,2,fp_new);
+    }
+  }
+  err_fflush(fp_old);
+  err_fclose(fp_old);
+  err_fflush(fp_new);
+  err_fclose(fp_new);
 
 
 }
