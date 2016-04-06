@@ -7,10 +7,11 @@ PP	:= g++
 CFLAGS 	:= -g -std=c++0x -fPIC -O2
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
-	   $(SRC_DIR)/main.o
+	   $(SRC_DIR)/main.o \
+	   $(SRC_DIR)/util.o
 
 PROG	:= ./bin/bwa
-INCLUDES:= -I$(BWA_DIR)
+INCLUDES:= -I.
 LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -lm -lz -lpthread -lrt
 

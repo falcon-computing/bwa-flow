@@ -1,6 +1,5 @@
 #ifndef STRUCTURESNEW_H_INCLUDED
 #define STRUCTURESNEW_H_INCLUDED
-#include "utils.h"
 
 
 #include <zlib.h>
@@ -10,12 +9,14 @@
 #include <limits.h>
 #include <ctype.h>
 #include <math.h>
-#include "bwa.h"
-#include "bwt.h"
-#include "bwamem.h"
-#include "kvec.h"
-#include "bntseq.h"
-#include "kseq.h"
+#include "bwa/bwa.h"
+#include "bwa/bwt.h"
+#include "bwa/bwamem.h"
+#include "bwa/kvec.h"
+#include "bwa/bntseq.h"
+#include "bwa/kseq.h"
+#include "bwa/utils.h"
+
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"
 #endif
