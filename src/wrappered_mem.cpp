@@ -492,6 +492,13 @@ void mem_chain2aln_hw(
         a->score = a->truesc = -1;
         a->rid = c->rid;
         GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)&seqs[i],seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
+        for (int n=0;a->seedcov = 0;n <c->n; ++n){
+          const mem_seed_t *t = &c->seeds[n];
+          if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) 			a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+	}
+        a->w = aw[0]>aw[1]?aw[0]:aw[1];
+        a->seedlen0 = s->len;
+        a->frac_rep = s->frac_rep;
       }
       free(srt); free(rseq);
     }
@@ -508,7 +515,7 @@ void mem_chain2aln_hw(
             av[i].a[j].qb = SwResult[numoftask].qBeg;
             av[i].a[j].rb = SwResult[numoftask].rBeg;
             av[i].a[j].truesc = SwResult[numoftask].trueScore;
-            //compute the seedcov
+
         }
       }
     }
