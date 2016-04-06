@@ -123,7 +123,7 @@ void GetTask(mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uint8_t *
   }
 }
 
-int Int2CharArray(char* arr, int idx, int num)
+inline int Int2CharArray(char* arr, int idx, int num)
 {
   arr[idx] = (char)(num&0xff);
   arr[idx+1] = (char)((num>>8)&0xff);
@@ -132,7 +132,7 @@ int Int2CharArray(char* arr, int idx, int num)
   return idx+4 ;
 }
 
-int Short2CharArray(char *arr, int idx, short num)
+inline int Short2CharArray(char *arr, int idx, short num)
 {
   arr[idx] = (char)(num & 0xff);
   arr[idx+1] = (char)((num>>8) & 0xff);
@@ -422,3 +422,98 @@ void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num)
   err_fflush(fp_new);
   err_fclose(fp_new);
 }
+
+static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
+{
+	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
+	int l_ins = (int)((double)(qlen * opt->a - opt->o_ins) / opt->e_ins + 1.);
+	int l = l_del > l_ins? l_del : l_ins;
+	l = l > 1? l : 1;
+	return l < opt->w<<1? l : opt->w<<1;
+}
+
+#define MAX_BAND_TRY  2
+
+void mem_chain2aln_hw(
+    ktp_aux_t *aux,
+    const bseq1_t *seqs,
+    const MemChainVector* chains,
+    mem_alnreg_v *av,
+    int batch_num)
+{
+  int numoftask = 0;
+  ExtParam *SwTask ;                // maybe allocate the memory first or use vector
+  ExtRet *SwResult ;
+  for(int i=0; i<batch_num; i++)    // loop for each seq
+  {
+    kv_init(av[i]);
+    for (int j=0; j<chains[i].n; j++) {    // loop for each chain
+      mem_chain_t *c = &chains[i].a[j];
+      // ----------------------------------prepare the maxspan and rseq for each seed
+      int rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
+      int64_t l_pac = aux->idx->bns->l_pac, rmax[2], tmp, max = 0;
+      const mem_seed_t *s;
+      uint8_t *rseq = 0;
+      uint64_t *srt;
+      if (c->n == 0) continue;
+      // get the max possible span
+      rmax[0] = l_pac<<1; rmax[1] = 0;
+      for (int k = 0; k < c->n; ++k) {
+        int64_t b, e;
+        const mem_seed_t *t = &c->seeds[k];
+        b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
+        e = t->rbeg + t->len + ((seqs[i].l_seq - t->qbeg - t->len) + cal_max_gap(aux->opt, seqs[i].l_seq - t->qbeg - t->len));
+        rmax[0] = rmax[0] < b? rmax[0] : b;
+        rmax[1] = rmax[1] > e? rmax[1] : e;
+        if (t->len > max) max = t->len;
+      }
+       rmax[0] = rmax[0] > 0? rmax[0] : 0;
+       rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+       if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+         if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+         else rmax[0] = l_pac;
+       }
+      // retrieve the reference sequence
+      rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+      assert(c->rid == rid);
+
+      srt = (uint64_t *)malloc(c->n * 8);
+      for (int l = 0; l < c->n; ++l)
+        srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
+        ks_introsort_64(c->n, srt);
+
+      for (int m = c->n - 1; m >= 0; --m) {   // loop for each seed
+        numoftask += 1;
+        mem_alnreg_t *a;
+        s = &c->seeds[(uint32_t)srt[m]];
+        a = kv_pushp(mem_alnreg_t, av[i]);
+        memset(a, 0, sizeof(mem_alnreg_t));
+        a->w = aw[0] = aw[1] = aux->opt->w;
+        a->score = a->truesc = -1;
+        a->rid = c->rid;
+        GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)&seqs[i],seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
+      }
+      free(srt); free(rseq);
+    }
+  }
+  numoftask = 0;
+  // send to fpga and get the results
+  //---------------------------------
+  for(int i=0; i<batch_num; i++)
+    {
+      for (int j=0; j<chains[i].n; j++){
+        for (int m=chains[i].a[j].n - 1; m>=0; --m){
+            numoftask += 1;
+            av[i].a[j].score = SwResult[numoftask].score;
+            av[i].a[j].qb = SwResult[numoftask].qBeg;
+            av[i].a[j].rb = SwResult[numoftask].rBeg;
+            av[i].a[j].truesc = SwResult[numoftask].trueScore;
+            //compute the seedcov
+        }
+      }
+    }
+}
+
+
+
+
