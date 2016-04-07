@@ -46,6 +46,8 @@ class ExtParam
     int     regScore ;
     int     qBeg    ;
     int     idx    ;
+    int64_t     rBeg   ;    // just for testing on cpu
+    int     seedLength ;
 };
 
 class ExtRet
@@ -119,6 +121,8 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uin
     SwTask->h0 = seed->len*opt->a ;
     SwTask->regScore = seed->len*opt->a ;
     SwTask->qBeg = seed->qbeg ;
+    SwTask->rBeg = seed->rbeg ;     // for testing
+    SwTask->seedLength = seed->len ;
     SwTask->idx = idx ;
   }
 }
@@ -318,27 +322,6 @@ void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *aln
       p->is_alt = 1;
   }
 }
-/*
-void mem_chain2aln_hw(
-    ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const MemChainVector* chains,
-    mem_alnreg_v *av,
-    int batch_num)
-{
-  for(int i=0; i<batch_num; i++)
-  {
-    kv_init(av[i]);
-    for (int j=0; j<chains[i].n; j++) {
-      mem_chain_t *p = &chains[i].a[j];
-
-      // call mem_chain2aln to compute baseline
-      mem_chain2aln(aux->opt, aux->idx->bns, aux->idx->pac,
-          seqs[i].l_seq, (uint8_t*)seqs[i].seq, p, av+i);
-    }
-  }
-}
-*/
 
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg)
@@ -425,6 +408,74 @@ void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num)
   err_fclose(fp_new);
 }
 
+
+#define MAX_BAND_TRY  2
+
+void extendOnCPU(ExtParam *tasks,ExtRet *results,int numoftask,mem_opt_t *opt)
+{
+  for (int i=0;i<numoftask;i++){
+    int aw[2];int max_off[2];
+    if(tasks[i].qBeg){
+      int qle,tle,gtle,gscore;
+      for (int j=0;j<MAX_BAND_TRY;j++){
+        int prev = results[i].score;
+        aw[0] = opt->w<<j;
+        results[i].score = ksw_extend2(tasks[i].leftQlen,tasks[i].leftQs,tasks[i].leftRlen,
+        tasks[i].leftRs,5,opt->mat,tasks[i].oDel,tasks[i].eDel,tasks[i].oIns,tasks[i].eIns,
+        aw[0],tasks[i].penClip5,tasks[i].zdrop,tasks[i].h0,&qle,&tle,&gtle,&gscore,&max_off[0]);
+        if(results[i].score == prev||max_off[0]<(aw[0]>>1)+(aw[0]>>2)) break;
+      }
+      if (gscore <= 0 || gscore <= results[i].score - opt->pen_clip5) { // local extension
+        results[i].qBeg = tasks[i].qBeg- qle;
+        results[i].rBeg = tasks[i].rBeg- tle;
+        results[i].trueScore = results[i].score;
+      }
+      else { // to-end extension
+        results[i].qBeg =0 ;
+        results[i].rBeg =tasks[i].rBeg -gtle;
+        results[i].trueScore = gscore;
+      }
+     // delete(tasks[i].leftQs);
+     // delete(tasks[i].leftRs);
+    }
+    else{
+      results[i].score=results[i].trueScore=tasks[i].h0;
+      results[i].qBeg=0;
+      results[i].rBeg=tasks[i].rBeg;
+    }
+    if(tasks[i].rightQlen){
+      int qle,tle,gtle,gscore,sc0 = results[i].score;
+      for (int j =0;j< MAX_BAND_TRY;++j){
+        int prev = results[i].score;
+        aw[1] = opt->w<<j;
+        results[i].score= ksw_extend2(tasks[i].rightQlen,tasks[i].rightQs,tasks[i].rightRlen,
+        tasks[i].rightRs,5,opt->mat,tasks[i].oDel,tasks[i].eDel,tasks[i].oIns,tasks[i].eIns,
+        aw[0],tasks[i].penClip5,tasks[i].zdrop,sc0,&qle,&tle,&gtle,&gscore,&max_off[1]);
+        if(results[i].score == prev||max_off[1]<(aw[1]>>1)+(aw[1]>>2)) break;
+      }
+      if (gscore <= 0 || gscore <= results[i].score - opt->pen_clip5) {
+        results[i].qEnd = 150-tasks[i].rightQlen + qle;
+        results[i].rEnd = tasks[i].rBeg + tasks[i].seedLength + tle;
+        results[i].trueScore +=results[i].score-sc0;
+      }
+      else{
+        results[i].qEnd = 150;
+        results[i].rEnd = tasks[i].rBeg + tasks[i].seedLength + gtle;
+        results[i].trueScore +=gscore-sc0;
+      }
+    // delete(tasks[i].rightQs);
+    // delete(tasks[i].rightRs);
+    }
+    else{
+      results[i].qEnd = 150;
+      results[i].rEnd = tasks[i].rBeg + tasks[i].seedLength;
+    }
+  }
+}
+
+
+
+
 static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 {
 	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
@@ -434,7 +485,6 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 	return l < opt->w<<1? l : opt->w<<1;
 }
 
-#define MAX_BAND_TRY  2
 
 void mem_chain2aln_hw(
     ktp_aux_t *aux,
@@ -444,11 +494,15 @@ void mem_chain2aln_hw(
     int batch_num)
 {
   int numoftask = 0;
-  ExtParam *SwTask ;                // maybe allocate the memory first or use vector
-  ExtRet *SwResult ;
+  int testCount = 0;
+  ExtParam *SwTask = new ExtParam[batch_num*10];                // maybe allocate the memory first or use vector
+  memset(SwTask,0,batch_num*10*sizeof(ExtParam));
+  ExtRet *SwResult = new ExtRet[batch_num*10];
+  memset(SwResult,0,batch_num*10*sizeof(ExtRet));
   for(int i=0; i<batch_num; i++)    // loop for each seq
   {
     kv_init(av[i]);
+    int z=0;
     for (int j=0; j<chains[i].n; j++) {    // loop for each chain
       mem_chain_t *c = &chains[i].a[j];
       // ----------------------------------prepare the maxspan and rseq for each seed
@@ -485,21 +539,58 @@ void mem_chain2aln_hw(
         ks_introsort_64(c->n, srt);
 
       for (int m = c->n - 1; m >= 0; --m) {   // loop for each seed
-        numoftask += 1;
         mem_alnreg_t *a;
+        testCount +=1;
         s = &c->seeds[(uint32_t)srt[m]];
+        // test extension here
+        for (z=0;z<av[i].n;++z){
+          mem_alnreg_t *p = &av[i].a[z];
+          int64_t rd;
+          int qd,w,max_gap;
+          if (s->rbeg < p->rb || s->rbeg + s->len > p->re ||
+          s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+          if (s->len - p->seedlen0 > .1 * seqs[i].l_seq) continue;
+          qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+          max_gap = cal_max_gap(aux->opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
+          w = max_gap < p->w? max_gap : p->w; // bounded by the band width
+          if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+          // similar to the previous four lines, but this time we look at the region behind
+          qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+          max_gap = cal_max_gap(aux->opt, qd < rd? qd : rd);
+          w = max_gap < p->w? max_gap : p->w;
+          if (qd - rd < w && rd - qd < w) break;
+        }
+        if (z<av[i].n){
+          for (z = m+1;z<c->n;++z){
+            const mem_seed_t *t;
+            if (srt[z] == 0) continue;
+            t = &c->seeds[(uint32_t)srt[z]];
+            if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
+            if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg
+            >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
+            if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg
+            >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+          }
+          if (z == c->n) { // no overlapping seeds; then skip extension
+            srt[m] = 0; // mark that seed extension has not been performed
+            continue;
+          }
+        }
         a = kv_pushp(mem_alnreg_t, av[i]);
         memset(a, 0, sizeof(mem_alnreg_t));
         a->w = aw[0] = aw[1] = aux->opt->w;
         a->score = a->truesc = -1;
         a->rid = c->rid;
-        GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)&seqs[i],seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
-        a->seedcov = 0;
+        GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)seqs[i].seq,seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
+        numoftask += 1;
+        //TODO: add the seedcov compute later
+        /*a->seedcov = 0;
         for (int n=0;n <c->n; ++n){
           const mem_seed_t *t = &c->seeds[n];
-          if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) 			a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
-	}
-        a->w = aw[0]>aw[1]?aw[0]:aw[1];
+          if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re)
+            a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+        }
+        a->w = aw[0]>aw[1]?aw[0]:aw[1];*/
         a->seedlen0 = s->len;
         a->frac_rep = c->frac_rep;
       }
@@ -507,29 +598,31 @@ void mem_chain2aln_hw(
     }
   }
   // numoftask = 0;
-  // send to fpga and get the results
-
-
-
-
-
-
+  // send to fpga and get the results, for now use cpu
+  extendOnCPU(SwTask,SwResult,numoftask,aux->opt);
   //---------------------------------
-  for(int i=0; i<batch_num; i++)
+  numoftask = 0;
+  for (int i=0; i<batch_num; i++)
     {
       for (int j=0; j<chains[i].n; j++){
+      mem_chain_t *c = &chains[i].a[j];
         for (int m=chains[i].a[j].n - 1; m>=0; --m){
-            numoftask += 1;
             av[i].a[j].score = SwResult[numoftask].score;
             av[i].a[j].qb = SwResult[numoftask].qBeg;
             av[i].a[j].rb = SwResult[numoftask].rBeg;
+            av[i].a[j].qe = SwResult[numoftask].qEnd;
+            av[i].a[j].re = SwResult[numoftask].rEnd;
             av[i].a[j].truesc = SwResult[numoftask].trueScore;
-
+            numoftask += 1;
+            for (int n=0;n <c->n; ++n){
+              const mem_seed_t *t = &c->seeds[n];
+              if (t->qbeg >= av[i].a[j].qb && t->qbeg + t->len <= av[i].a[j].qe && t->rbeg >= av[i].a[j].rb && t->rbeg + t->len <= av[i].a[j].re)
+                av[i].a[j].seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+            }
         }
       }
     }
 }
-
 
 
 
