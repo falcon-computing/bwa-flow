@@ -9,12 +9,12 @@
 #endif
 
 //#include "kstring.h"
-#include "bwamem.h"
-#include "bntseq.h"
-#include "ksw.h"
-#include "kvec.h"
-#include "ksort.h"
-#include "utils.h"
+#include "bwa/bwamem.h"
+#include "bwa/bntseq.h"
+#include "bwa/ksw.h"
+#include "bwa/kvec.h"
+#include "bwa/ksort.h"
+#include "bwa/utils.h"
 #include "bwa_wrapper.h"
 
 #ifdef USE_MALLOC_WRAPPERS
@@ -63,7 +63,7 @@ class ExtRet
 
 // The GetTask function get the extension parameters for each seed
 
-void GetTask(mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uint8_t *query,int l_query,int64_t rmax_0, int64_t rmax_1,uint8_t *rseq,int idx)   //      the rmax_0 is rmax[0] and the rseq is the retrieved reference sequence
+void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uint8_t *query,int l_query,int64_t rmax_0, int64_t rmax_1,uint8_t *rseq,int idx)   //      the rmax_0 is rmax[0] and the rseq is the retrieved reference sequence
 {
   if(seed->qbeg>0||(seed->qbeg+seed->len!=l_query))
   {
@@ -318,11 +318,11 @@ void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *aln
       p->is_alt = 1;
   }
 }
-
+/*
 void mem_chain2aln_hw(
     ktp_aux_t *aux,
-    const bseq1_t *seqs, 
-    const MemChainVector* chains, 
+    const bseq1_t *seqs,
+    const MemChainVector* chains,
     mem_alnreg_v *av,
     int batch_num)
 {
@@ -333,11 +333,13 @@ void mem_chain2aln_hw(
       mem_chain_t *p = &chains[i].a[j];
 
       // call mem_chain2aln to compute baseline
-      mem_chain2aln(aux->opt, aux->idx->bns, aux->idx->pac, 
+      mem_chain2aln(aux->opt, aux->idx->bns, aux->idx->pac,
           seqs[i].l_seq, (uint8_t*)seqs[i].seq, p, av+i);
     }
   }
 }
+*/
+
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg)
 {
@@ -492,19 +494,26 @@ void mem_chain2aln_hw(
         a->score = a->truesc = -1;
         a->rid = c->rid;
         GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)&seqs[i],seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
-        for (int n=0;a->seedcov = 0;n <c->n; ++n){
+        a->seedcov = 0;
+        for (int n=0;n <c->n; ++n){
           const mem_seed_t *t = &c->seeds[n];
           if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) 			a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
 	}
         a->w = aw[0]>aw[1]?aw[0]:aw[1];
         a->seedlen0 = s->len;
-        a->frac_rep = s->frac_rep;
+        a->frac_rep = c->frac_rep;
       }
       free(srt); free(rseq);
     }
   }
-  numoftask = 0;
+  // numoftask = 0;
   // send to fpga and get the results
+
+
+
+
+
+
   //---------------------------------
   for(int i=0; i<batch_num; i++)
     {
