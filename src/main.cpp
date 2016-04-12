@@ -16,6 +16,14 @@
 
 #include "bwa_wrapper.h"
 #include "util.h"
+#include <glog/logging.h>
+#include <string>
+
+#include "blaze/AccAgent.h"
+#include "SWClient.h"
+
+#define FPGA_RET_PARAM_NUM 5
+
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
@@ -39,14 +47,19 @@ int main(int argc, char *argv[]) {
   // get the index and the options
   pre_process(argc-1, argv+1, &aux);
 
+    blaze::AccAgent agent("../fpga/blaze-task/conf");
+//    SWClient client;
+    
   int batch_num = 0;
   bseq1_t *seqs = bseq_read(150000, &batch_num, aux.ks, aux.ks2);
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
+  alnreg_hw = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
   MemChainVector* chains = new MemChainVector[batch_num];
-
+  chains = (MemChainVector*)malloc(batch_num*sizeof(MemChainVector));
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(&aux, &seqs[i]);
     chains[i].id_read = i;

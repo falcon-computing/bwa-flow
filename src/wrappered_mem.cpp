@@ -16,11 +16,16 @@
 #include "bwa/ksort.h"
 #include "bwa/utils.h"
 #include "bwa_wrapper.h"
+#include "blaze/AccAgent.h"
+#include "SWClient.h"
+
+#define FPGA_RET_PARAM_NUM 5
+
 
 #ifdef USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
 #endif
-
+#include <vector>
 // hw data structures
 class ExtParam
 {
@@ -76,7 +81,6 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uin
       SwTask->leftQs = new uint8_t[SwTask->leftQlen];
       for(i = 0;i < SwTask->leftQlen; i++)
         SwTask->leftQs[i] = query[SwTask->leftQlen-1-i];
-
       SwTask->leftRlen = seed->rbeg - rmax_0 ;
       SwTask->leftRs = new uint8_t[SwTask->leftRlen];
       for(i = 0; i<SwTask->leftRlen; i++)
@@ -94,13 +98,13 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uin
     if(SwTask->rightQlen > 0)
     {
       SwTask->rightQs   = new uint8_t[SwTask->rightQlen];
-      for(int i = 0;i<=SwTask->rightQlen;i++)
+      for(int i = 0;i<SwTask->rightQlen;i++)
         SwTask->rightQs[i] = query[i+qe];
 
       int re = seed->rbeg + seed->len - rmax_0;
       SwTask->rightRlen = rmax_1 - rmax_0 -re ;
       SwTask->rightRs = new uint8_t[SwTask->rightRlen];
-      for(int i = 0;i<=SwTask->rightRlen; i++)
+      for(int i = 0;i<SwTask->rightRlen; i++)
         SwTask->rightRs[i] = rseq[i+re];
     }
     else
@@ -143,18 +147,20 @@ inline int Short2CharArray(char *arr, int idx, short num)
   return idx+2 ;
 }
 
-void SwFPGA(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
+void SwFPGA(std::vector<ExtParam> SwTask,int BatchNum,ExtRet *SwResult)
 {
+  SWClient client;
+  
   int Buf1Len = 32 + 32*BatchNum;
   char* buf1 = new char[Buf1Len];
   //------------------ store the public options at the beginning-----------------
-  buf1[0] = (char)SwTask->oDel;
-  buf1[1] = (char)SwTask->eDel;
-  buf1[2] = (char)SwTask->oIns;
-  buf1[3] = (char)SwTask->eIns;
-  buf1[4] = (char)SwTask->penClip5;
-  buf1[5] = (char)SwTask->penClip3;
-  buf1[6] = (char)SwTask->w;
+  buf1[0] = (char)SwTask[0].oDel;
+  buf1[1] = (char)SwTask[0].eDel;
+  buf1[2] = (char)SwTask[0].oIns;
+  buf1[3] = (char)SwTask[0].eIns;
+  buf1[4] = (char)SwTask[0].penClip5;
+  buf1[5] = (char)SwTask[0].penClip3;
+  buf1[6] = (char)SwTask[0].w;
   Int2CharArray(buf1,8,BatchNum);
 
   //-------------------pack the batch of parameters of each SW--------------------
@@ -186,11 +192,12 @@ void SwFPGA(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxDel));    // dont know why dont change to short types in the upper lines, but the scala codes did that
-    buf1idx = Int2CharArray(buf1,buf1idx,TaskPos);
+    buf1idx = Int2CharArray(buf1,buf1idx,SwTask[i].idx);
     i = i+1;
   }
 
   char *buf2 = new char[(TaskPos<<2)-Buf1Len];
+  int input_length = TaskPos<<2;
   int buf2idx = 0;
   i = 0;
   int j = 0;
@@ -258,13 +265,211 @@ void SwFPGA(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
     i = i + 1;
   }
 
-  char *buf2fpga = new char[TaskPos<<2];
-  strcat(buf2fpga,buf1);
-  strcat(buf2fpga,buf2);                          // TODO:maybe there is another way to concat the two array, need to be changed
+   int *data_ptr = (int*)client.createInput(0,
+                         1,input_length/4,sizeof(int),BLAZE_INPUT);
+  int* taskNum_ptr = (int*)client.createInput(1,
+                         1,1,sizeof(int),BLAZE_INPUT);
+  *taskNum_ptr = BatchNum;
+  memcpy(data_ptr,buf1,Buf1Len*sizeof(char) );
+  memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
+  FILE *fout = fopen("dump_yh.dat","wb");
+  fwrite(&BatchNum,1,sizeof(int),fout);
+  fwrite(&input_length,1,sizeof(int),fout);
+  fwrite(data_ptr,input_length/4,sizeof(int),fout);
+  fclose(fout);
   delete buf1;
-  delete buf2;
-  // SwExtendFPGA(buf2fpga,BatchNum,SwResult);        //  This function send the packed data to fpga and get the result
+  delete buf2;             
+  client.start();          
+  short* output_ptr = (short*)client.getOutputPtr(0);
+ // ExtRet* results =(ExtRet*) malloc(BatchNum*sizeof(ExtRet));
+  
+  for (int i=0;i<BatchNum;i++){
+     SwResult[i].idx=(int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16|
+     (int)output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].qBeg = output_ptr[2+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].qEnd = output_ptr[3+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].rBeg = output_ptr[4+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].rEnd = output_ptr[5+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
+     SwResult[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+  
+   }
+/*  for (int i = 0;i<BatchNum;i++){
+     SwResult[results[i].idx].idx=results[i].idx;
+     SwResult[results[i].idx].qBeg=results[i].qBeg ;
+     SwResult[results[i].idx].qEnd=results[i].qEnd+ SwTask[results[i].idx].qBeg + SwTask[results[i].idx].seedLength;
+     SwResult[results[i].idx].rBeg=results[i].rBeg+ SwTask[results[i].idx].rBeg ;
+     SwResult[results[i].idx].rEnd=results[i].rEnd+ SwTask[results[i].idx].rBeg + SwTask[results[i].idx].seedLength;
+     SwResult[results[i].idx].score=results[i].score;
+     SwResult[results[i].idx].trueScore=results[i].trueScore;
+     SwResult[results[i].idx].width=results[i].width;
+  }                  
+  free(results);*/
+
+
 }
+void SwFPGA_old(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
+{
+  SWClient client;
+  int Buf1Len = 32 + 32*BatchNum;
+  char* buf1 = new char[Buf1Len];
+  //------------------ store the public options at the beginning-----------------
+  buf1[0] = (char)SwTask->oDel;
+  buf1[1] = (char)SwTask->eDel;
+  buf1[2] = (char)SwTask->oIns;
+  buf1[3] = (char)SwTask->eIns;
+  buf1[4] = (char)SwTask->penClip5;
+  buf1[5] = (char)SwTask->penClip3;
+  buf1[6] = (char)SwTask->w;
+  Int2CharArray(buf1,8,BatchNum);
+
+  //-------------------pack the batch of parameters of each SW--------------------
+  int i = 0;
+  int LeftMaxIns = 0;
+  int LeftMaxDel = 0;
+  int RightMaxIns = 0;
+  int RightMaxDel = 0;
+  int TaskPos = 0 ;
+  TaskPos = Buf1Len >> 2;
+  int buf1idx = 32;
+  while(i < BatchNum)
+  {
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].leftQlen));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].leftRlen));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].rightQlen));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].rightRlen));
+    buf1idx = Int2CharArray(buf1,buf1idx,TaskPos);
+    TaskPos += ((((SwTask[i].leftQlen + SwTask[i].leftRlen + SwTask[i].rightQlen + SwTask[i].rightRlen)+1)/2)+3)/4;
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].regScore));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].qBeg));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].h0));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].idx));
+    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*1+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*1 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
+    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxIns));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
+    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxDel));    // dont know why dont change to short types in the upper lines, but the scala codes did that
+    buf1idx = Int2CharArray(buf1,buf1idx,SwTask[i].idx);
+    i = i+1;
+  }
+
+  char *buf2 = new char[(TaskPos<<2)-Buf1Len];
+  int input_length = TaskPos<<2;
+  int buf2idx = 0;
+  i = 0;
+  int j = 0;
+  int TmpIntVar = 0;
+  int Counter8 = 0;
+  while(i < BatchNum)
+  {
+    if(SwTask[i].leftQlen > 0)
+    {
+      j = 0;
+      while(j < SwTask[i].leftQlen)
+      {
+        Counter8 = Counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].leftQs[j] & 0x0f);
+        if(Counter8 % 8 ==0)
+          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
+        j = j + 1;
+      }
+    }
+    if(SwTask[i].rightQlen > 0)
+    {
+      j = 0;
+      while(j < SwTask[i].rightQlen)
+      {
+        Counter8 = Counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].rightQs[j] & 0x0f);
+        if(Counter8 % 8 ==0)
+          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
+        j = j + 1;
+      }
+    }
+    if(SwTask[i].leftRlen > 0)
+    {
+      j = 0;
+      while(j < SwTask[i].leftRlen)
+      {
+        Counter8 = Counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].leftRs[j] & 0x0f);
+        if(Counter8 % 8 ==0)
+          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
+        j = j + 1;
+      }
+    }
+    if(SwTask[i].rightRlen > 0)
+    {
+      j = 0;
+      while(j < SwTask[i].rightRlen)
+      {
+        Counter8 = Counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].rightRs[j] & 0x0f);
+        if(Counter8 % 8 ==0)
+          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
+        j = j + 1;
+      }
+    }
+    if(Counter8 %8 != 0)
+    {
+      while(Counter8 %8 != 0 )
+      {
+        TmpIntVar = TmpIntVar << 4;
+        Counter8 = Counter8 + 1;
+      }
+      buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
+    }
+    i = i + 1;
+  }
+
+   int *data_ptr = (int*)client.createInput(0,
+                         1,input_length/4,sizeof(int),BLAZE_INPUT);
+  int* taskNum_ptr = (int*)client.createInput(1,
+                         1,1,sizeof(int),BLAZE_INPUT);
+  *taskNum_ptr = BatchNum;
+  memcpy(data_ptr,buf1,Buf1Len*sizeof(char) );
+  memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          // TODO:maybe there is another way to concat the two array, need to be changed
+  FILE *fout = fopen("dump_yh.dat","wb");
+  fwrite(&BatchNum,1,sizeof(int),fout);
+  fwrite(&input_length,1,sizeof(int),fout);
+  fwrite(data_ptr,input_length/4,sizeof(int),fout);
+  fclose(fout);
+  delete buf1;
+  delete buf2;             
+ // delete buf2fpga;
+  client.start();          
+  short* output_ptr = (short*)client.getOutputPtr(0);
+  ExtRet* results =(ExtRet*) malloc(BatchNum*sizeof(ExtRet));
+  
+  for (int i=0;i<BatchNum;i++){
+     results[i].idx=(int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16|
+     (int)output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
+     results[i].qBeg = output_ptr[2+FPGA_RET_PARAM_NUM*2*i];
+     results[i].qEnd = output_ptr[3+FPGA_RET_PARAM_NUM*2*i];
+     results[i].rBeg = output_ptr[4+FPGA_RET_PARAM_NUM*2*i];
+     results[i].rEnd = output_ptr[5+FPGA_RET_PARAM_NUM*2*i];
+     results[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
+     results[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
+     results[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+  
+   }
+  for (int i = 0;i<BatchNum;i++){
+     SwResult[results[i].idx].idx=results[i].idx;
+     SwResult[results[i].idx].qBeg=results[i].qBeg ;
+     SwResult[results[i].idx].qEnd=results[i].qEnd+ SwTask[i].qBeg + SwTask[i].seedLength;
+     SwResult[results[i].idx].rBeg=results[i].rBeg+ SwTask[i].rBeg ;
+     SwResult[results[i].idx].rEnd=results[i].rEnd+ SwTask[i].rBeg + SwTask[i].seedLength;
+     SwResult[results[i].idx].score=results[i].score;
+     SwResult[results[i].idx].trueScore=results[i].trueScore;
+     SwResult[results[i].idx].width=results[i].width;
+  }                  
+  free(results);
+}
+
 
 
 void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM)
@@ -411,7 +616,7 @@ void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num)
 
 #define MAX_BAND_TRY  2
 
-void extendOnCPU(ExtParam *tasks,ExtRet *results,int numoftask,mem_opt_t *opt)
+void extendOnCPU(std::vector<ExtParam> tasks,ExtRet *results,int numoftask,mem_opt_t *opt)
 {
   for (int i=0;i<numoftask;i++){
     int aw[2];int max_off[2];
@@ -435,8 +640,6 @@ void extendOnCPU(ExtParam *tasks,ExtRet *results,int numoftask,mem_opt_t *opt)
         results[i].rBeg =tasks[i].rBeg -gtle;
         results[i].trueScore = gscore;
       }
-     // delete(tasks[i].leftQs);
-     // delete(tasks[i].leftRs);
     }
     else{
       results[i].score=results[i].trueScore=tasks[i].h0;
@@ -463,14 +666,15 @@ void extendOnCPU(ExtParam *tasks,ExtRet *results,int numoftask,mem_opt_t *opt)
         results[i].rEnd = tasks[i].rBeg + tasks[i].seedLength + gtle;
         results[i].trueScore +=gscore-sc0;
       }
-    // delete(tasks[i].rightQs);
-    // delete(tasks[i].rightRs);
     }
     else{
       results[i].qEnd = 150;
       results[i].rEnd = tasks[i].rBeg + tasks[i].seedLength;
     }
+    results[i].width = aw[0] > aw[1]? aw[0] : aw[1];
+    results[i].idx= tasks[i].idx;
   }
+
 }
 
 
@@ -486,6 +690,154 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 }
 
 
+class preResultofSw{
+public:
+   int64_t *rmax;
+   uint8_t *rseq;
+   uint64_t *srt;
+   preResultofSw(int64_t *_rmax,uint8_t *_rseq,uint64_t *_srt)
+    :rseq(_rseq),srt(_srt)
+   {
+     rmax = new int64_t[2];
+     rmax[0]= _rmax[0];
+     rmax[1]=_rmax[1];
+   };
+};
+
+
+bool initCoordinates(int coordinates[][2],const MemChainVector *chains,int numofreads)
+{ 
+  bool isfinished = true;
+  for (int i =0;i<numofreads;i++){
+    coordinates[i][0]=0;
+    if(&chains[i]!=NULL&&chains[i].n>0){
+      coordinates[i][1]=chains[i].a[0].n-1;
+       isfinished = false;
+    }
+    else coordinates[i][1]= -1;
+  } 
+  return isfinished;
+}
+
+class increRes{
+public:
+  bool isfinished;
+  int start; 
+  int end;
+  increRes(bool _isfinished,int _start,int _end): 
+    isfinished(_isfinished),start(_start),end(_end)
+    {};
+};
+
+increRes incrementCoordinates(int coordinates[][2],const MemChainVector *chains,int numofreads,int start,int end)
+{
+  bool isfinished = true;
+  int curstart = start;
+  int curend = end;
+  while(curstart < curend && isfinished == true){
+    if(&chains[curstart]==NULL) curstart +=1;
+    else if(coordinates[curstart][1]<0) curstart +=1;
+    else if(coordinates[curstart][1]==0 &&coordinates[curstart][0]==chains[curstart].n-1)
+      curstart +=1;
+    else
+      isfinished = false;
+  }
+  bool endflag = true;
+  while(curstart<curend-1&&endflag==true){
+    if(&chains[curend-1]==NULL) curend -=1;
+    else if(coordinates[curend-1][1]<0) curend-=1;
+    else if(coordinates[curend-1][1]==0&&coordinates[curend-1][0]==chains[curend-1].n-1)
+      curend-=1;
+    else endflag = false;
+  } 
+  int i = curstart;
+  while (i <curend){
+    if(&chains[i]!=NULL){
+      if(coordinates[i][1]>0)
+         coordinates[i][1]-=1;   
+      else if(coordinates[i][1]==0){
+        if(coordinates[i][0]==chains[i].n-1)
+          coordinates[i][1]= -1;
+        else{
+          coordinates[i][0]+=1;
+          coordinates[i][1]=chains[i].a[coordinates[i][0]].n-1; 
+        }
+      }
+    } 
+    i = i+1;
+  } 
+  increRes ret(isfinished,curstart,curend);
+  return ret;
+}
+
+int testExtension(mem_opt_t *opt,mem_seed_t seed,mem_alnreg_v alnregv)
+{
+  long rdist = -1;
+  int qdist = -1;  
+  int maxgap = -1;
+  int mindist = -1;
+  int w = -1;
+  int breakidx = 0;
+  bool isbreak = false;
+  int i = 0;
+  while(i<alnregv.n&&!isbreak){
+    if(seed.rbeg>=alnregv.a[i].rb&&(seed.rbeg+seed.len)<=alnregv.a[i].re&&
+      seed.qbeg>=alnregv.a[i].qb&&(seed.qbeg+seed.len)<=alnregv.a[i].qe){
+      qdist = seed.qbeg - alnregv.a[i].qb;
+      rdist = seed.rbeg - alnregv.a[i].rb;
+      mindist =(qdist<rdist)?qdist:(int)rdist;
+      maxgap = cal_max_gap(opt,mindist);
+      w = (maxgap<opt->w)? maxgap:opt->w ;
+      if((qdist-rdist)<w &&(rdist-qdist)<w) {
+        breakidx = i;
+        isbreak = true;
+      }
+      if(!isbreak){
+        qdist = alnregv.a[i].qe -(seed.qbeg + seed.len);
+        rdist = alnregv.a[i].re - (seed.rbeg + seed.len);
+        mindist =(qdist<rdist)?qdist:(int)rdist;
+        maxgap = cal_max_gap(opt,mindist);
+        w = (maxgap<opt->w)? maxgap:opt->w ;
+        if((qdist-rdist)<w &&(rdist-qdist)<w) {
+          breakidx = i;
+          isbreak = true;
+        } 
+         
+      }
+    }
+    i+=1;
+  }
+  if(isbreak) return breakidx;
+  else return i ; 
+}
+
+int checkoverlap(int startidx,mem_seed_t seed,mem_chain_t chain,uint64_t *srt)
+{
+  int breakidx = chain.n;
+  int i = startidx;
+  bool isbreak = false;
+  while(i<chain.n &&!isbreak){
+    if(srt[i]!=0){
+      mem_seed_t targetseed= chain.seeds[(uint32_t)srt[i]];
+      if(targetseed.len >=seed.len*0.95){
+        if(seed.qbeg<=targetseed.qbeg&&(seed.qbeg+seed.len-targetseed.qbeg)>=(seed.len>>2)&&
+           (targetseed.qbeg-seed.qbeg)!=(targetseed.qbeg-seed.rbeg)){
+          breakidx = i;
+          isbreak = true;
+        }
+        if(!isbreak&&targetseed.qbeg<=seed.qbeg&&( targetseed.qbeg+targetseed.len-seed.qbeg)>=
+            (seed.len>>2)&&(seed.qbeg-targetseed.qbeg)!=(seed.rbeg-targetseed.rbeg)){
+          breakidx = i;
+          isbreak = true;
+        }
+      }   
+    }
+    i +=1;
+  }
+  if(isbreak) return breakidx;
+  else return i;
+}
+
 void mem_chain2aln_hw(
     ktp_aux_t *aux,
     const bseq1_t *seqs,
@@ -495,20 +847,16 @@ void mem_chain2aln_hw(
 {
   int numoftask = 0;
   int testCount = 0;
-  ExtParam *SwTask = new ExtParam[batch_num*10];                // maybe allocate the memory first or use vector
-  memset(SwTask,0,batch_num*10*sizeof(ExtParam));
-  ExtRet *SwResult = new ExtRet[batch_num*10];
-  memset(SwResult,0,batch_num*10*sizeof(ExtRet));
-  for(int i=0; i<batch_num; i++)    // loop for each seq
+  std::vector<ExtParam> sw_task_v;
+  std::vector<std::vector<preResultofSw>> preResultofSw_m; 
+  int64_t l_pac = aux->idx->bns->l_pac;
+  int rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
+  for (int i=0; i<batch_num; i++)   //loop for each seq
   {
-    kv_init(av[i]);
-    int z=0;
-    for (int j=0; j<chains[i].n; j++) {    // loop for each chain
-      mem_chain_t *c = &chains[i].a[j];
-      // ----------------------------------prepare the maxspan and rseq for each seed
-      int rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-      int64_t l_pac = aux->idx->bns->l_pac, rmax[2], tmp, max = 0;
-      const mem_seed_t *s;
+    std::vector<preResultofSw> preResultofSw_v;
+    for (int j=0;j<chains[i].n;j++){
+      mem_chain_t *c = &chains[i].a[j]; // ------------prepare the maxspan and rseq for each seed
+      int64_t rmax[2], tmp, max = 0;
       uint8_t *rseq = 0;
       uint64_t *srt;
       if (c->n == 0) continue;
@@ -518,7 +866,8 @@ void mem_chain2aln_hw(
         int64_t b, e;
         const mem_seed_t *t = &c->seeds[k];
         b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
-        e = t->rbeg + t->len + ((seqs[i].l_seq - t->qbeg - t->len) + cal_max_gap(aux->opt, seqs[i].l_seq - t->qbeg - t->len));
+        e = t->rbeg + t->len + ((seqs[i].l_seq - t->qbeg - t->len)
+            + cal_max_gap(aux->opt, seqs[i].l_seq - t->qbeg - t->len));
         rmax[0] = rmax[0] < b? rmax[0] : b;
         rmax[1] = rmax[1] > e? rmax[1] : e;
         if (t->len > max) max = t->len;
@@ -536,92 +885,97 @@ void mem_chain2aln_hw(
       srt = (uint64_t *)malloc(c->n * 8);
       for (int l = 0; l < c->n; ++l)
         srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
-        ks_introsort_64(c->n, srt);
-
-      for (int m = c->n - 1; m >= 0; --m) {   // loop for each seed
-        mem_alnreg_t *a;
-        testCount +=1;
-        s = &c->seeds[(uint32_t)srt[m]];
-        // test extension here
-        for (z=0;z<av[i].n;++z){
-          mem_alnreg_t *p = &av[i].a[z];
-          int64_t rd;
-          int qd,w,max_gap;
-          if (s->rbeg < p->rb || s->rbeg + s->len > p->re ||
-          s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
-          if (s->len - p->seedlen0 > .1 * seqs[i].l_seq) continue;
-          qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
-          max_gap = cal_max_gap(aux->opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
-          w = max_gap < p->w? max_gap : p->w; // bounded by the band width
-          if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
-          // similar to the previous four lines, but this time we look at the region behind
-          qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-          max_gap = cal_max_gap(aux->opt, qd < rd? qd : rd);
-          w = max_gap < p->w? max_gap : p->w;
-          if (qd - rd < w && rd - qd < w) break;
-        }
-        if (z<av[i].n){
-          for (z = m+1;z<c->n;++z){
-            const mem_seed_t *t;
-            if (srt[z] == 0) continue;
-            t = &c->seeds[(uint32_t)srt[z]];
-            if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
-            if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg
-            >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
-            if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg
-            >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
-          }
-          if (z == c->n) { // no overlapping seeds; then skip extension
-            srt[m] = 0; // mark that seed extension has not been performed
-            continue;
-          }
-        }
-        a = kv_pushp(mem_alnreg_t, av[i]);
-        memset(a, 0, sizeof(mem_alnreg_t));
-        a->w = aw[0] = aw[1] = aux->opt->w;
-        a->score = a->truesc = -1;
-        a->rid = c->rid;
-        GetTask(s,aux->opt,&SwTask[numoftask],(const uint8_t*)seqs[i].seq,seqs[i].l_seq,rmax[0],rmax[1],rseq,numoftask);
-        numoftask += 1;
-        //TODO: add the seedcov compute later
-        /*a->seedcov = 0;
-        for (int n=0;n <c->n; ++n){
-          const mem_seed_t *t = &c->seeds[n];
-          if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re)
-            a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
-        }
-        a->w = aw[0]>aw[1]?aw[0]:aw[1];*/
-        a->seedlen0 = s->len;
-        a->frac_rep = c->frac_rep;
-      }
-      free(srt); free(rseq);
-    }
+      ks_introsort_64(c->n, srt);
+      preResultofSw preresult(rmax,rseq,srt);
+      preResultofSw_v.push_back(preresult);    
+    } 
+    preResultofSw_m.push_back(preResultofSw_v);
+  } 
+  int coordinates[batch_num][2];
+  bool isfinished= initCoordinates(coordinates,chains,batch_num); 
+  int extensionflags[batch_num];
+  int overlapflags[batch_num];
+  mem_seed_t **seedarray = new mem_seed_t*[batch_num];
+  bool regflags[batch_num];
+  int start = 0;
+  int end = batch_num ;
+  int taskidx = 0;
+  mem_alnreg_t *newregs=new mem_alnreg_t[batch_num];
+  newregs = (mem_alnreg_t*)malloc(batch_num*sizeof(mem_alnreg_t));
+  for (int i=0;i<batch_num; i++){
+    kv_init(av[i]);
   }
-  // numoftask = 0;
-  // send to fpga and get the results, for now use cpu
-  extendOnCPU(SwTask,SwResult,numoftask,aux->opt);
-  //---------------------------------
-  numoftask = 0;
-  for (int i=0; i<batch_num; i++)
-    {
-      for (int j=0; j<chains[i].n; j++){
-      mem_chain_t *c = &chains[i].a[j];
-        for (int m=chains[i].a[j].n - 1; m>=0; --m){
-            av[i].a[j].score = SwResult[numoftask].score;
-            av[i].a[j].qb = SwResult[numoftask].qBeg;
-            av[i].a[j].rb = SwResult[numoftask].rBeg;
-            av[i].a[j].qe = SwResult[numoftask].qEnd;
-            av[i].a[j].re = SwResult[numoftask].rEnd;
-            av[i].a[j].truesc = SwResult[numoftask].trueScore;
-            numoftask += 1;
-            for (int n=0;n <c->n; ++n){
-              const mem_seed_t *t = &c->seeds[n];
-              if (t->qbeg >= av[i].a[j].qb && t->qbeg + t->len <= av[i].a[j].qe && t->rbeg >= av[i].a[j].rb && t->rbeg + t->len <= av[i].a[j].re)
-                av[i].a[j].seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
-            }
+  while(!isfinished){
+    taskidx = 0;
+    int i =start;
+    while (i <end){
+      regflags[i]= false;
+      if(coordinates[i][1]>=0){
+        seedarray[i]=& chains[i].
+        a[coordinates[i][0]].
+        seeds[(uint32_t)(preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]])];
+        extensionflags[i]=testExtension(aux->opt,*seedarray[i],av[i]);
+        overlapflags[i]= -1;
+        if(extensionflags[i]<av[i].n)
+          overlapflags[i]= checkoverlap(coordinates[i][1]+1,*seedarray[i],chains[i].a[coordinates[i][0]],
+              preResultofSw_m[i][coordinates[i][0]].srt);   
+        if(extensionflags[i]<av[i].n&&overlapflags[i]==chains[i].a[coordinates[i][0]].n)
+              preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]]= 0;
+        else{
+          regflags[i]=true;
+          newregs[i].score = seedarray[i]->len*aux->opt->a;
+          newregs[i].truesc = seedarray[i]->len*aux->opt->a;
+          newregs[i].qb = 0;
+          newregs[i].rb = seedarray[i]->rbeg;
+          newregs[i].qe = seqs[i].l_seq;
+          newregs[i].re = seedarray[i]->rbeg + seedarray[i]->len; 
+          newregs[i].rid = chains[i].a[coordinates[i][0]].rid;
+          newregs[i].seedlen0 = seedarray[i]->len; 
+          ExtParam sw_task_temp;
+          GetTask(seedarray[i],aux->opt,&sw_task_temp,(const uint8_t*)seqs[i].seq,
+                  seqs[i].l_seq,preResultofSw_m[i][coordinates[i][0]].rmax[0] ,
+                  preResultofSw_m[i][coordinates[i][0]].rmax[1],
+                  preResultofSw_m[i][coordinates[i][0]].rseq,
+                  i);
+        sw_task_v.push_back(sw_task_temp);
+        taskidx += 1;
         }
       }
+      i = i+1;
     }
+    ExtRet* SwResults = new ExtRet[taskidx]; 
+    ExtRet* SwResultsCPU = new ExtRet[taskidx]; 
+    if(taskidx>=20){                                       // start the sw compute both on fpga and cpu   
+      SwFPGA(sw_task_v,taskidx,SwResults);
+    }
+    else{
+      extendOnCPU(sw_task_v,SwResults,taskidx,aux->opt);
+    }
+    i = 0;  
+    while(i<taskidx){
+      int tmpidx = SwResults[i].idx;
+      newregs[tmpidx].qb = SwResults[i].qBeg;
+      newregs[tmpidx].rb = SwResults[i].rBeg + seedarray[tmpidx]->rbeg;
+      newregs[tmpidx].qe = SwResults[i].qEnd + seedarray[tmpidx]->qbeg +seedarray[tmpidx]->len;
+      newregs[tmpidx].re = SwResults[i].rEnd + seedarray[tmpidx]->rbeg +seedarray[tmpidx]->len; 
+      newregs[tmpidx].score = SwResults[i].score; 
+      newregs[tmpidx].truesc = SwResults[i].trueScore; 
+      newregs[tmpidx].w = SwResults[i].width;
+      i = i+1;
+    }
+    i = start;
+    while(i<end){
+      if(regflags[i]==true){
+        newregs[i].seedcov=0;  // TODO:add the seedcov compute function
+        kv_push(mem_alnreg_t,av[i],newregs[i]);
+      }
+      i = i+1;
+    }
+    increRes nextiter = incrementCoordinates(coordinates,chains,batch_num,start,end);
+    isfinished = nextiter.isfinished;
+    start = nextiter.start;
+    end = nextiter.end; 
+  }
 }
 
 
