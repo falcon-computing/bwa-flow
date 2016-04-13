@@ -70,10 +70,13 @@ class ExtRet
 
 // The GetTask function get the extension parameters for each seed
 
-void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uint8_t *query,int l_query,int64_t rmax_0, int64_t rmax_1,uint8_t *rseq,int idx)   //      the rmax_0 is rmax[0] and the rseq is the retrieved reference sequence
+void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_task_v,
+             const uint8_t *query,int l_query,int64_t rmax_0, int64_t rmax_1,uint8_t *rseq ,
+             int idx, int *taskidx) 
 {
   if(seed->qbeg>0||(seed->qbeg+seed->len!=l_query))
   {
+    ExtParam *SwTask = new ExtParam;
     int i = 0;
     SwTask->leftQlen = seed->qbeg;
     if(SwTask->leftQlen > 0)
@@ -100,7 +103,6 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uin
       SwTask->rightQs   = new uint8_t[SwTask->rightQlen];
       for(int i = 0;i<SwTask->rightQlen;i++)
         SwTask->rightQs[i] = query[i+qe];
-
       int re = seed->rbeg + seed->len - rmax_0;
       SwTask->rightRlen = rmax_1 - rmax_0 -re ;
       SwTask->rightRs = new uint8_t[SwTask->rightRlen];
@@ -128,6 +130,8 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,ExtParam *SwTask , const uin
     SwTask->rBeg = seed->rbeg ;     // for testing
     SwTask->seedLength = seed->len ;
     SwTask->idx = idx ;
+   (*sw_task_v).push_back(*SwTask);
+    *taskidx = *taskidx +1;
   }
 }
 
@@ -272,11 +276,11 @@ void SwFPGA(std::vector<ExtParam> SwTask,int BatchNum,ExtRet *SwResult)
   *taskNum_ptr = BatchNum;
   memcpy(data_ptr,buf1,Buf1Len*sizeof(char) );
   memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
-  FILE *fout = fopen("dump_yh.dat","wb");
-  fwrite(&BatchNum,1,sizeof(int),fout);
-  fwrite(&input_length,1,sizeof(int),fout);
-  fwrite(data_ptr,input_length/4,sizeof(int),fout);
-  fclose(fout);
+ // FILE *fout = fopen("dump_yh.dat","wb");
+ // fwrite(&BatchNum,1,sizeof(int),fout);
+ // fwrite(&input_length,1,sizeof(int),fout);
+ // fwrite(data_ptr,input_length/4,sizeof(int),fout);
+ // fclose(fout);
   delete buf1;
   delete buf2;             
   client.start();          
@@ -293,21 +297,7 @@ void SwFPGA(std::vector<ExtParam> SwTask,int BatchNum,ExtRet *SwResult)
      SwResult[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
      SwResult[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
      SwResult[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
-  
    }
-/*  for (int i = 0;i<BatchNum;i++){
-     SwResult[results[i].idx].idx=results[i].idx;
-     SwResult[results[i].idx].qBeg=results[i].qBeg ;
-     SwResult[results[i].idx].qEnd=results[i].qEnd+ SwTask[results[i].idx].qBeg + SwTask[results[i].idx].seedLength;
-     SwResult[results[i].idx].rBeg=results[i].rBeg+ SwTask[results[i].idx].rBeg ;
-     SwResult[results[i].idx].rEnd=results[i].rEnd+ SwTask[results[i].idx].rBeg + SwTask[results[i].idx].seedLength;
-     SwResult[results[i].idx].score=results[i].score;
-     SwResult[results[i].idx].trueScore=results[i].trueScore;
-     SwResult[results[i].idx].width=results[i].width;
-  }                  
-  free(results);*/
-
-
 }
 void SwFPGA_old(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
 {
@@ -907,6 +897,7 @@ void mem_chain2aln_hw(
   }
   while(!isfinished){
     taskidx = 0;
+    int64_t pre_st= blaze::getUs();
     int i =start;
     while (i <end){
       regflags[i]= false;
@@ -931,22 +922,35 @@ void mem_chain2aln_hw(
           newregs[i].re = seedarray[i]->rbeg + seedarray[i]->len; 
           newregs[i].rid = chains[i].a[coordinates[i][0]].rid;
           newregs[i].seedlen0 = seedarray[i]->len; 
-          ExtParam sw_task_temp;
+         /* ExtParam sw_task_temp;
           GetTask(seedarray[i],aux->opt,&sw_task_temp,(const uint8_t*)seqs[i].seq,
                   seqs[i].l_seq,preResultofSw_m[i][coordinates[i][0]].rmax[0] ,
                   preResultofSw_m[i][coordinates[i][0]].rmax[1],
                   preResultofSw_m[i][coordinates[i][0]].rseq,
                   i);
-        sw_task_v.push_back(sw_task_temp);
-        taskidx += 1;
+          sw_task_v.push_back(sw_task_temp);
+          taskidx += 1;*/                                  //the old GetTask function
+          GetTask(seedarray[i],aux->opt,&sw_task_v,(const uint8_t*)seqs[i].seq,
+                  seqs[i].l_seq,preResultofSw_m[i][coordinates[i][0]].rmax[0] ,
+                  preResultofSw_m[i][coordinates[i][0]].rmax[1],
+                  preResultofSw_m[i][coordinates[i][0]].rseq,
+                  i,&taskidx);
         }
       }
       i = i+1;
     }
+    int64_t cost_pre = blaze::getUs()-pre_st;
+    printf("prepare tasks used %dus\n",cost_pre);
     ExtRet* SwResults = new ExtRet[taskidx]; 
     ExtRet* SwResultsCPU = new ExtRet[taskidx]; 
     if(taskidx>=20){                                       // start the sw compute both on fpga and cpu   
+      int64_t start_ts_hw = blaze::getUs();
       SwFPGA(sw_task_v,taskidx,SwResults);
+      int64_t cost_hw = blaze::getUs()-start_ts_hw;
+      int64_t start_ts_sw = blaze::getUs();
+      extendOnCPU(sw_task_v,SwResultsCPU,taskidx,aux->opt);
+      int64_t cost_sw = blaze::getUs()-start_ts_sw;
+      printf("hw used %dus and sw used %dus in %d tasks\n",cost_hw,cost_sw,taskidx); 
     }
     else{
       extendOnCPU(sw_task_v,SwResults,taskidx,aux->opt);
