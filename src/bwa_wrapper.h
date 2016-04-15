@@ -1,7 +1,6 @@
 #ifndef STRUCTURESNEW_H_INCLUDED
 #define STRUCTURESNEW_H_INCLUDED
 
-
 #include <zlib.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -9,6 +8,7 @@
 #include <limits.h>
 #include <ctype.h>
 #include <math.h>
+#include <string>
 #include "bwa/bwa.h"
 #include "bwa/bwt.h"
 #include "bwa/bwamem.h"
@@ -17,6 +17,8 @@
 #include "bwa/kseq.h"
 #include "bwa/utils.h"
 
+#include "blaze/AccAgent.h"
+
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"
 #endif
@@ -24,9 +26,8 @@ extern "C"{
 KSEQ_DECLARE(gzFile)
 }
 
-
-
-
+extern blaze::AccAgent* agent;
+const std::string acc_id = "SmithWaterman";
 
 class ktp_aux_t{
 public:
@@ -132,4 +133,5 @@ void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_
 smem_aux_t *smem_aux_init();
 void smem_aux_destroy(smem_aux_t *a);
 int usage();
+
 #endif // STRUCTURESNEW_H_INCLUDED

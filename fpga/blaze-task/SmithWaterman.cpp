@@ -10,6 +10,8 @@
 #include "blaze/Task.h" 
 #include "OpenCLEnv.h" 
 
+#define FPGA_RET_PARAM_NUM 5
+
 using namespace blaze;
 
 class SmithWaterman : public Task {
@@ -49,7 +51,7 @@ public:
       // get the pointer to input/output data
       cl_mem ocl_input  = *((cl_mem*)getInput(0));
       cl_mem ocl_output = *((cl_mem*)getOutput(
-            0, data_size, 1, sizeof(int)));
+            0, FPGA_RET_PARAM_NUM*task_num, 1, sizeof(int)));
 
       if (!ocl_input || !ocl_output) {
         throw std::runtime_error("Buffer are not allocated");
@@ -74,7 +76,6 @@ public:
 
       ocl_env->unlock();
       clWaitForEvents(1, &event);
-
     }
     catch (std::runtime_error &e) {
       throw e;

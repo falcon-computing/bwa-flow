@@ -4,7 +4,6 @@
 #include <string>
 
 #include "blaze/AccAgent.h"
-#include "SWClient.h"
 
 #define FPGA_RET_PARAM_NUM 5
 
@@ -17,8 +16,8 @@ int main(int argc, char** argv) {
   }
 
   try {
+    std::string acc_id = "SmithWaterman";
     blaze::AccAgent agent(argv[2]);
-    SWClient client;
 
     FILE* fin = fopen(dump_fname, "rb");
     if (!fin) {
@@ -36,22 +35,22 @@ int main(int argc, char** argv) {
 
     int output_size  = FPGA_RET_PARAM_NUM*task_num;
 
-    int* data_ptr    = (int*)client.createInput(0, 
-                           1, data_size, sizeof(int), BLAZE_INPUT);
-    int* taskNum_ptr = (int*)client.createInput(1,
-                           1, 1, sizeof(int), BLAZE_INPUT);
-
-    *taskNum_ptr = task_num;
+    int* data_ptr   = new int[data_size];
+    int* output_ptr = new int[output_size];
 
     // read from file
     fread(data_ptr, sizeof(int), data_size, fin);
 
-    uint64_t start_ts = blaze::getUs();
     // start computation
-    client.start();
-    printf("elapsed time for client: %dus\n", blaze::getUs()-start_ts);
+    uint64_t start_ts = blaze::getUs();
 
-    int* output_ptr  = (int*)client.getOutputPtr(0);
+    blaze::Task_ptr task = agent.createTask(acc_id);
+    agent.writeInput(task, acc_id, data_ptr, 1, data_size, sizeof(int));
+    agent.writeInput(task, acc_id, &task_num, 1, 1, sizeof(int));
+
+    agent.readOutput(task, output_ptr, output_size*sizeof(int));
+
+    printf("elapsed time for client: %dus\n", blaze::getUs()-start_ts);
 
     int* results = (int*) malloc(output_size*sizeof(int));
     fread(results, output_size, sizeof(int), fin);
@@ -63,7 +62,7 @@ int main(int argc, char** argv) {
     for (int k=0; k<output_size; k++) {
       if (output_ptr[k] != results[k]) {
         correct = false;
-        //printf("%d != %d\n", results[k], results_base[k]);
+        //printf("%d != %d\n", output_ptr[k], results[k]);
         err_count++;
       }
     }
@@ -73,6 +72,9 @@ int main(int argc, char** argv) {
     else {
       printf("%d/%d Results incorrect\n", err_count, output_size);
     }
+
+    delete [] data_ptr;
+    delete [] output_ptr;
   }
   catch (std::exception &e) {
     printf("%s\n", e.what());

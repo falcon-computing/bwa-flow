@@ -16,11 +16,8 @@
 #include "bwa/ksort.h"
 #include "bwa/utils.h"
 #include "bwa_wrapper.h"
-#include "blaze/AccAgent.h"
-#include "SWClient.h"
 
 #define FPGA_RET_PARAM_NUM 5
-
 
 #ifdef USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
@@ -153,8 +150,6 @@ inline int Short2CharArray(char *arr, int idx, short num)
 
 void SwFPGA(std::vector<ExtParam> SwTask,int BatchNum,ExtRet *SwResult)
 {
-  SWClient client;
-  
   int Buf1Len = 32 + 32*BatchNum;
   char* buf1 = new char[Buf1Len];
   //------------------ store the public options at the beginning-----------------
@@ -269,198 +264,46 @@ void SwFPGA(std::vector<ExtParam> SwTask,int BatchNum,ExtRet *SwResult)
     i = i + 1;
   }
 
-   int *data_ptr = (int*)client.createInput(0,
-                         1,input_length/4,sizeof(int),BLAZE_INPUT);
-  int* taskNum_ptr = (int*)client.createInput(1,
-                         1,1,sizeof(int),BLAZE_INPUT);
-  *taskNum_ptr = BatchNum;
-  memcpy(data_ptr,buf1,Buf1Len*sizeof(char) );
-  memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
- // FILE *fout = fopen("dump_yh.dat","wb");
- // fwrite(&BatchNum,1,sizeof(int),fout);
- // fwrite(&input_length,1,sizeof(int),fout);
- // fwrite(data_ptr,input_length/4,sizeof(int),fout);
- // fclose(fout);
+  int *data_ptr = new int[input_length/4];
+  short* output_ptr = new short[FPGA_RET_PARAM_NUM*BatchNum*2];
+
+  memcpy(data_ptr, buf1, Buf1Len);
+  memcpy(&data_ptr[Buf1Len/4], buf2, input_length-Buf1Len);                          
   delete buf1;
   delete buf2;             
-  client.start();          
-  short* output_ptr = (short*)client.getOutputPtr(0);
- // ExtRet* results =(ExtRet*) malloc(BatchNum*sizeof(ExtRet));
-  
-  for (int i=0;i<BatchNum;i++){
-     SwResult[i].idx=(int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16|
-     (int)output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].qBeg = output_ptr[2+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].qEnd = output_ptr[3+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].rBeg = output_ptr[4+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].rEnd = output_ptr[5+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
-     SwResult[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
-   }
-}
-void SwFPGA_old(ExtParam *SwTask,int BatchNum,ExtRet *SwResult)
-{
-  SWClient client;
-  int Buf1Len = 32 + 32*BatchNum;
-  char* buf1 = new char[Buf1Len];
-  //------------------ store the public options at the beginning-----------------
-  buf1[0] = (char)SwTask->oDel;
-  buf1[1] = (char)SwTask->eDel;
-  buf1[2] = (char)SwTask->oIns;
-  buf1[3] = (char)SwTask->eIns;
-  buf1[4] = (char)SwTask->penClip5;
-  buf1[5] = (char)SwTask->penClip3;
-  buf1[6] = (char)SwTask->w;
-  Int2CharArray(buf1,8,BatchNum);
 
-  //-------------------pack the batch of parameters of each SW--------------------
-  int i = 0;
-  int LeftMaxIns = 0;
-  int LeftMaxDel = 0;
-  int RightMaxIns = 0;
-  int RightMaxDel = 0;
-  int TaskPos = 0 ;
-  TaskPos = Buf1Len >> 2;
-  int buf1idx = 32;
-  while(i < BatchNum)
-  {
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].leftQlen));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].leftRlen));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].rightQlen));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].rightRlen));
-    buf1idx = Int2CharArray(buf1,buf1idx,TaskPos);
-    TaskPos += ((((SwTask[i].leftQlen + SwTask[i].leftRlen + SwTask[i].rightQlen + SwTask[i].rightRlen)+1)/2)+3)/4;
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].regScore));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].qBeg));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].h0));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].idx));
-    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*1+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*1 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
-    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxIns));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxDel));    // dont know why dont change to short types in the upper lines, but the scala codes did that
-    buf1idx = Int2CharArray(buf1,buf1idx,SwTask[i].idx);
-    i = i+1;
+  int64_t start_ts = blaze::getUs();
+
+  blaze::Task_ptr task = agent->createTask(acc_id);
+  if (!task) {
+    throw blaze::internalError("Task is not created");
   }
+  agent->writeInput(task, acc_id, data_ptr, 1, input_length/4, sizeof(int));
+  agent->writeInput(task, acc_id, &BatchNum, 1, 1, sizeof(int));
 
-  char *buf2 = new char[(TaskPos<<2)-Buf1Len];
-  int input_length = TaskPos<<2;
-  int buf2idx = 0;
-  i = 0;
-  int j = 0;
-  int TmpIntVar = 0;
-  int Counter8 = 0;
-  while(i < BatchNum)
-  {
-    if(SwTask[i].leftQlen > 0)
-    {
-      j = 0;
-      while(j < SwTask[i].leftQlen)
-      {
-        Counter8 = Counter8 + 1;
-        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].leftQs[j] & 0x0f);
-        if(Counter8 % 8 ==0)
-          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
-        j = j + 1;
-      }
-    }
-    if(SwTask[i].rightQlen > 0)
-    {
-      j = 0;
-      while(j < SwTask[i].rightQlen)
-      {
-        Counter8 = Counter8 + 1;
-        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].rightQs[j] & 0x0f);
-        if(Counter8 % 8 ==0)
-          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
-        j = j + 1;
-      }
-    }
-    if(SwTask[i].leftRlen > 0)
-    {
-      j = 0;
-      while(j < SwTask[i].leftRlen)
-      {
-        Counter8 = Counter8 + 1;
-        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].leftRs[j] & 0x0f);
-        if(Counter8 % 8 ==0)
-          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
-        j = j + 1;
-      }
-    }
-    if(SwTask[i].rightRlen > 0)
-    {
-      j = 0;
-      while(j < SwTask[i].rightRlen)
-      {
-        Counter8 = Counter8 + 1;
-        TmpIntVar = TmpIntVar <<4 | ((int)SwTask[i].rightRs[j] & 0x0f);
-        if(Counter8 % 8 ==0)
-          buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
-        j = j + 1;
-      }
-    }
-    if(Counter8 %8 != 0)
-    {
-      while(Counter8 %8 != 0 )
-      {
-        TmpIntVar = TmpIntVar << 4;
-        Counter8 = Counter8 + 1;
-      }
-      buf2idx = Int2CharArray(buf2,buf2idx,TmpIntVar);
-    }
-    i = i + 1;
-  }
+  // FILE *fout = fopen("dump_yh.dat","wb");
+  // fwrite(&BatchNum,1,sizeof(int),fout);
+  // fwrite(&input_length,1,sizeof(int),fout);
+  // fwrite(data_ptr,input_length/4,sizeof(int),fout);
+  // fclose(fout);
+  agent->readOutput(task, output_ptr, FPGA_RET_PARAM_NUM*BatchNum*4);
+  fprintf(stderr, "client used %dus\n", 
+      blaze::getUs()-start_ts); 
 
-   int *data_ptr = (int*)client.createInput(0,
-                         1,input_length/4,sizeof(int),BLAZE_INPUT);
-  int* taskNum_ptr = (int*)client.createInput(1,
-                         1,1,sizeof(int),BLAZE_INPUT);
-  *taskNum_ptr = BatchNum;
-  memcpy(data_ptr,buf1,Buf1Len*sizeof(char) );
-  memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          // TODO:maybe there is another way to concat the two array, need to be changed
-  FILE *fout = fopen("dump_yh.dat","wb");
-  fwrite(&BatchNum,1,sizeof(int),fout);
-  fwrite(&input_length,1,sizeof(int),fout);
-  fwrite(data_ptr,input_length/4,sizeof(int),fout);
-  fclose(fout);
-  delete buf1;
-  delete buf2;             
- // delete buf2fpga;
-  client.start();          
-  short* output_ptr = (short*)client.getOutputPtr(0);
-  ExtRet* results =(ExtRet*) malloc(BatchNum*sizeof(ExtRet));
-  
   for (int i=0;i<BatchNum;i++){
-     results[i].idx=(int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16|
-     (int)output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
-     results[i].qBeg = output_ptr[2+FPGA_RET_PARAM_NUM*2*i];
-     results[i].qEnd = output_ptr[3+FPGA_RET_PARAM_NUM*2*i];
-     results[i].rBeg = output_ptr[4+FPGA_RET_PARAM_NUM*2*i];
-     results[i].rEnd = output_ptr[5+FPGA_RET_PARAM_NUM*2*i];
-     results[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
-     results[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
-     results[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
-  
-   }
-  for (int i = 0;i<BatchNum;i++){
-     SwResult[results[i].idx].idx=results[i].idx;
-     SwResult[results[i].idx].qBeg=results[i].qBeg ;
-     SwResult[results[i].idx].qEnd=results[i].qEnd+ SwTask[i].qBeg + SwTask[i].seedLength;
-     SwResult[results[i].idx].rBeg=results[i].rBeg+ SwTask[i].rBeg ;
-     SwResult[results[i].idx].rEnd=results[i].rEnd+ SwTask[i].rBeg + SwTask[i].seedLength;
-     SwResult[results[i].idx].score=results[i].score;
-     SwResult[results[i].idx].trueScore=results[i].trueScore;
-     SwResult[results[i].idx].width=results[i].width;
-  }                  
-  free(results);
+    SwResult[i].idx=(int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16|
+      (int)output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].qBeg = output_ptr[2+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].qEnd = output_ptr[3+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].rBeg = output_ptr[4+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].rEnd = output_ptr[5+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].score= output_ptr[6+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].trueScore= output_ptr[7+FPGA_RET_PARAM_NUM*2*i];
+    SwResult[i].width= output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+  }
+  delete [] data_ptr;
+  delete [] output_ptr;
 }
-
-
 
 void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM)
 {
@@ -905,7 +748,7 @@ void mem_chain2aln_hw(
         seedarray[i]=& chains[i].
         a[coordinates[i][0]].
         seeds[(uint32_t)(preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]])];
-        extensionflags[i]=testExtension(aux->opt,*seedarray[i],av[i]);
+        extensionflags[i] = testExtension(aux->opt,*seedarray[i],av[i]);
         overlapflags[i]= -1;
         if(extensionflags[i]<av[i].n)
           overlapflags[i]= checkoverlap(coordinates[i][1]+1,*seedarray[i],chains[i].a[coordinates[i][0]],
@@ -950,9 +793,11 @@ void mem_chain2aln_hw(
       int64_t start_ts_sw = blaze::getUs();
       extendOnCPU(sw_task_v,SwResultsCPU,taskidx,aux->opt);
       int64_t cost_sw = blaze::getUs()-start_ts_sw;
-      printf("hw used %dus and sw used %dus in %d tasks\n",cost_hw,cost_sw,taskidx); 
+      fprintf(stderr, "hw used %dus and sw used %dus in %d tasks\n", 
+          cost_hw, cost_sw, taskidx); 
     }
-    else{
+    else
+    {
       extendOnCPU(sw_task_v,SwResults,taskidx,aux->opt);
     }
     i = 0;  
