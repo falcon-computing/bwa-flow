@@ -54,18 +54,18 @@ int main(int argc, char *argv[]) {
   bseq1_t *seqs = bseq_read(150000, &batch_num, aux.ks, aux.ks2);
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
-//  alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
+  alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
   alnreg_hw = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
   MemChainVector* chains = new MemChainVector[batch_num];
   chains = (MemChainVector*)malloc(batch_num*sizeof(MemChainVector));
-  //uint64_t start_ts_sw = blaze::getUs();
+  uint64_t start_ts_sw = blaze::getUs();
    for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(&aux, &seqs[i]);
     chains[i].id_read = i;
 
-   /* kv_init(alnreg[i]);
+    kv_init(alnreg[i]);
     for (int j = 0; j < chains[i].n; j++) {
       mem_chain_t *p = &chains[i].a[j];
 
@@ -74,15 +74,15 @@ int main(int argc, char *argv[]) {
           seqs[i].l_seq,
           (uint8_t*)seqs[i].seq,
           p, alnreg+i);
-    }*/
+    }
   }
-  //uint64_t cost_sw = blaze::getUs()-start_ts_sw ;
-  //printf("the software compute time for d% reads:%dus\n",cost_sw,batch_num);
+  uint64_t cost_sw = blaze::getUs()-start_ts_sw ;
+  printf("the software compute time for d% reads:%dus\n",cost_sw,batch_num);
   uint64_t start_ts_hw = blaze::getUs();
   mem_chain2aln_hw(&aux, seqs, chains, alnreg_hw, batch_num);
   uint64_t cost_hw = blaze::getUs()-start_ts_hw;
   printf("the fpga compute time for %d reads:%dus\n",batch_num,cost_hw);
-//  regionsCompare(alnreg, alnreg_hw, batch_num);
+  regionsCompare(alnreg, alnreg_hw, batch_num);
 
   // Free the chains
   for (int i = 0; i < batch_num; i++) {
