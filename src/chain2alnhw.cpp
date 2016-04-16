@@ -17,8 +17,8 @@
 #include "SWClient.h"
 #include "blaze/AccAgent.h"
 #define FPGA_RET_PARAM_NUM 5
-
 #include <vector>
+#define CHECK_FPGA
 // hw data structures
 class ExtParam
 {
@@ -46,6 +46,7 @@ class ExtParam
     int     idx    ;
     int64_t     rBeg   ;    // just for testing on cpu
     int     seedLength ;
+    int     l_query ;
 };
 
 class ExtRet
@@ -93,8 +94,6 @@ public:
    preResultofSw(const preResultofSw& preresult)
    {
      rmax = preresult.rmax;
-    // rmax[0]= preresult.rmax[0];
-    // rmax[1]= preresult.rmax[1];
      rseq = preresult.rseq;
      srt = preresult.srt;
    }
@@ -116,7 +115,7 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_ta
       SwTask->leftQs = new uint8_t[SwTask->leftQlen];
       for(i = 0;i < SwTask->leftQlen; i++)
         SwTask->leftQs[i] = query[SwTask->leftQlen-1-i];
-      SwTask->leftRlen = seed->rbeg - rmax_0 ;
+      SwTask->leftRlen =(int)( seed->rbeg - rmax_0) ;
       SwTask->leftRs = new uint8_t[SwTask->leftRlen];
       for(i = 0; i<SwTask->leftRlen; i++)
         SwTask->leftRs[i] = rseq[SwTask->leftRlen-1-i];
@@ -135,8 +134,8 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_ta
       SwTask->rightQs   = new uint8_t[SwTask->rightQlen];
       for(int i = 0;i<SwTask->rightQlen;i++)
         SwTask->rightQs[i] = query[i+qe];
-      int re = seed->rbeg + seed->len - rmax_0;
-      SwTask->rightRlen = rmax_1 - rmax_0 -re ;
+      int64_t re = seed->rbeg + seed->len - rmax_0;
+      SwTask->rightRlen =(int) (rmax_1 - rmax_0 -re) ;
       SwTask->rightRs = new uint8_t[SwTask->rightRlen];
       for(int i = 0;i<SwTask->rightRlen; i++)
         SwTask->rightRs[i] = rseq[i+re];
@@ -162,6 +161,7 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_ta
     SwTask->rBeg = seed->rbeg ;     // for testing
     SwTask->seedLength = seed->len ;
     SwTask->idx = idx ;
+    SwTask->l_query = l_query ;
    (*sw_task_v).push_back(*SwTask);
     *taskidx = *taskidx +1;
   }
@@ -220,10 +220,10 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].qBeg));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].h0));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].idx));
-    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*1+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*1 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
-    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    RightMaxDel = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
+    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*4+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*4 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
+    RightMaxIns = (int)((double)(SwTask[i].rightQlen*4 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    RightMaxDel = (int)((double)(SwTask[i].rightQlen*4 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxIns));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
@@ -388,22 +388,21 @@ void extendOnCPU(std::vector<ExtParam> tasks,int numoftask,mem_opt_t *opt,mem_al
         if(newregs[tmpidx].score == prev||max_off[1]<(aw[1]>>1)+(aw[1]>>2)) break;
       }
       if (gscore <= 0 || gscore <= newregs[tmpidx].score - opt->pen_clip5) {
-        newregs[tmpidx].qe = 150-tasks[i].rightQlen + qle;
+        newregs[tmpidx].qe = tasks[i].l_query-tasks[i].rightQlen + qle;
         newregs[tmpidx].re = tasks[i].rBeg + tasks[i].seedLength + tle;
         newregs[tmpidx].truesc +=newregs[tmpidx].score-sc0;
       }
       else{
-        newregs[tmpidx].qe = 150;
+        newregs[tmpidx].qe = tasks[i].l_query;
         newregs[tmpidx].re = tasks[i].rBeg + tasks[i].seedLength + gtle;
         newregs[tmpidx].truesc +=gscore-sc0;
       }
     }
     else{
-      newregs[tmpidx].qe = 150;
+      newregs[tmpidx].qe = tasks[i].l_query;
       newregs[tmpidx].re = tasks[i].rBeg + tasks[i].seedLength;
     }
     newregs[tmpidx].w = aw[0] > aw[1]? aw[0] : aw[1];
- //   newregs[tmpidx].idx= tasks[i].idx;
  }
 
 }
