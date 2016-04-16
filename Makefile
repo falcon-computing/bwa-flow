@@ -8,9 +8,10 @@ MANAGER_DIR=/curr/diwu/prog/blaze/manager
 CC	:= gcc
 PP	:= g++
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O2 
+CFLAGS 	:= -g -std=c++0x -fPIC -O2
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
+           $(SRC_DIR)/chain2alnhw.o\
 	   $(SRC_DIR)/main.o \
 	   $(SRC_DIR)/util.o
 
