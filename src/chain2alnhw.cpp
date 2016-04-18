@@ -20,6 +20,9 @@
 #include <vector>
 #define CHECK_FPGA
 // hw data structures
+extern "C"{
+void sw_top (int *a, int *output_a, int __inc);
+}
 class ExtParam
 {
   public:
@@ -138,7 +141,7 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_ta
       SwTask->rightRlen =(int) (rmax_1 - rmax_0 -re) ;
       SwTask->rightRs = new uint8_t[SwTask->rightRlen];
       for(int i = 0;i<SwTask->rightRlen; i++)
-        SwTask->rightRs[i] = rseq[i+re];
+        SwTask->rightRs[i] = rseq[i+(int)re];
     }
     else
     {
@@ -208,6 +211,7 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
   int TaskPos = 0 ;
   TaskPos = Buf1Len >> 2;
   int buf1idx = 32;
+//  int buf1idx = 8;
   while(i < BatchNum)
   {
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].leftQlen));
@@ -220,10 +224,10 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].qBeg));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].h0));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(SwTask[i].idx));
-    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*4+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*4 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
-    RightMaxIns = (int)((double)(SwTask[i].rightQlen*4 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
-    RightMaxDel = (int)((double)(SwTask[i].rightQlen*4 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
+    LeftMaxIns = (int)((double)(SwTask[i].leftQlen*1+ SwTask[i].penClip5 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    LeftMaxDel = (int)((double)(SwTask[i].leftQlen*1 + SwTask[i].penClip5 -SwTask[i].oDel)/SwTask[i].eDel+1);
+    RightMaxIns = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oIns)/SwTask[i].eIns+1);
+    RightMaxDel = (int)((double)(SwTask[i].rightQlen*1 + SwTask[i].penClip3 -SwTask[i].oDel)/SwTask[i].eDel+1);         // 1 stands for SwTask[i].mat.max
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxIns));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
@@ -311,7 +315,9 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
   delete buf2;             
   fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
-  start_ts = blaze::getUs();
+  sw_top (data_ptr, (int *)output_ptr,BatchNum);
+  
+/*  start_ts = blaze::getUs();
   blaze::Task_ptr task = agent->createTask(acc_id);
   if (!task) {
     throw blaze::internalError("Task is not created");
@@ -321,7 +327,7 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
 
   agent->readOutput(task, output_ptr, FPGA_RET_PARAM_NUM*BatchNum*4);
   fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
-
+*/
   start_ts = blaze::getUs();
   for (int i = 0; i < BatchNum; i++) {  
     
@@ -612,7 +618,7 @@ void mem_chain2aln_hw(
     std::vector<ExtParam> sw_task_v;
     for (int i = start; i < end; i++) {
       regflags[i]= false;
-      if(coordinates[i][1]>=0){
+      while(coordinates[i][1]>=0){
         seedarray[i]=& chains[i].
         a[coordinates[i][0]].
         seeds[(uint32_t)(preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]])];
@@ -621,10 +627,26 @@ void mem_chain2aln_hw(
         if(extensionflags[i]<av[i].n){
           overlapflags[i]= checkoverlap(coordinates[i][1]+1,*seedarray[i],chains[i].a[coordinates[i][0]],
               preResultofSw_m[i][coordinates[i][0]].srt);   
-             if(overlapflags[i] == chains[i].a[coordinates[i][0]].n){
-              preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]]= 0;
-              continue;
           }
+        if(extensionflags[i]<av[i].n && overlapflags[i] == chains[i].a[coordinates[i][0]].n){
+              preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]]= 0;
+         //     continue;
+             
+              if(coordinates[i][1]>0){
+                coordinates[i][1]-=1;
+                continue ;
+              }   
+              else if(coordinates[i][1]==0){
+                if(coordinates[i][0]==chains[i].n-1){
+                  coordinates[i][1]= -1;
+                  continue;
+                }
+                else{
+                coordinates[i][0]+=1;
+                coordinates[i][1]=chains[i].a[coordinates[i][0]].n-1; 
+                continue;
+                }
+             }
         }
           regflags[i]=true;
           newregs[i].score = seedarray[i]->len*aux->opt->a;
@@ -642,7 +664,14 @@ void mem_chain2aln_hw(
                   preResultofSw_m[i][coordinates[i][0]].rmax[1],
                   preResultofSw_m[i][coordinates[i][0]].rseq,
                   i,&taskidx);
+          break;
         
+      }
+      if(taskidx >=2000){
+         extendOnCPU(sw_task_v,taskidx,aux->opt,newregs);
+         printf("CPU computed %d tasks\n",taskidx);
+         sw_task_v.clear();
+         taskidx = 0;
       }
     }
     int64_t cost_pre = blaze::getUs()-pre_st;
@@ -650,7 +679,7 @@ void mem_chain2aln_hw(
     ExtRet* SwResults = new ExtRet[taskidx]; 
     //ExtRet* SwResultsCPU = new ExtRet[taskidx]; 
     
-    if (taskidx >= 10) {
+    if (taskidx >= INT_MAX) {
       int64_t start_ts_hw = blaze::getUs();
       SwFPGA(sw_task_v,taskidx,newregs);
       int64_t cost_hw = blaze::getUs()-start_ts_hw;
@@ -707,6 +736,7 @@ void mem_chain2aln_hw(
     }
     else{
       extendOnCPU(sw_task_v,taskidx,aux->opt,newregs);
+      printf("CPU computed %d tasks\n",taskidx);
     }
     for (int i = start; i < end; i++) {
       if(regflags[i]==true){
