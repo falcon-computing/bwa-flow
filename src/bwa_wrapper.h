@@ -17,7 +17,7 @@
 #include "bwa/kseq.h"
 #include "bwa/utils.h"
 
-#include "blaze/AccAgent.h"
+//#include "blaze/AccAgent.h"
 
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"

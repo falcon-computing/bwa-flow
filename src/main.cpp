@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <zlib.h>
+#include <string>
+#include <glog/logging.h>
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -13,11 +15,11 @@
 #include "bwa/kseq.h"
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
+#include "kflow/Pipeline.h"
 
 #include "bwa_wrapper.h"
-//#include "util.h"
-//#include <glog/logging.h>
-#include <string>
+#include "Pipeline.h"
+#include "util.h"
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
@@ -55,68 +57,24 @@ int main(int argc, char *argv[]) {
   // get the index and the options
   pre_process(argc-1, argv+1, &aux);
 
-  // Read from file input, get mem_chains
-  uint64_t n_processed = 0;
-  while (true) {
-	  double t_real = realtime();
+  kestrelFlow::Pipeline bwa_flow(4);
 
-    int batch_num = 0;
-    bseq1_t *seqs = bseq_read(aux.actual_chunk_size, 
-        &batch_num, aux.ks, aux.ks2);
+  SeqsProducer    input_stage;
+  SeqsToChains    seq2chain_stage;
+  ChainsToRegions chain2reg_stage;
+  RegionsToSam    reg2sam_stage;
 
-		fprintf(stderr, "[M::%s] read %d sequences...\n", __func__, batch_num);
+  bwa_flow.addConst("aux", &aux);
 
-    if (!seqs) break;
+  bwa_flow.addStage(0, &input_stage);
+  bwa_flow.addStage(1, &seq2chain_stage);
+  bwa_flow.addStage(2, &chain2reg_stage);
+  bwa_flow.addStage(3, &reg2sam_stage);
+  bwa_flow.start();
 
-    mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+  bwa_flow.wait();
+  bwa_flow.printPerf();
 
-    for (int i = 0; i < batch_num; i++) {
-      chains[i] = seq2chain(&aux, &seqs[i]);
-    }
-
-    // Process each chain to get the aligned regions
-    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
-
-    for (int i = 0; i < batch_num; i++) {
-      kv_init(alnreg[i]);
-      for (int j = 0; j < chains[i].n; j++) {
-        mem_chain2aln(
-            aux.opt, 
-            aux.idx->bns, 
-            aux.idx->pac,
-            seqs[i].l_seq,
-            (uint8_t*)seqs[i].seq,
-            &chains[i].a[j],
-            alnreg+i);
-      }
-    }
-    freeChains(chains, batch_num);
-
-    // Post-process each chain and output to sam
-    for (int i = 0; i < batch_num; i++) {
-      alnreg[i].n = mem_sort_dedup_patch(
-          aux.opt, 
-          aux.idx->bns, 
-          aux.idx->pac, 
-          (uint8_t*)seqs[i].seq, 
-          alnreg[i].n, 
-          alnreg[i].a);
-
-      for (int j = 0; j < alnreg[i].n; j++) {
-        mem_alnreg_t *p = &alnreg[i].a[j];
-        if (p->rid >= 0 && aux.idx->bns->anns[p->rid].is_alt)
-          p->is_alt = 1;
-      }
-    }
-    reg2sam(&aux, seqs, batch_num, n_processed, alnreg);
-    freeAligns(alnreg, batch_num);
-    freeSeqs(seqs, batch_num);
-
-    n_processed += batch_num;
-
-    fprintf(stderr, "[%s] Real time: %.3f sec; CPU: %.3f sec\n", __func__, realtime() - t_real, cputime());
-  }
-  
   // Free all global variables
   //delete agent;
   free(aux.opt);
