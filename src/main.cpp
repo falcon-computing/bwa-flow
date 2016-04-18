@@ -39,7 +39,6 @@ int main(int argc, char *argv[]) {
 	double t_real = realtime();
 
   // Preprocessing
-  // TODO: move these to the global var lists
   extern char *bwa_pg;
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
@@ -57,12 +56,13 @@ int main(int argc, char *argv[]) {
   // get the index and the options
   pre_process(argc-1, argv+1, &aux);
 
-  kestrelFlow::Pipeline bwa_flow(4);
+  kestrelFlow::Pipeline bwa_flow(5);
 
   SeqsProducer    input_stage;
-  SeqsToChains    seq2chain_stage;
-  ChainsToRegions chain2reg_stage;
-  RegionsToSam    reg2sam_stage;
+  SeqsToChains    seq2chain_stage(3);
+  ChainsToRegions chain2reg_stage(2);
+  RegionsToSam    reg2sam_stage(2);
+  PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);
 
@@ -70,10 +70,11 @@ int main(int argc, char *argv[]) {
   bwa_flow.addStage(1, &seq2chain_stage);
   bwa_flow.addStage(2, &chain2reg_stage);
   bwa_flow.addStage(3, &reg2sam_stage);
+  bwa_flow.addStage(4, &output_stage);
   bwa_flow.start();
 
   bwa_flow.wait();
-  bwa_flow.printPerf();
+  //bwa_flow.printPerf();
 
   // Free all global variables
   //delete agent;

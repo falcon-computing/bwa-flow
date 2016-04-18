@@ -62,9 +62,21 @@ class ChainsToRegions
   ktp_aux_t* aux;
 };
 
-class RegionsToSam : public kestrelFlow::SinkStage<RegionsRecord> {
+class RegionsToSam : public kestrelFlow::MapStage<RegionsRecord, SeqsRecord> {
  public:
-  RegionsToSam(): kestrelFlow::SinkStage<RegionsRecord>() {;}
+  RegionsToSam(int n=1): 
+      kestrelFlow::MapStage<RegionsRecord, SeqsRecord>(n),
+      aux(NULL) {;}
+
+  SeqsRecord compute(RegionsRecord const & record);
+ private:
+  ktp_aux_t* aux;
+};
+
+class PrintSam : public kestrelFlow::SinkStage<SeqsRecord> {
+ public:
+  PrintSam(): kestrelFlow::SinkStage<SeqsRecord>() {;}
   void compute();
 };
+
 #endif
