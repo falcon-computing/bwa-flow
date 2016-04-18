@@ -19,6 +19,9 @@
 #define FPGA_RET_PARAM_NUM 5
 #include <vector>
 #define CHECK_FPGA
+
+blaze::AccAgent* agent;
+
 // hw data structures
 class ExtParam
 {
@@ -650,7 +653,7 @@ void mem_chain2aln_hw(
     ExtRet* SwResults = new ExtRet[taskidx]; 
     //ExtRet* SwResultsCPU = new ExtRet[taskidx]; 
     
-    if (taskidx >= 10) {
+    if (taskidx >= 500) {
       int64_t start_ts_hw = blaze::getUs();
       SwFPGA(sw_task_v,taskidx,newregs);
       int64_t cost_hw = blaze::getUs()-start_ts_hw;

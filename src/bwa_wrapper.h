@@ -26,9 +26,6 @@ extern "C"{
 KSEQ_DECLARE(gzFile)
 }
 
-extern blaze::AccAgent* agent;
-const std::string acc_id = "SmithWaterman";
-
 class ktp_aux_t{
 public:
 	kseq_t *ks, *ks2;
@@ -40,9 +37,9 @@ public:
 } ;
 
 
- class smem_aux_t {
+class smem_aux_t {
  public:
-    int id_read;
+  int id_read;
 	bwtintv_v mem, mem1, *tmpv[2];
 } ;
 
@@ -57,7 +54,7 @@ typedef struct {
 } mem_seed_t; // unaligned memory
 
 class mem_chain_t {
-public:
+ public:
 	int n, m, first, rid;
 	uint32_t w:29, kept:2, is_alt:1;
 	float frac_rep;
@@ -65,37 +62,18 @@ public:
 	mem_seed_t *seeds;
 } ;
 
-class mem_chain_v
-{
-public:
-    size_t n, m; mem_chain_t *a;
- } ;
+class mem_chain_v {
+ public:
+  size_t n, m; mem_chain_t *a;
+} ;
 
-class MemChainVector
-{
-    public:
-        int id_read;
-        size_t n, m; mem_chain_t *a;
-        MemChainVector()
-        {
-            id_read = 0;
-            n = 0;
-            m = 0;
-            a = 0 ;
-        }
+//class MemChainVector {
+// public:
+//  int id_read;
+//  size_t n, m; mem_chain_t *a;
+//};
 
-};
-
-class MemAlignRegVector
-{
-    public:
-        int id_read;
-        size_t n, m;
-        mem_alnreg_t *a;
-};
-
-
- extern "C"{
+extern "C"{
 
 int ksprintf(kstring_t *s, const char *fmt, ...);
 
@@ -120,15 +98,15 @@ int kclose(void *a);
 
 int pre_process(int argc, char *argv[],ktp_aux_t *aux );
 
-void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num);
+mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 
-void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM);
-
-MemChainVector seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
-
-void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg);
+//void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg);
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
+
+void freeChains(mem_chain_v* chains, int batch_num);
+void freeAligns(mem_alnreg_v* alnreg, int batch_num);
+void freeSeqs(bseq1_t* seqs, int batch_num);
 
 smem_aux_t *smem_aux_init();
 void smem_aux_destroy(smem_aux_t *a);
