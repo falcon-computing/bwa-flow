@@ -56,11 +56,15 @@ int main(int argc, char *argv[]) {
   pre_process(argc-1, argv+1, &aux);
 
   // Read from file input, get mem_chains
-  int n_processed = 0;
+  uint64_t n_processed = 0;
   while (true) {
+	  double t_real = realtime();
+
     int batch_num = 0;
     bseq1_t *seqs = bseq_read(aux.actual_chunk_size, 
         &batch_num, aux.ks, aux.ks2);
+
+		fprintf(stderr, "[M::%s] read %d sequences...\n", __func__, batch_num);
 
     if (!seqs) break;
 
@@ -109,6 +113,8 @@ int main(int argc, char *argv[]) {
     freeSeqs(seqs, batch_num);
 
     n_processed += batch_num;
+
+    fprintf(stderr, "[%s] Real time: %.3f sec; CPU: %.3f sec\n", __func__, realtime() - t_real, cputime());
   }
   
   // Free all global variables
