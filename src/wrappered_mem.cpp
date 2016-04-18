@@ -53,7 +53,7 @@ void reg2sam(
         aux->idx->bns,
         aux->idx->pac,
         pes,
-        n_processed+i,
+        (n_processed>>1)+i,
         &seqs[i<<1],
         &alnreg[i<<1]);
   }
