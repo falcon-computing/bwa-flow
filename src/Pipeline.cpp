@@ -55,41 +55,53 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   return ret;
 }
 
-RegionsRecord ChainsToRegions::compute(ChainsRecord const & chains_record) {
+void ChainsToRegions::compute() {
 
-  if (!aux) {
-    boost::any var = this->getConst("aux");
-    aux = boost::any_cast<ktp_aux_t*>(var);
-  }
+  boost::any var = this->getConst("aux");
+  ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
-  bseq1_t* seqs       = chains_record.seqs;
-  mem_chain_v* chains = chains_record.chains;
-  int batch_num       = chains_record.batch_num;
+  while (true) { 
+    ChainsRecord record;
+    bool ready = this->getInput(record);
 
-  mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
-
-  for (int i = 0; i < batch_num; i++) {
-    kv_init(alnreg[i]);
-    for (int j = 0; j < chains[i].n; j++) {
-      mem_chain2aln(
-          aux->opt, 
-          aux->idx->bns, 
-          aux->idx->pac,
-          seqs[i].l_seq,
-          (uint8_t*)seqs[i].seq,
-          &chains[i].a[j],
-          alnreg+i);
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(record);
     }
+    if (!ready) { 
+      // this means isFinal() is true and input queue is empty
+      break; 
+    }
+
+    bseq1_t* seqs       = record.seqs;
+    mem_chain_v* chains = record.chains;
+    int batch_num       = record.batch_num;
+
+    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
+
+    for (int i = 0; i < batch_num; i++) {
+      kv_init(alnreg[i]);
+      for (int j = 0; j < chains[i].n; j++) {
+        mem_chain2aln(
+            aux->opt, 
+            aux->idx->bns, 
+            aux->idx->pac,
+            seqs[i].l_seq,
+            (uint8_t*)seqs[i].seq,
+            &chains[i].a[j],
+            alnreg+i);
+      }
+    }
+    freeChains(chains, batch_num);
+
+    RegionsRecord output;
+    output.start_idx = record.start_idx;
+    output.batch_num = batch_num;
+    output.seqs = seqs;
+    output.alnreg = alnreg;
+
+    pushOutput(output);
   }
-  freeChains(chains, batch_num);
-
-  RegionsRecord ret;
-  ret.start_idx = chains_record.start_idx;
-  ret.batch_num = batch_num;
-  ret.seqs = seqs;
-  ret.alnreg = alnreg;
-
-  return ret;
 }
 
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
@@ -134,12 +146,12 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   }
   freeAligns(alnreg, batch_num);
 
-  SeqsRecord ret;
-  ret.start_idx = start_idx;
-  ret.batch_num = batch_num;
-  ret.seqs = seqs;
+  SeqsRecord output;
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
 
-  return ret;
+  return output;
 }
 
 void PrintSam::compute() {

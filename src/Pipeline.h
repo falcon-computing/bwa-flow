@@ -5,6 +5,7 @@
 #include "bwa/bntseq.h"
 #include "kflow/Pipeline.h"
 #include "kflow/MapStage.h"
+#include "kflow/MapPartitionStage.h"
 #include "kflow/SourceStage.h"
 #include "kflow/SinkStage.h"
 
@@ -51,15 +52,12 @@ class SeqsToChains
 
 // TODO: this in the future may not be a map stage anymore
 class ChainsToRegions
-: public kestrelFlow::MapStage<ChainsRecord, RegionsRecord> {
+: public kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord> {
  public:
   ChainsToRegions(int n=1): 
-      kestrelFlow::MapStage<ChainsRecord, RegionsRecord>(n),
-      aux(NULL) {;}
+      kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord>(n) {;}
 
-  RegionsRecord compute(ChainsRecord const & record);
- private:
-  ktp_aux_t* aux;
+  void compute();
 };
 
 class RegionsToSam : public kestrelFlow::MapStage<RegionsRecord, SeqsRecord> {
