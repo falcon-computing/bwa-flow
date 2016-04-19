@@ -1,5 +1,5 @@
-#ifndef IOSTAGE_H
-#define IOSTAGE_H
+#ifndef SINKSTAGE_H
+#define SINKSTAGE_H
 
 #include "Stage.h"
 
@@ -66,8 +66,7 @@ void SinkStage<U, IN_DEPTH>::worker_func(int wid) {
     return;
   }
 
-  try 
-  {
+  try {
 #ifndef DISABLE_PROFILING
     uint64_t start_ts = getUs();
 #endif
