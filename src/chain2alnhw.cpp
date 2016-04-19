@@ -18,11 +18,11 @@
 #include "blaze/AccAgent.h"
 #define FPGA_RET_PARAM_NUM 5
 #include <vector>
-#define CHECK_FPGA
+#define USE_FPGA
 // hw data structures
-extern "C"{
-void sw_top (int *a, int *output_a, int __inc);
-}
+//extern "C"{
+//void sw_top (int *a, int *output_a, int __inc);
+//}
 class ExtParam
 {
   public:
@@ -100,6 +100,12 @@ public:
      rseq = preresult.rseq;
      srt = preresult.srt;
    }
+  /* ~preResultofSw()
+   {
+     free (rmax);
+     free (rseq);
+     free (srt);
+   }  */ 
 };
 
 // The GetTask function get the extension parameters for each seed
@@ -170,6 +176,26 @@ void GetTask(const mem_seed_t *seed, mem_opt_t *opt,std::vector<ExtParam> *sw_ta
   }
 }
 
+// update the coordinates
+void updateCoordinates(int coordinates[][2],const MemChainVector *chains,int i)
+{
+ 
+              if(coordinates[i][1]>0){
+                coordinates[i][1]-=1;
+              }   
+              else if(coordinates[i][1]==0){
+                if(coordinates[i][0]==chains[i].n-1){
+                  coordinates[i][1]= -1;
+                }
+                else{
+                  coordinates[i][0]+=1;
+                  coordinates[i][1]=chains[i].a[coordinates[i][0]].n-1; 
+                }
+             }
+}
+
+
+
 inline int Int2CharArray(char* arr, int idx, int num)
 {
   arr[idx] = (char)(num&0xff);
@@ -186,7 +212,7 @@ inline int Short2CharArray(char *arr, int idx, short num)
   return idx+2 ;
 }
 
-void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
+void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs,const MemChainVector *chains,int coordinates[][2],mem_alnreg_v *av)
 {
   uint64_t start_ts = blaze::getUs();
 
@@ -315,19 +341,18 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
   delete buf2;             
   fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
-  sw_top (data_ptr, (int *)output_ptr,BatchNum);
+  // sw_top (data_ptr, (int *)output_ptr,BatchNum);
   
-/*  start_ts = blaze::getUs();
+  start_ts = blaze::getUs();
   blaze::Task_ptr task = agent->createTask(acc_id);
   if (!task) {
     throw blaze::internalError("Task is not created");
   }
   agent->writeInput(task, acc_id, data_ptr, 1, input_length/4, sizeof(int));
   agent->writeInput(task, acc_id, &BatchNum, 1, 1, sizeof(int));
-
   agent->readOutput(task, output_ptr, FPGA_RET_PARAM_NUM*BatchNum*4);
   fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
-*/
+
   start_ts = blaze::getUs();
   for (int i = 0; i < BatchNum; i++) {  
     
@@ -342,16 +367,30 @@ void SwFPGA(std::vector<ExtParam> SwTask, int BatchNum, mem_alnreg_t *newregs)
     newregs[regs_idx].score = output_ptr[6+FPGA_RET_PARAM_NUM*2*i]; 
     newregs[regs_idx].truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
     newregs[regs_idx].w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+    // compute the seed cov
+    newregs[regs_idx].seedcov=0;  // TODO:add the seedcov compute function
+    for (int j=0; j<chains[regs_idx].a[coordinates[regs_idx][0]].n; ++j){
+          const mem_seed_t *t =&chains[regs_idx].a[coordinates[regs_idx][0]].seeds[j];
+          if(t->qbeg >= newregs[regs_idx].qb && 
+             t->qbeg + t->len <= newregs[regs_idx].qe && 
+             t->rbeg >= newregs[regs_idx].rb && 
+             t->rbeg + t->len <= newregs[regs_idx].re){
+             newregs[regs_idx].seedcov += t->len; 
+          }
+        }
+    kv_push(mem_alnreg_t,av[regs_idx],newregs[regs_idx]);
+    // increment the coordinates record
+    updateCoordinates(coordinates,chains,regs_idx);
   }
+  
   fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
-
   delete [] data_ptr;
   delete [] output_ptr;
 }
 
 #define MAX_BAND_TRY  2
 
-void extendOnCPU(std::vector<ExtParam> tasks,int numoftask,mem_opt_t *opt,mem_alnreg_t *newregs) {
+void extendOnCPU(std::vector<ExtParam> tasks,int numoftask,mem_opt_t *opt,mem_alnreg_t *newregs,const MemChainVector *chains,int coordinates[][2],mem_alnreg_v *av) {
   for (int i=0;i<numoftask;i++){
     int aw[2];int max_off[2];
     int tmpidx = tasks[i].idx;
@@ -409,6 +448,21 @@ void extendOnCPU(std::vector<ExtParam> tasks,int numoftask,mem_opt_t *opt,mem_al
       newregs[tmpidx].re = tasks[i].rBeg + tasks[i].seedLength;
     }
     newregs[tmpidx].w = aw[0] > aw[1]? aw[0] : aw[1];
+    // compute the seed cov
+    newregs[tmpidx].seedcov=0;  // TODO:add the seedcov compute function
+    for (int j=0; j<chains[tmpidx].a[coordinates[tmpidx][0]].n; ++j){
+          const mem_seed_t *t =&chains[tmpidx].a[coordinates[tmpidx][0]].seeds[j];
+          if(t->qbeg >= newregs[tmpidx].qb && 
+             t->qbeg + t->len <= newregs[tmpidx].qe && 
+             t->rbeg >= newregs[tmpidx].rb && 
+             t->rbeg + t->len <= newregs[tmpidx].re){
+             newregs[tmpidx].seedcov += t->len; 
+          }
+        }
+   kv_push(mem_alnreg_t,av[tmpidx],newregs[tmpidx]);
+   // increment the coordinates record
+   updateCoordinates(coordinates,chains,tmpidx);
+    
  }
 
 }
@@ -422,18 +476,15 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 	return l < opt->w<<1? l : opt->w<<1;
 }
 
-bool initCoordinates(int coordinates[][2],const MemChainVector *chains,int numofreads)
+void initCoordinates(int coordinates[][2],const MemChainVector *chains,int numofreads)
 { 
-  bool isfinished = true;
   for (int i =0;i<numofreads;i++){
     coordinates[i][0]=0;
     if(&chains[i]!=NULL&&chains[i].n>0){
       coordinates[i][1]=chains[i].a[0].n-1;
-       isfinished = false;
     }
     else coordinates[i][1]= -1;
   } 
-  return isfinished;
 }
 
 
@@ -538,20 +589,17 @@ int checkoverlap(int startidx,mem_seed_t seed,mem_chain_t chain,uint64_t *srt)
    return i ;
 }
 
-void mem_chain2aln_hw(
-    ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const MemChainVector* chains,
-    mem_alnreg_v *av,
-    int batch_num)
+
+
+void prepareForSw(
+         int batch_num,
+         const MemChainVector *chains,
+         const bseq1_t *seqs,
+         preResultofSw **preResultofSw_m,
+         ktp_aux_t *aux)
 {
-  int numoftask = 0;
-  int testCount = 0;
- // std::vector<std::vector<preResultofSw>> preResultofSw_m; 
-  preResultofSw **preResultofSw_m = new preResultofSw*[batch_num];  // preresult matrix for each read
-  int64_t l_pac = aux->idx->bns->l_pac;
-  int rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-  for (int i=0; i<batch_num; i++)   //loop for each seq
+   int64_t l_pac = aux->idx->bns->l_pac;
+   for (int i=0; i<batch_num; i++)   //loop for each seq
   {
     preResultofSw* preResultofSw_v = new preResultofSw[chains[i].n];  // preresult vector for each chain
     for (int j=0;j<chains[i].n;j++){
@@ -583,6 +631,7 @@ void mem_chain2aln_hw(
          else rmax[0] = l_pac;
        }
       // retrieve the reference sequence
+      int rid;
       rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
       assert(c->rid == rid);
 
@@ -592,64 +641,85 @@ void mem_chain2aln_hw(
       ks_introsort_64(c->n, srt);
       preResultofSw preresult(rmax,rseq,srt);
       preResultofSw_v[j]=preresult;
-     // preResultofSw_v.push_back(preresult);    
     } 
-  //  preResultofSw_m.push_back(preResultofSw_v);
     preResultofSw_m[i]= preResultofSw_v;
   } 
-  int coordinates[batch_num][2];
-  bool isfinished= initCoordinates(coordinates,chains,batch_num); 
-  int extensionflags[batch_num];
-  int overlapflags[batch_num];
+}
+
+void freeTask(std::vector<ExtParam> *sw_task_v){
+
+  for (std::vector<ExtParam> ::iterator it =(*sw_task_v).begin();
+        it < (*sw_task_v).end();
+         it++){
+      free(it->leftQs);
+      free(it->leftRs);
+      free(it->rightQs);
+      free(it->rightRs);
+  }
+  ( *sw_task_v).clear();  
+}
+
+void freePreresult(preResultofSw **preresult, const MemChainVector *chains, int batch_num)
+{
+   for (int i =0 ;i <batch_num ;i++){
+     for (int j = 0;j < chains[i].n;j++){
+        free(preresult[i][j].rmax);
+        free(preresult[i][j].srt);
+        free(preresult[i][j].rseq);
+        //free(&preresult[i][j]) ;   
+     }
+     free(preresult[i]);
+   }  
+}
+
+void mem_chain2aln_hw(
+    ktp_aux_t *aux,
+    const bseq1_t *seqs,
+    const MemChainVector* chains,
+    mem_alnreg_v *av,
+    int batch_num)
+{
+  int numoftask = 0;
+  int testCount = 0;
+  preResultofSw **preResultofSw_m = new preResultofSw*[batch_num];  // preresult matrix for each read
+  int max_off[2], aw[2]; // aw: actual bandwidth used in extension
+  prepareForSw(batch_num,chains,seqs,preResultofSw_m,aux);    // prepare process
+  int coordinates[batch_num][2];    // the chain and seed record for each read
+  initCoordinates(coordinates,chains,batch_num); 
+  int extensionflags;
+  int overlapflags;
   mem_seed_t **seedarray = new mem_seed_t*[batch_num];
-  bool regflags[batch_num];
 
   int start = 0;
   int end = batch_num ;
   int taskidx = 0;
   mem_alnreg_t *newregs=new mem_alnreg_t[batch_num];
-  newregs = (mem_alnreg_t*)malloc(batch_num*sizeof(mem_alnreg_t));
   for (int i=0;i<batch_num; i++){
     kv_init(av[i]);
   }
-  while(!isfinished){
     taskidx = 0;
     int64_t pre_st= blaze::getUs();
     std::vector<ExtParam> sw_task_v;
-    for (int i = start; i < end; i++) {
-      regflags[i]= false;
-      while(coordinates[i][1]>=0){
-        seedarray[i]=& chains[i].
-        a[coordinates[i][0]].
-        seeds[(uint32_t)(preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]])];
-        extensionflags[i]=testExtension(aux->opt,*seedarray[i],av[i],seqs[i].l_seq);
-       // overlapflags[i]= -1;
-        if(extensionflags[i]<av[i].n){
-          overlapflags[i]= checkoverlap(coordinates[i][1]+1,*seedarray[i],chains[i].a[coordinates[i][0]],
-              preResultofSw_m[i][coordinates[i][0]].srt);   
+    int i = start;
+    int old_iter_end = 0;
+    int64_t total_task = 0;
+    while (true) {
+      while(coordinates[i][1]>=0){                  // while loop to get the tasks
+        int chain_idx = coordinates[i][0];
+        int seed_idx = coordinates[i][1];
+        uint32_t sorted_idx = (uint32_t)(preResultofSw_m[i][chain_idx].srt[seed_idx]);
+        seedarray[i]=& chains[i].a[chain_idx].seeds[sorted_idx];    // get next available seed in the current read
+        extensionflags = testExtension(aux->opt,*seedarray[i],av[i],seqs[i].l_seq);  // test if extension has been made before
+        if(extensionflags<av[i].n){                                               // now check the overlapping in the former processed seeds        
+          overlapflags= checkoverlap(coordinates[i][1]+1,*seedarray[i],chains[i].a[coordinates[i][0]],
+              preResultofSw_m[i][chain_idx].srt);   
           }
-        if(extensionflags[i]<av[i].n && overlapflags[i] == chains[i].a[coordinates[i][0]].n){
-              preResultofSw_m[i][coordinates[i][0]].srt[coordinates[i][1]]= 0;
-         //     continue;
-             
-              if(coordinates[i][1]>0){
-                coordinates[i][1]-=1;
-                continue ;
-              }   
-              else if(coordinates[i][1]==0){
-                if(coordinates[i][0]==chains[i].n-1){
-                  coordinates[i][1]= -1;
-                  continue;
-                }
-                else{
-                coordinates[i][0]+=1;
-                coordinates[i][1]=chains[i].a[coordinates[i][0]].n-1; 
-                continue;
-                }
-             }
+        if(extensionflags<av[i].n && overlapflags == chains[i].a[coordinates[i][0]].n){// there is no need to compute this seed
+              preResultofSw_m[i][chain_idx].srt[seed_idx]= 0;         // mark this seed as un computed
+              updateCoordinates(coordinates,chains,i);
+              continue;
         }
-          regflags[i]=true;
-          newregs[i].score = seedarray[i]->len*aux->opt->a;
+          newregs[i].score = seedarray[i]->len*aux->opt->a;                         // initialize the newregs
           newregs[i].truesc = seedarray[i]->len*aux->opt->a;
           newregs[i].qb = 0;
           newregs[i].rb = seedarray[i]->rbeg;
@@ -659,103 +729,91 @@ void mem_chain2aln_hw(
           newregs[i].seedlen0 = seedarray[i]->len; 
           newregs[i].frac_rep = chains[i].a[coordinates[i][0]].frac_rep;
           newregs[i].w = aux->opt->w;
-          GetTask(seedarray[i],aux->opt,&sw_task_v,(const uint8_t*)seqs[i].seq,
-                  seqs[i].l_seq,preResultofSw_m[i][coordinates[i][0]].rmax[0] ,
-                  preResultofSw_m[i][coordinates[i][0]].rmax[1],
-                  preResultofSw_m[i][coordinates[i][0]].rseq,
+          if(seedarray[i]->qbeg > 0||(seedarray[i]->qbeg + seedarray[i]->len != seqs[i].l_seq)){ // need to do extension
+           GetTask(seedarray[i],aux->opt,&sw_task_v,(const uint8_t*)seqs[i].seq,
+                  seqs[i].l_seq,preResultofSw_m[i][chain_idx].rmax[0] ,
+                  preResultofSw_m[i][chain_idx].rmax[1],
+                  preResultofSw_m[i][chain_idx].rseq,
                   i,&taskidx);
-          break;
-        
+          }
+          else {        // no need to extend ,just push to alnreg_v 
+             newregs[i].seedcov=0;
+             for (int j=0; j<chains[i].a[coordinates[i][0]].n; ++j){
+               const mem_seed_t *t =&chains[i].a[coordinates[i][0]].seeds[j];
+               if(t->qbeg >= newregs[i].qb && 
+                 t->qbeg + t->len <= newregs[i].qe && 
+                 t->rbeg >= newregs[i].rb && 
+                 t->rbeg + t->len <= newregs[i].re){
+                 newregs[i].seedcov += t->len; 
+               }
+            }
+            kv_push(mem_alnreg_t,av[i],newregs[i]);       
+            updateCoordinates(coordinates,chains,i);
+          }
+          break;    // go on to next read
       }
       if(taskidx >=2000){
-         extendOnCPU(sw_task_v,taskidx,aux->opt,newregs);
-         printf("CPU computed %d tasks\n",taskidx);
-         sw_task_v.clear();
+        #ifdef USE_FPGA
+         int64_t start_ts = blaze::getUs();
+         SwFPGA(sw_task_v,taskidx,newregs,chains,coordinates,av);        
+//         fprintf(stderr,"FPGA computed %d tasks for %dus\n",taskidx,blaze::getUs()-start_ts);
+         printf("FPGA computed %d tasks for %dus\n",taskidx,blaze::getUs()-start_ts);
+        #else
+         int64_t start_ts = blaze::getUs(); 
+         extendOnCPU(sw_task_v,taskidx,aux->opt,newregs,chains,coordinates,av);
+//         fprintf(stderr,"CPU computed %d tasks for %dus\n",taskidx,blaze::getUs()-start_ts);
+         printf("CPU computed %d tasks for %dus\n",taskidx,blaze::getUs()-start_ts);
+        #endif
+ //        sw_task_v.clear();
+         freeTask(&sw_task_v);
+         total_task += taskidx;
          taskidx = 0;
+         old_iter_end = i ;
+         if(i == end-1){
+           i = start;
+           continue;
+         }
+         else{
+           i= i+1 ;
+           continue ;
+         }
       }
-    }
-    int64_t cost_pre = blaze::getUs()-pre_st;
-    //printf("prepare tasks used %dus for %d tasks\n",cost_pre,taskidx);
-    ExtRet* SwResults = new ExtRet[taskidx]; 
-    //ExtRet* SwResultsCPU = new ExtRet[taskidx]; 
-    
-    if (taskidx >= INT_MAX) {
-      int64_t start_ts_hw = blaze::getUs();
-      SwFPGA(sw_task_v,taskidx,newregs);
-      int64_t cost_hw = blaze::getUs()-start_ts_hw;
-
-#ifdef CHECK_FPGA
-      int* fpga_qb     = new int[taskidx];
-      int64_t* fpga_rb = new int64_t[taskidx];
-      int* fpga_qe     = new int[taskidx];
-      int64_t* fpga_re = new int64_t[taskidx];
-      int* fpga_score  = new int[taskidx];
-      int* fpga_truesc = new int[taskidx];
-      int* fpga_w      = new int[taskidx];
-
-      // dump FPGA results
-      for (int i=0; i<taskidx; i++) {
-        int regs_idx = sw_task_v[i].idx;
-        fpga_qb[i]     = newregs[regs_idx].qb;
-        fpga_rb[i]     = newregs[regs_idx].rb;
-        fpga_qe[i]     = newregs[regs_idx].qe;
-        fpga_re[i]     = newregs[regs_idx].re;
-        fpga_score[i]  = newregs[regs_idx].score;
-        fpga_truesc[i] = newregs[regs_idx].truesc;
-        fpga_w[i]      = newregs[regs_idx].w;
-      }
-#endif
-
-      int64_t start_ts_sw = blaze::getUs();
-      extendOnCPU(sw_task_v,taskidx,aux->opt,newregs);
-      int64_t cost_sw = blaze::getUs()-start_ts_sw;
-
-#ifdef CHECK_FPGA
-      // check with CPU results
-      for (int i=0; i<taskidx; i++) {
-        int regs_idx = sw_task_v[i].idx;
-        if (fpga_qb[i] != newregs[regs_idx].qb) printf("#task=%d, #%d qb mismatch: %d!=%d\n", taskidx, regs_idx, fpga_qb[i], newregs[regs_idx].qb);
-        if (fpga_rb[i] != newregs[regs_idx].rb) printf("#task=%d, #%d rb mismatch: %d!=%d\n", taskidx, regs_idx, fpga_rb[i], newregs[regs_idx].rb);
-        if (fpga_qe[i] != newregs[regs_idx].qe) printf("#task=%d, #%d qe mismatch: %d!=%d\n", taskidx, regs_idx, fpga_qe[i], newregs[regs_idx].qe);
-        if (fpga_re[i] != newregs[regs_idx].re) printf("#task=%d, #%d re mismatch: %d!=%d\n", taskidx, regs_idx, fpga_re[i], newregs[regs_idx].re);
-        if (fpga_score[i] != newregs[regs_idx].score) printf("#task=%d, #%d score mismatch: %d!=%d\n", taskidx, regs_idx, fpga_score[i], newregs[regs_idx].score);
-        if (fpga_truesc[i] != newregs[regs_idx].truesc) printf("#task=%d, #%d truesc mismatch: %d!=%d\n", taskidx, regs_idx, fpga_truesc[i], newregs[regs_idx].truesc);
-        if (fpga_w[i] != newregs[regs_idx].w) printf("#task=%d, #%d w mismatch: %d!=%d\n", taskidx, regs_idx, fpga_w[i], newregs[regs_idx].w);
-      }
-      delete [] fpga_qb;
-      delete [] fpga_rb;
-      delete [] fpga_qe;
-      delete [] fpga_re;
-      delete [] fpga_score;
-      delete [] fpga_truesc;
-      delete [] fpga_w;
-#endif
-
-      fprintf(stderr, "hw used %dus and sw used %dus in %d tasks\n",
-          cost_hw, cost_sw, taskidx); 
-    }
-    else{
-      extendOnCPU(sw_task_v,taskidx,aux->opt,newregs);
-      printf("CPU computed %d tasks\n",taskidx);
-    }
-    for (int i = start; i < end; i++) {
-      if(regflags[i]==true){
-        newregs[i].seedcov=0;  // TODO:add the seedcov compute function
-        for (int j=0; j<chains[i].a[coordinates[i][0]].n; ++j){
-          const mem_seed_t *t =&chains[i].a[coordinates[i][0]].seeds[j];
-          if(t->qbeg >= newregs[i].qb && 
-             t->qbeg + t->len <= newregs[i].qe && 
-             t->rbeg >= newregs[i].rb && 
-             t->rbeg + t->len <= newregs[i].re){
-             newregs[i].seedcov += t->len; 
-          }
+      else if (old_iter_end == start && i == end -1){
+        if(taskidx > 0){
+          extendOnCPU(sw_task_v,taskidx,aux->opt,newregs,chains,coordinates,av);
+         // fprintf(stderr,"CPU computed %d tasks\n",taskidx);
+  //        sw_task_v.clear();
+          freeTask(&sw_task_v);
+          total_task += taskidx;
+          taskidx = 0;
+          old_iter_end = i ;
+          i = start;
+          continue;
         }
-        kv_push(mem_alnreg_t,av[i],newregs[i]);
+        else break;
       }
+      else if (old_iter_end > start && i == old_iter_end -1){
+        if(taskidx >0){
+          extendOnCPU(sw_task_v,taskidx,aux->opt,newregs,chains,coordinates,av);
+       //   fprintf(stderr,"CPU computed %d tasks\n",taskidx);
+      //    sw_task_v.clear();
+          freeTask(&sw_task_v);
+          total_task += taskidx;
+          taskidx = 0;
+          old_iter_end = i ;
+          i = i+1;
+        }
+        else break;
+      }
+      else if(i == end-1){
+         i = start ;
+         continue ;
+      }
+     else{
+        i = i+1 ;
+     }
     }
-    increRes nextiter = incrementCoordinates(coordinates,chains,batch_num,start,end);
-    isfinished = nextiter.isfinished;
-    start = nextiter.start;
-    end = nextiter.end; 
+    fprintf(stderr,"totaltask is  %d \n",total_task);
+    free (seedarray);
+    freePreresult(preResultofSw_m,chains,batch_num);  
   }
-}

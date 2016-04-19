@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "Preprocessing time is %dus\n", blaze::getUs()-start_ts);
 
   int batch_num = 0;
-  bseq1_t *seqs = bseq_read(150000, &batch_num, aux.ks, aux.ks2);
+  bseq1_t *seqs = bseq_read(15000000, &batch_num, aux.ks, aux.ks2);
 
   agent = new blaze::AccAgent("../fpga/blaze-task/conf");
 
@@ -57,7 +57,6 @@ int main(int argc, char *argv[]) {
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
 
   MemChainVector* chains = new MemChainVector[batch_num];
-  chains = (MemChainVector*)malloc(batch_num*sizeof(MemChainVector));
 
   uint64_t cost_sw = 0;
   for (int i = 0; i < batch_num; i++) {
@@ -78,12 +77,13 @@ int main(int argc, char *argv[]) {
     }
     cost_sw += blaze::getUs() - start_ts;
   }
-  fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
+  //fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
+  printf("Software compute time for %d reads is %dus\n", batch_num, cost_sw);
 
   start_ts = blaze::getUs();
   mem_chain2aln_hw(&aux, seqs, chains, alnreg_hw, batch_num);
   uint64_t cost_hw = blaze::getUs() - start_ts;
-  fprintf(stderr, "FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
+  printf("FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
 
   regionsCompare(alnreg, alnreg_hw, batch_num);
 
