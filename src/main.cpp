@@ -77,13 +77,13 @@ int main(int argc, char *argv[]) {
     }
     cost_sw += blaze::getUs() - start_ts;
   }
-  //fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
-  printf("Software compute time for %d reads is %dus\n", batch_num, cost_sw);
+  fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
 
   start_ts = blaze::getUs();
   mem_chain2aln_hw(&aux, seqs, chains, alnreg_hw, batch_num);
   uint64_t cost_hw = blaze::getUs() - start_ts;
-  printf("FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
+
+  fprintf(stderr, "FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
 
   regionsCompare(alnreg, alnreg_hw, batch_num);
 
