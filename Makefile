@@ -14,6 +14,7 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
            $(SRC_DIR)/chain2alnhw.o\
            $(SRC_DIR)/smithwaterman.o\
 	   $(SRC_DIR)/main.o \
+	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/util.o
 
 PROG	:= ./bin/bwa
@@ -25,8 +26,7 @@ INCLUDES:= -I. -I./bwa -I$(MANAGER_DIR)/include \
 	   -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux 
 	
 LIBS	:= -L$(BWA_DIR) -lbwa \
-	   -lm -lz -lpthread -lrt \
-		-L$(MANAGER_DIR)/lib -lblaze \
+	   -L$(MANAGER_DIR)/lib -lblaze \
 	   -L$(BOOST_DIR)/lib \
 	   	-lboost_system \
 		-lboost_thread \
@@ -35,7 +35,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
-	   -lpthread -lm -ldl
+	   -lpthread -lm -ldl -lz -lrt
 
 
 
