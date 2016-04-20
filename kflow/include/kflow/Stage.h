@@ -1,5 +1,5 @@
-#ifndef STAGE_H
-#define STAGE_H
+#ifndef KFLOW_STAGE_H
+#define KFLOW_STAGE_H
 
 #include <boost/atomic.hpp>
 #include <boost/type_traits.hpp>

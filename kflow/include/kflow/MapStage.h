@@ -1,5 +1,5 @@
-#ifndef MAPSTAGE_H
-#define MAPSTAGE_H
+#ifndef KFLOW_MAPSTAGE_H
+#define KFLOW_MAPSTAGE_H
 
 #include "Stage.h"
 

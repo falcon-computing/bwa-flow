@@ -1,5 +1,5 @@
-#ifndef SINKSTAGE_H
-#define SINKSTAGE_H
+#ifndef KFLOW_SINKSTAGE_H
+#define KFLOW_SINKSTAGE_H
 
 #include "Stage.h"
 
