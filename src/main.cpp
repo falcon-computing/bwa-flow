@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
   int batch_num = 0;
   bseq1_t *seqs = bseq_read(15000000, &batch_num, aux.ks, aux.ks2);
 
-  //agent = new blaze::AccAgent("../fpga/blaze-task/conf");
+  agent = new blaze::AccAgent("../fpga/blaze-task/conf");
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
