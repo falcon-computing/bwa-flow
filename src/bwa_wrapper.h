@@ -9,15 +9,18 @@
 #include <ctype.h>
 #include <math.h>
 #include <string>
+
+#include "bwa/bntseq.h"
 #include "bwa/bwa.h"
 #include "bwa/bwt.h"
 #include "bwa/bwamem.h"
-#include "bwa/kvec.h"
-#include "bwa/bntseq.h"
 #include "bwa/kseq.h"
+#include "bwa/ksort.h"
+#include "bwa/ksw.h"
+#include "bwa/kvec.h"
 #include "bwa/utils.h"
 
-//#include "blaze/AccAgent.h"
+#include "blaze/AccAgent.h"
 
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"
@@ -26,22 +29,24 @@ extern "C"{
 KSEQ_DECLARE(gzFile)
 }
 
-class ktp_aux_t{
-public:
+extern blaze::AccAgent* agent;
+const std::string acc_id = "SmithWaterman";
+
+class ktp_aux_t {
+ public:
 	kseq_t *ks, *ks2;
 	mem_opt_t *opt;
 	mem_pestat_t *pes0;
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
-} ;
-
+};
 
 class smem_aux_t {
  public:
   int id_read;
 	bwtintv_v mem, mem1, *tmpv[2];
-} ;
+};
 
 /************
  * Chaining *
@@ -67,11 +72,11 @@ class mem_chain_v {
   size_t n, m; mem_chain_t *a;
 } ;
 
-//class MemChainVector {
-// public:
-//  int id_read;
-//  size_t n, m; mem_chain_t *a;
-//};
+struct mem_chainref_t {
+  int64_t   rmax[2];
+  uint8_t*  rseq;
+  uint64_t* srt;
+};
 
 extern "C"{
 
@@ -99,8 +104,6 @@ int kclose(void *a);
 int pre_process(int argc, char *argv[],ktp_aux_t *aux );
 
 mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
-
-//void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg);
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
 

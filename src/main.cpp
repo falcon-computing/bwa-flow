@@ -25,15 +25,6 @@
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 
-/*
-void mem_chain2aln_hw(
-    ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const MemChainVector* chains,
-    mem_alnreg_v *av,
-    int batch_num);
-*/
-
 int main(int argc, char *argv[]) {
 
 	double t_real = realtime();
@@ -75,7 +66,7 @@ int main(int argc, char *argv[]) {
 
   bwa_flow.wait();
   //bwa_flow.printPerf();
-
+  
   // Free all global variables
   //delete agent;
   free(aux.opt);
