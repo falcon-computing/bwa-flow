@@ -31,7 +31,7 @@ void *ko_read1 = 0, *ko_read2 = 0;
 void mem_chain2aln_hw(
     ktp_aux_t *aux,
     const bseq1_t *seqs,
-    const MemChainVector* chains,
+    const mem_chain_v* chains,
     mem_alnreg_v *av,
     int batch_num);
 
@@ -51,17 +51,16 @@ int main(int argc, char *argv[]) {
   int batch_num = 0;
   bseq1_t *seqs = bseq_read(15000000, &batch_num, aux.ks, aux.ks2);
 
-  agent = new blaze::AccAgent("../fpga/blaze-task/conf");
+  //agent = new blaze::AccAgent("../fpga/blaze-task/conf");
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
 
-  MemChainVector* chains = new MemChainVector[batch_num];
+  mem_chain_v* chains = new mem_chain_v[batch_num];
 
   uint64_t cost_sw = 0;
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(&aux, &seqs[i]);
-    chains[i].id_read = i;
 
     kv_init(alnreg[i]);
 

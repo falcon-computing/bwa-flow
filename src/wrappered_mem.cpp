@@ -31,10 +31,10 @@ void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM)
 }
 
 
-MemChainVector seq2chain(ktp_aux_t *aux,bseq1_t *seqs)
+mem_chain_v seq2chain(ktp_aux_t *aux,bseq1_t *seqs)
 {
   int i;
-  MemChainVector chain_wid;
+  mem_chain_v chain_wid;
   mem_chain_v chn;
   for (i = 0; i < seqs->l_seq; ++i) // convert to 2-bit encoding if we have not done so
     seqs->seq[i] = seqs->seq[i] < 4? seqs->seq[i] : nst_nt4_table[(int)seqs->seq[i]];
@@ -42,7 +42,7 @@ MemChainVector seq2chain(ktp_aux_t *aux,bseq1_t *seqs)
   chn = mem_chain(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);         // the 0 should be reconsidered
   chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
   mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
-  chain_wid.id_read = seqs->id;
+  //chain_wid.id_read = seqs->id;
   chain_wid.n = chn.n;
   chain_wid.m = chn.m;
   chain_wid.a = chn.a;

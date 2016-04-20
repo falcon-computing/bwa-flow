@@ -9,12 +9,14 @@
 #include <ctype.h>
 #include <math.h>
 #include <string>
+
+#include "bwa/bntseq.h"
 #include "bwa/bwa.h"
 #include "bwa/bwt.h"
 #include "bwa/bwamem.h"
-#include "bwa/kvec.h"
-#include "bwa/bntseq.h"
 #include "bwa/kseq.h"
+#include "bwa/ksort.h"
+#include "bwa/kvec.h"
 #include "bwa/utils.h"
 
 #include "blaze/AccAgent.h"
@@ -86,6 +88,12 @@ class MemChainVector
 
 };
 
+struct mem_chainref_t {
+  int64_t   rmax[2];
+  uint8_t*  rseq;
+  uint64_t* srt;
+};
+
 class MemAlignRegVector
 {
     public:
@@ -124,7 +132,7 @@ void reg_dump(mem_alnreg_v *alnreg,mem_alnreg_v *alnreg_hw,int batch_num);
 
 void seq2intv(ktp_aux_t *aux,bseq1_t *seqs,smem_aux_t *SMEM);
 
-MemChainVector seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
+mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 
 void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *alnreg);
 
