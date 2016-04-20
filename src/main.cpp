@@ -96,10 +96,20 @@ int main(int argc, char *argv[]) {
   delete [] chains;
 
   // Free aligned regions
+  for (int i = 0; i < batch_num; i++) {
+    free(alnreg[i].a);
+    free(alnreg_hw[i].a);
+    free(seqs[i].name); 
+    free(seqs[i].comment);
+    free(seqs[i].seq); 
+    free(seqs[i].qual); 
+    free(seqs[i].sam);
+  }
+  free(seqs);
   delete [] alnreg;
   delete [] alnreg_hw;
 
-  delete agent;
+  //delete agent;
 
   free(aux.opt);
   bwa_idx_destroy(aux.idx);

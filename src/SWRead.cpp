@@ -3,13 +3,12 @@
 SWRead::SWRead(int idx,
     ktp_aux_t* aux,
     const bseq1_t* seq, 
-    mem_chainref_t* ref,
     const mem_chain_v* chains,
     mem_alnreg_v* alnregs):
-  read_idx_(idx),
-  aux_(aux), seq_(seq), ref_(ref), 
-  chains_(chains), alnregs_(alnregs),
-  is_pend_(false), chain_idx_(0)
+  is_pend_(false),
+  read_idx_(idx), chain_idx_(0),
+  aux_(aux), seq_(seq), chains_(chains),
+  ref_(NULL), alnregs_(alnregs)
 {
   if (chains && chains->n > 0) {
     seed_idx_ = chains->a[0].n - 1;
@@ -19,13 +18,29 @@ SWRead::SWRead(int idx,
     seed_idx_ = -1;
     is_finished_ = true;
   }
+
+  prepareChainRef(aux, seq, chains, ref_);
+
+  // Temporary alnreg_t obj to push to the alnreg vector
+  newreg_ = new mem_alnreg_t;
+  memset(newreg_, 0, sizeof(mem_alnreg_t));
+}
+
+SWRead::~SWRead() {
+  for (int j = 0; j < chains_->n; j++) {
+      free(ref_[j].srt);
+      free(ref_[j].rseq);
+  }
+  free(ref_);
+
+  delete newreg_;
 }
 
 void SWRead::finish() {
   is_pend_ = false;
 }
 
-enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task, mem_alnreg_t* newreg) {
+enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
 
   if (is_pend_) {
     return TaskStatus::Pending;
@@ -59,16 +74,16 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task, mem_alnreg_t* newreg) 
     }
     else {
       // initialize the newreg
-      newreg->score  = seed_array->len * aux_->opt->a;
-      newreg->truesc = seed_array->len * aux_->opt->a;
-      newreg->qb = 0;
-      newreg->rb = seed_array->rbeg;
-      newreg->qe = seq_->l_seq;
-      newreg->re = seed_array->rbeg + seed_array->len; 
-      newreg->rid = chains_->a[chain_idx_].rid;
-      newreg->seedlen0 = seed_array->len; 
-      newreg->frac_rep = chains_->a[chain_idx_].frac_rep;
-      newreg->w = aux_->opt->w;
+      newreg_->score  = seed_array->len * aux_->opt->a;
+      newreg_->truesc = seed_array->len * aux_->opt->a;
+      newreg_->qb = 0;
+      newreg_->rb = seed_array->rbeg;
+      newreg_->qe = seq_->l_seq;
+      newreg_->re = seed_array->rbeg + seed_array->len; 
+      newreg_->rid = chains_->a[chain_idx_].rid;
+      newreg_->seedlen0 = seed_array->len; 
+      newreg_->frac_rep = chains_->a[chain_idx_].frac_rep;
+      newreg_->w = aux_->opt->w;
 
       if (seed_array->qbeg > 0 ||
           seed_array->qbeg + seed_array->len != seq_->l_seq)
@@ -85,7 +100,7 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task, mem_alnreg_t* newreg) 
             read_idx_);
 
         task->read_obj = this;
-        task->newreg = newreg;
+        task->newreg = newreg_;
         task->chain_idx = chain_idx_;
         task->chain = &chains_->a[chain_idx_];
 
@@ -104,18 +119,18 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task, mem_alnreg_t* newreg) 
       }
       else {
         // no need to extend, just push to alnreg_v 
-        newreg->seedcov=0;
+        newreg_->seedcov=0;
 
         for (int j = 0; j < chains_->a[chain_idx_].n; j++) {
           const mem_seed_t *t = &chains_->a[chain_idx_].seeds[j];
-          if (t->qbeg >= newreg->qb && 
-              t->qbeg + t->len <= newreg->qe && 
-              t->rbeg >= newreg->rb && 
-              t->rbeg + t->len <= newreg->re) {
-            newreg->seedcov += t->len; 
+          if (t->qbeg >= newreg_->qb && 
+              t->qbeg + t->len <= newreg_->qe && 
+              t->rbeg >= newreg_->rb && 
+              t->rbeg + t->len <= newreg_->re) {
+            newreg_->seedcov += t->len; 
           }
         }
-        kv_push(mem_alnreg_t, *alnregs_, *newreg);
+        kv_push(mem_alnreg_t, *alnregs_, *newreg_);
       }
     }
   }
@@ -193,6 +208,63 @@ inline ExtParam* SWRead::getTask(
     SwTask->idx = idx ;
     SwTask->l_query = l_query ;
     return SwTask;
+  }
+}
+
+inline void SWRead::prepareChainRef(
+    const ktp_aux_t* aux,
+    const bseq1_t* seq,
+    const mem_chain_v* chain,
+    mem_chainref_t* &ref) 
+{
+  int64_t l_pac = aux->idx->bns->l_pac;
+
+  // input for SmithWaterman for each chain
+  ref = (mem_chainref_t*)malloc(chain->n*sizeof(mem_chainref_t));
+
+  for (int j = 0; j < chain->n; j++) {
+    // Prepare the maxspan and rseq for each seed
+    mem_chain_t *c = &chain->a[j]; 
+
+    int64_t rmax[2], tmp, max = 0;
+    uint8_t *rseq = 0;
+    uint64_t *srt;
+
+    if (c->n == 0) {
+      continue;
+    }
+    // get the max possible span
+    rmax[0] = l_pac<<1; rmax[1] = 0;
+    for (int k = 0; k < c->n; ++k) {
+      int64_t b, e;
+      const mem_seed_t *t = &c->seeds[k];
+      b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
+      e = t->rbeg + t->len + ((seq->l_seq - t->qbeg - t->len)
+          + cal_max_gap(aux->opt, seq->l_seq - t->qbeg - t->len));
+      rmax[0] = rmax[0] < b? rmax[0] : b;
+      rmax[1] = rmax[1] > e? rmax[1] : e;
+      if (t->len > max) max = t->len;
+    }
+    rmax[0] = rmax[0] > 0? rmax[0] : 0;
+    rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+    if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+      if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+      else rmax[0] = l_pac;
+    }
+    // retrieve the reference sequence
+    int rid;
+    rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+    assert(c->rid == rid);
+
+    srt = (uint64_t *)malloc(c->n * 8);
+    for (int l = 0; l < c->n; ++l)
+      srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
+    ks_introsort_64(c->n, srt);
+
+    ref[j].rmax[0] = rmax[0];
+    ref[j].rmax[1] = rmax[1];
+    ref[j].rseq = rseq;
+    ref[j].srt = srt;
   }
 }
 

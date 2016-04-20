@@ -6,12 +6,6 @@
 #include <math.h>
 #include <vector>
 #include <list>
-#include "bwa/bwamem.h"
-#include "bwa/bntseq.h"
-#include "bwa/ksw.h"
-#include "bwa/kvec.h"
-#include "bwa/ksort.h"
-#include "bwa/utils.h"
 #include "bwa_wrapper.h"
 #include "blaze/AccAgent.h"
 
@@ -21,7 +15,7 @@
 #define FPGA_RET_PARAM_NUM 5
 #define chunk_size 2000
 
-#define USE_FPGA
+//#define USE_FPGA
 
 // hw data structures
 //extern "C"{
@@ -96,7 +90,7 @@ void SwFPGA(
     i = i+1;
   }
 
-  fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
   char *buf2 = new char[(TaskPos<<2)-Buf1Len];
   int input_length = TaskPos<<2;
   int buf2idx = 0;
@@ -208,7 +202,7 @@ void SwFPGA(
     i = i + 1;
   }
   
-  fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
   int *data_ptr = new int[input_length/4];
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
 
@@ -216,7 +210,7 @@ void SwFPGA(
   memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
   delete buf1;
   delete buf2;             
-  fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
   // sw_top (data_ptr, (int *)output_ptr,batch_num);
   
@@ -228,7 +222,8 @@ void SwFPGA(
   agent->writeInput(fpga_task, acc_id, data_ptr, 1, input_length/4, sizeof(int));
   agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
-  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+
+  //.fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
@@ -384,85 +379,6 @@ void extendOnCPU(
   }
 }
 
-static inline int cal_max_gap(
-    const mem_opt_t *opt, 
-    int qlen
-) {
-	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
-	int l_ins = (int)((double)(qlen * opt->a - opt->o_ins) / opt->e_ins + 1.);
-	int l = l_del > l_ins? l_del : l_ins;
-	l = l > 1? l : 1;
-	return l < opt->w<<1? l : opt->w<<1;
-}
-
-void prepareChainRef(
-    const ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const mem_chain_v *chains,
-    mem_chainref_t** &chain_refs,
-    int batch_num)
-{
-  int64_t l_pac = aux->idx->bns->l_pac;
-
-  chain_refs = (mem_chainref_t**)malloc(batch_num*sizeof(mem_chainref_t*));
-
-  for (int i = 0; i < batch_num; i++) {
-
-    // input for SmithWaterman for each chain
-    chain_refs[i] = (mem_chainref_t*)malloc(chains[i].n*sizeof(mem_chainref_t));
-
-    for (int j = 0; j < chains[i].n; j++) {
-      // Prepare the maxspan and rseq for each seed
-      mem_chain_t *c = &chains[i].a[j]; 
-
-      int64_t rmax[2], tmp, max = 0;
-      uint8_t *rseq = 0;
-      uint64_t *srt;
-
-      if (c->n == 0) {
-        //chain_refs[i][j].rmax[0] = rmax[0];
-        //chain_refs[i][j].rmax[1] = rmax[1];
-        //chain_refs[i][j].rseq = rseq;
-        //chain_refs[i][j].srt = srt;
-        
-        continue;
-      }
-      // get the max possible span
-      rmax[0] = l_pac<<1; rmax[1] = 0;
-      for (int k = 0; k < c->n; ++k) {
-        int64_t b, e;
-        const mem_seed_t *t = &c->seeds[k];
-        b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
-        e = t->rbeg + t->len + ((seqs[i].l_seq - t->qbeg - t->len)
-            + cal_max_gap(aux->opt, seqs[i].l_seq - t->qbeg - t->len));
-        rmax[0] = rmax[0] < b? rmax[0] : b;
-        rmax[1] = rmax[1] > e? rmax[1] : e;
-        if (t->len > max) max = t->len;
-      }
-      rmax[0] = rmax[0] > 0? rmax[0] : 0;
-      rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
-      if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
-        if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
-        else rmax[0] = l_pac;
-      }
-      // retrieve the reference sequence
-      int rid;
-      rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-      assert(c->rid == rid);
-
-      srt = (uint64_t *)malloc(c->n * 8);
-      for (int l = 0; l < c->n; ++l)
-        srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
-      ks_introsort_64(c->n, srt);
-
-      chain_refs[i][j].rmax[0] = rmax[0];
-      chain_refs[i][j].rmax[1] = rmax[1];
-      chain_refs[i][j].rseq = rseq;
-      chain_refs[i][j].srt = srt;
-    } 
-  } 
-}
-
 void freeTasks(std::vector<ExtParam*> &sw_task_v, int task_num) {
 
   for (int i = 0; i < task_num; i++) {
@@ -472,21 +388,6 @@ void freeTasks(std::vector<ExtParam*> &sw_task_v, int task_num) {
     delete [] sw_task_v[i]->rightRs;
     delete sw_task_v[i];
   }
-}
-
-void freeChainRef(
-    const mem_chain_v *chains, 
-    mem_chainref_t **chain_refs, 
-    int batch_num) 
-{
-   for (int i = 0 ;i < batch_num; i++) {
-     for (int j = 0;j < chains[i].n; j++) {
-        free(chain_refs[i][j].srt);
-        free(chain_refs[i][j].rseq);
-        //free(&preresult[i][j]) ;   
-     }
-     free(chain_refs[i]);
-   }  
 }
 
 void mem_chain2aln_hw(
@@ -504,12 +405,6 @@ void mem_chain2aln_hw(
 
   uint64_t start_ts = blaze::getUs();
 
-  // Initialize per-chain references for SmithWaterman
-  mem_chainref_t **chain_refs;
-  prepareChainRef(aux, seqs, chains, chain_refs, batch_num);
-
-  mem_alnreg_t* newregs = new mem_alnreg_t[batch_num];
-
   // Initialize output aligned regions
   for (int i=0;i<batch_num; i++){
     kv_init(av[i]);
@@ -521,10 +416,10 @@ void mem_chain2aln_hw(
   // Initialize batch of SWRead objects
   std::list<SWRead*> read_batch;
   for (int i = 0; i < batch_num; i++) {
-    SWRead *SWRead_ptr = new SWRead(i, aux, 
-        seqs+i, chain_refs[i], chains+i, av+i);
+    SWRead *read_ptr = new SWRead(i, aux, 
+        seqs+i, chains+i, av+i);
 
-    read_batch.push_back(SWRead_ptr); 
+    read_batch.push_back(read_ptr); 
   }
 
   fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
@@ -538,7 +433,8 @@ void mem_chain2aln_hw(
       uint64_t start_ts;
       ExtParam* param_task;
 
-      switch ((*iter)->nextTask(param_task, newregs+(*iter)->index())) {
+      switch ((*iter)->nextTask(param_task)) {
+
         case SWRead::TaskStatus::Successful:
           sw_task_v[task_num] = param_task;
           task_num++;
@@ -571,6 +467,7 @@ void mem_chain2aln_hw(
 
         case SWRead::TaskStatus::Finished:
           // Read is finished, remove from batch
+          delete *iter;
           iter = read_batch.erase(iter);
           break;
 
@@ -581,7 +478,4 @@ void mem_chain2aln_hw(
   fprintf(stderr, "%d tasks is batched, %d is not\n", swFPGA_num, extCPU_num);
   fprintf(stderr, "Batched tasks takes %dus\n", swFPGA_time);
   fprintf(stderr, "Normal tasks takes %dus\n", extCPU_time);
-
-  delete [] newregs;
-  freeChainRef(chains, chain_refs, batch_num);  
 }

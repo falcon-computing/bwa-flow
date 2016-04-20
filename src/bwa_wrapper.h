@@ -16,6 +16,7 @@
 #include "bwa/bwamem.h"
 #include "bwa/kseq.h"
 #include "bwa/ksort.h"
+#include "bwa/ksw.h"
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
 
