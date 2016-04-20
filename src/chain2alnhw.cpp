@@ -5,7 +5,7 @@
 #include <limits.h>
 #include <math.h>
 #include <vector>
-
+#include <list>
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
 #include "bwa/ksw.h"
@@ -21,7 +21,7 @@
 #define FPGA_RET_PARAM_NUM 5
 #define chunk_size 2000
 
-//#define USE_FPGA
+#define USE_FPGA
 
 // hw data structures
 //extern "C"{
@@ -47,9 +47,6 @@ inline int Short2CharArray(char *arr, int idx, short num)
 void SwFPGA(
     std::vector<ExtParam*> &tasks, 
     int batch_num, 
-    mem_alnreg_t *newregs,
-    const mem_chain_v *chains,
-    int coordinates[][2],
     mem_alnreg_v *av)
 {
   uint64_t start_ts = blaze::getUs();
@@ -75,7 +72,6 @@ void SwFPGA(
   int TaskPos = 0 ;
   TaskPos = Buf1Len >> 2;
   int buf1idx = 32;
-//  int buf1idx = 8;
   while(i < batch_num)
   {
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->leftQlen));
@@ -88,26 +84,68 @@ void SwFPGA(
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->qBeg));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->h0));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->idx));
-    LeftMaxIns = (int)((double)(tasks[i]->leftQlen*1+ tasks[i]->penClip5 -tasks[i]->oIns)/tasks[i]->eIns+1);
-    LeftMaxDel = (int)((double)(tasks[i]->leftQlen*1 + tasks[i]->penClip5 -tasks[i]->oDel)/tasks[i]->eDel+1);
-    RightMaxIns = (int)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oIns)/tasks[i]->eIns+1);
-    RightMaxDel = (int)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oDel)/tasks[i]->eDel+1);         // 1 stands for tasks[i]->mat.max
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxIns));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(LeftMaxDel));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxIns));
-    buf1idx = Short2CharArray(buf1,buf1idx,(short)(RightMaxDel));    
-    //buf1idx = Int2CharArray(buf1,buf1idx,tasks[i]->idx);
+    LeftMaxIns = (short)((double)(tasks[i]->leftQlen*1+ tasks[i]->penClip5 -tasks[i]->oIns)/tasks[i]->eIns+1);
+    LeftMaxDel = (short)((double)(tasks[i]->leftQlen*1 + tasks[i]->penClip5 -tasks[i]->oDel)/tasks[i]->eDel+1);
+    RightMaxIns = (short)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oIns)/tasks[i]->eIns+1);
+    RightMaxDel = (short)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oDel)/tasks[i]->eDel+1);         // 1 stands for tasks[i]->mat.max
+    buf1idx = Short2CharArray(buf1,buf1idx,LeftMaxIns);
+    buf1idx = Short2CharArray(buf1,buf1idx,LeftMaxDel);
+    buf1idx = Short2CharArray(buf1,buf1idx,RightMaxIns);
+    buf1idx = Short2CharArray(buf1,buf1idx,RightMaxDel);    
     buf1idx = Int2CharArray(buf1, buf1idx, i);
     i = i+1;
   }
 
+  fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
   char *buf2 = new char[(TaskPos<<2)-Buf1Len];
   int input_length = TaskPos<<2;
   int buf2idx = 0;
   i = 0;
   int j = 0;
   int TmpIntVar = 0;
+  char Tmpchar = 0;  
   int Counter8 = 0;
+ /* 
+  for (int i = 0; i < batch_num ; i++ )
+  {
+    if(tasks[i]->leftQlen > 0){
+      for (int j = 0;j < tasks[i]->leftQlen;j++ ){
+        Counter8 = Counter8 + 1;
+        buf2[buf2idx] = buf2[buf2idx]<<4|(tasks[i]->leftQs[j] & 0x0f);
+        if(Counter8 %2 ==0){
+          buf2idx ++; 
+        }
+      }
+    }
+    if(tasks[i]->rightQlen > 0){
+      for (int j = 0;j < tasks[i]->rightQlen;j++ ){
+        Counter8 = Counter8 + 1;
+        buf2[buf2idx] = buf2[buf2idx]<<4 |(tasks[i]->rightQs[j] & 0x0f);
+        if(Counter8 %2 ==0){
+          buf2idx ++; 
+        }
+      }
+    }
+    if(tasks[i]->leftRlen > 0){
+      for (int j = 0;j < tasks[i]->leftRlen;j++ ){
+        Counter8 = Counter8 + 1;
+        buf2[buf2idx] = buf2[buf2idx]<<4 |(tasks[i]->leftRs[j] & 0x0f);
+        if(Counter8 %2 ==0){
+          buf2idx ++; 
+        }
+      }
+    }
+    if(tasks[i]->rightRlen > 0){
+      for (int j = 0;j < tasks[i]->rightRlen;j++ ){
+        Counter8 = Counter8 + 1;
+        buf2[buf2idx] = buf2[buf2idx]<<4 |(tasks[i]->rightRs[j] & 0x0f);
+        if(Counter8 %2 ==0){
+          buf2idx ++; 
+        }
+      }
+    }
+  }
+ */ 
   while(i < batch_num)
   {
     if(tasks[i]->leftQlen > 0)
@@ -169,7 +207,8 @@ void SwFPGA(
     }
     i = i + 1;
   }
-
+  
+  fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
   int *data_ptr = new int[input_length/4];
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
 
@@ -177,7 +216,7 @@ void SwFPGA(
   memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
   delete buf1;
   delete buf2;             
-  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
   // sw_top (data_ptr, (int *)output_ptr,batch_num);
   
@@ -189,39 +228,40 @@ void SwFPGA(
   agent->writeInput(fpga_task, acc_id, data_ptr, 1, input_length/4, sizeof(int));
   agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
-  //fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
     
+    mem_alnreg_t *newreg =tasks[i]->newreg;
     int task_idx = ((int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
                     output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
     int regs_idx = tasks[task_idx]->idx;
 
-    newregs[regs_idx].qb = output_ptr[2+FPGA_RET_PARAM_NUM*2*i]; 
-    newregs[regs_idx].rb = output_ptr[4+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg;
-    newregs[regs_idx].qe = output_ptr[3+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->qBeg + tasks[task_idx]->seedLength;
-    newregs[regs_idx].re = output_ptr[5+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg + tasks[task_idx]->seedLength;
-    newregs[regs_idx].score = output_ptr[6+FPGA_RET_PARAM_NUM*2*i]; 
-    newregs[regs_idx].truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
-    newregs[regs_idx].w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+    newreg->qb = output_ptr[2+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->rb = output_ptr[4+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg;
+    newreg->qe = output_ptr[3+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->qBeg + tasks[task_idx]->seedLength;
+    newreg->re = output_ptr[5+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg + tasks[task_idx]->seedLength;
+    newreg->score = output_ptr[6+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
     // compute the seed cov
-    newregs[regs_idx].seedcov=0;  // TODO:add the seedcov compute function
-    for (int j = 0; j < chains[regs_idx].a[coordinates[regs_idx][0]].n; ++j){
-          const mem_seed_t *t =&chains[regs_idx].a[coordinates[regs_idx][0]].seeds[j];
-          if(t->qbeg >= newregs[regs_idx].qb && 
-             t->qbeg + t->len <= newregs[regs_idx].qe && 
-             t->rbeg >= newregs[regs_idx].rb && 
-             t->rbeg + t->len <= newregs[regs_idx].re){
-             newregs[regs_idx].seedcov += t->len; 
-          }
-        }
-    kv_push(mem_alnreg_t,av[regs_idx],newregs[regs_idx]);
-    // increment the coordinates record
-    //updateCoordinates(coordinates,chains,regs_idx);
+    newreg->seedcov=0;  // TODO:add the seedcov compute function
+    for (int j = 0; j < tasks[i]->chain->n; ++j){
+      const mem_seed_t *t = &tasks[i]->chain->seeds[j];
+      if (t->qbeg >= newreg->qb && 
+          t->qbeg + t->len <= newreg->qe && 
+          t->rbeg >= newreg->rb && 
+          t->rbeg + t->len <= newreg->re){
+        newreg->seedcov += t->len; 
+      }
+    }
+
+    kv_push(mem_alnreg_t,av[regs_idx],*newreg);
+    tasks[i]->read_obj->finish();
   }
   
-  //fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] data_ptr;
   delete [] output_ptr;
 }
@@ -479,10 +519,12 @@ void mem_chain2aln_hw(
   std::vector<ExtParam*> sw_task_v(chunk_size);
 
   // Initialize batch of SWRead objects
-  std::vector<SWRead*> read_batch(batch_num);
+  std::list<SWRead*> read_batch;
   for (int i = 0; i < batch_num; i++) {
-    read_batch[i] = new SWRead(i, aux, 
+    SWRead *SWRead_ptr = new SWRead(i, aux, 
         seqs+i, chain_refs[i], chains+i, av+i);
+
+    read_batch.push_back(SWRead_ptr); 
   }
 
   fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
@@ -490,7 +532,7 @@ void mem_chain2aln_hw(
   int task_num = 0;
   while (!read_batch.empty()) {
     
-    std::vector<SWRead*>::iterator iter = read_batch.begin();
+    std::list<SWRead*>::iterator iter = read_batch.begin();
     while (iter != read_batch.end()) {
 
       uint64_t start_ts;
@@ -502,7 +544,11 @@ void mem_chain2aln_hw(
           task_num++;
           if (task_num >= chunk_size) {
             start_ts = blaze::getUs();
+            #ifdef USE_FPGA
+            SwFPGA(sw_task_v,task_num,av);
+            #else
             extendOnCPU(sw_task_v, task_num, aux->opt, av);
+            #endif
             swFPGA_time += blaze::getUs() - start_ts;
             swFPGA_num ++;
 
