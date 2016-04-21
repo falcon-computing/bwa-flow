@@ -17,14 +17,6 @@ class ExtParam
     uint8_t *rightRs;
     int     rightRlen ;
     int     w ;
-    int8_t *mat;
-    int     oDel ;
-    int     eDel ;
-    int     oIns ;
-    int     eIns ;
-    int     penClip5 ;
-    int     penClip3 ;
-    int     zdrop   ;
     int     h0 ;
     int     regScore ;
     int     qBeg    ;

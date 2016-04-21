@@ -62,9 +62,9 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(&aux, &seqs[i]);
 
+    uint64_t start_ts = blaze::getUs();
     kv_init(alnreg[i]);
 
-    uint64_t start_ts = blaze::getUs();
     for (int j = 0; j < chains[i].n; j++) {
       mem_chain_t *p = &chains[i].a[j];
 
