@@ -375,9 +375,9 @@ void extendOnCPU(
   }
 }
 
-void freeTasks(ExtParam** &sw_task_v) {
+void freeTasks(ExtParam** &sw_task_v, int task_num) {
 
-  for (int i = 0; i < chunk_size; i++) {
+  for (int i = 0; i < task_num; i++) {
     delete [] sw_task_v[i]->leftQs;
     delete [] sw_task_v[i]->leftRs;
     delete sw_task_v[i];
@@ -442,7 +442,9 @@ void mem_chain2aln_hw(
             #endif
             swFPGA_time += blaze::getUs() - start_ts;
             swFPGA_num ++;
+            
             task_num = 0;
+            freeTasks(sw_task_v, task_num);
           }
           ++iter;
           break;
@@ -453,7 +455,9 @@ void mem_chain2aln_hw(
           extendOnCPU(sw_task_v, task_num, aux->opt );
           extCPU_time += blaze::getUs() - start_ts;
           extCPU_num ++;
+
           task_num = 0;
+          freeTasks(sw_task_v, task_num);
           break;
 
         case SWRead::TaskStatus::Finished:
@@ -466,7 +470,7 @@ void mem_chain2aln_hw(
       }
     }
   }
-  freeTasks(sw_task_v);
+  delete [] sw_task_v;
   fprintf(stderr, "%d tasks is batched, %d is not\n", swFPGA_num, extCPU_num);
   fprintf(stderr, "Batched tasks takes %dus\n", swFPGA_time);
   fprintf(stderr, "Normal tasks takes %dus\n", extCPU_time);

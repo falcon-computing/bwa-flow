@@ -20,10 +20,6 @@ SWRead::SWRead(int idx,
   }
 
   prepareChainRef(aux, seq, chains, ref_);
-
-  // Temporary alnreg_t obj to push to the alnreg vector
-//  newreg_ = new mem_alnreg_t;
-//  memset(newreg_, 0, sizeof(mem_alnreg_t));
 }
 
 SWRead::~SWRead() {
@@ -32,8 +28,6 @@ SWRead::~SWRead() {
       free(ref_[j].rseq);
   }
   free(ref_);
-
-//  delete newreg_;
 }
 
 void SWRead::finish() {
@@ -61,22 +55,6 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
             aux_->opt, 
             *seed_array,
             *alnregs_, 
-            seq_->l_seq))
-    {
-       if(chains_->a[chain_idx_].n == checkOverlap(
-            seed_idx_+1,
-            *seed_array,
-            chains_->a[chain_idx_],
-            ref_[chain_idx_].srt))
-        {
-           ref_[chain_idx_].srt[seed_idx_] = 0;     
-           continue;    
-        } 
-    } 
-   /* if (alnregs_->n > testExtension(
-            aux_->opt, 
-            *seed_array,
-            *alnregs_, 
             seq_->l_seq) 
         && 
         chains_->a[chain_idx_].n == checkOverlap(
@@ -87,21 +65,23 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
     {                                               
       // Mark this seed as uncomputed
       ref_[chain_idx_].srt[seed_idx_] = 0;         
-    }*/
-    // else {
+    }
+    else {
       // initialize the newreg
-        newreg_ = kv_pushp(mem_alnreg_t,*alnregs_);
-        memset(newreg_,0,sizeof(mem_alnreg_t));
-        newreg_->score  = seed_array->len * aux_->opt->a;
-        newreg_->truesc = seed_array->len * aux_->opt->a;
-        newreg_->qb = 0;
-        newreg_->rb = seed_array->rbeg;
-        newreg_->qe = seq_->l_seq;
-        newreg_->re = seed_array->rbeg + seed_array->len; 
-        newreg_->rid = chains_->a[chain_idx_].rid;
-        newreg_->seedlen0 = seed_array->len; 
-        newreg_->frac_rep = chains_->a[chain_idx_].frac_rep;
-        newreg_->w = aux_->opt->w;
+      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, *alnregs_);
+      memset(newreg, 0, sizeof(mem_alnreg_t));
+
+      newreg->score  = seed_array->len * aux_->opt->a;
+      newreg->truesc = seed_array->len * aux_->opt->a;
+      newreg->qb = 0;
+      newreg->rb = seed_array->rbeg;
+      newreg->qe = seq_->l_seq;
+      newreg->re = seed_array->rbeg + seed_array->len; 
+      newreg->rid = chains_->a[chain_idx_].rid;
+      newreg->seedlen0 = seed_array->len; 
+      newreg->frac_rep = chains_->a[chain_idx_].frac_rep;
+      newreg->w = aux_->opt->w;
+
       if (seed_array->qbeg > 0 ||
           seed_array->qbeg + seed_array->len != seq_->l_seq)
       { 
@@ -117,13 +97,12 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
             read_idx_);
 
         task->read_obj = this;
-        task->newreg = newreg_;
+        task->newreg = newreg;
         task->chain_idx = chain_idx_;
         task->chain = &chains_->a[chain_idx_];
 
-        //fprintf(stderr, "SMRead got task for %d: %d, %d\n", read_idx_, chain_idx_, seed_idx_);
-
         is_pend_ = true;
+
         // update chain and seed indexes before return
         if (seed_idx_ > 0) {
           seed_idx_ --;
@@ -136,18 +115,18 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
       }
       else {
         // no need to extend, just push to alnreg_v 
-        newreg_->seedcov=0;
-       for (int j = 0; j < chains_->a[chain_idx_].n; j++) {
+        newreg->seedcov=0;
+        for (int j = 0; j < chains_->a[chain_idx_].n; j++) {
           const mem_seed_t *t = &chains_->a[chain_idx_].seeds[j];
-          if (t->qbeg >= newreg_->qb && 
-              t->qbeg + t->len <= newreg_->qe && 
-              t->rbeg >= newreg_->rb && 
-              t->rbeg + t->len <= newreg_->re) {
-            newreg_->seedcov += t->len; 
+          if (t->qbeg >= newreg->qb && 
+              t->qbeg + t->len <= newreg->qe && 
+              t->rbeg >= newreg->rb && 
+              t->rbeg + t->len <= newreg->re) {
+            newreg->seedcov += t->len; 
           }
         }
       }
-  //  }
+    }
   }
   is_finished_ = true;
   return TaskStatus::Finished;
@@ -163,53 +142,51 @@ inline ExtParam* SWRead::getTask(
     uint8_t *rseq,
     int idx)
 {
-    ExtParam *SwTask = new ExtParam;
+  ExtParam *SwTask = new ExtParam;
 
-    int i = 0;
-    SwTask->leftQlen = seed->qbeg;
-    if(SwTask->leftQlen > 0)
-    {
-      SwTask->leftQs = new uint8_t[SwTask->leftQlen];
-      for(i = 0;i < SwTask->leftQlen; i++)
-        SwTask->leftQs[i] = query[SwTask->leftQlen-1-i];
-      SwTask->leftRlen =(int)( seed->rbeg - rmax_0) ;
-      SwTask->leftRs = new uint8_t[SwTask->leftRlen];
-      for(i = 0; i<SwTask->leftRlen; i++)
-        SwTask->leftRs[i] = rseq[SwTask->leftRlen-1-i];
-    }
-    else
-    {
-      SwTask->leftQs = NULL;
-      SwTask->leftRlen = 0;
-      SwTask->leftRs  = NULL;
-    }
+  int i = 0;
+  SwTask->leftQlen = seed->qbeg;
+  if(SwTask->leftQlen > 0)
+  {
+    SwTask->leftQs = new uint8_t[SwTask->leftQlen];
+    for(i = 0;i < SwTask->leftQlen; i++)
+      SwTask->leftQs[i] = query[SwTask->leftQlen-1-i];
+    SwTask->leftRlen =(int)( seed->rbeg - rmax_0) ;
+    SwTask->leftRs = new uint8_t[SwTask->leftRlen];
+    for(i = 0; i<SwTask->leftRlen; i++)
+      SwTask->leftRs[i] = rseq[SwTask->leftRlen-1-i];
+  }
+  else
+  {
+    SwTask->leftQs = NULL;
+    SwTask->leftRlen = 0;
+    SwTask->leftRs  = NULL;
+  }
 
-    int qe = seed->qbeg + seed->len;
-    SwTask->rightQlen = l_query - qe;
-    if(SwTask->rightQlen > 0)
-    {
-      SwTask->rightQs =(uint8_t *) query +qe;
-      int64_t re = seed->rbeg + seed->len - rmax_0;
-      SwTask->rightRlen =(int) (rmax_1 - rmax_0 -re) ;
-      SwTask->rightRs = (uint8_t *)rseq +re;
-    }
-    else
-    {
-      SwTask->rightQs = NULL;
-      SwTask->rightRlen = 0;
-      SwTask->rightRs = NULL;
-    }
-    SwTask->h0 = seed->len*opt->a ;
-    SwTask->regScore = seed->len*opt->a ;
-    SwTask->qBeg = seed->qbeg ;
-    SwTask->rBeg = seed->rbeg ;     // for testing
-    SwTask->seedLength = seed->len ;
-    SwTask->idx = idx ;
-    SwTask->l_query = l_query ;
-    return SwTask;
+  int qe = seed->qbeg + seed->len;
+  SwTask->rightQlen = l_query - qe;
+  if(SwTask->rightQlen > 0)
+  {
+    SwTask->rightQs =(uint8_t *) query +qe;
+    int64_t re = seed->rbeg + seed->len - rmax_0;
+    SwTask->rightRlen =(int) (rmax_1 - rmax_0 -re) ;
+    SwTask->rightRs = (uint8_t *)rseq +re;
+  }
+  else
+  {
+    SwTask->rightQs = NULL;
+    SwTask->rightRlen = 0;
+    SwTask->rightRs = NULL;
+  }
+  SwTask->h0 = seed->len*opt->a ;
+  SwTask->regScore = seed->len*opt->a ;
+  SwTask->qBeg = seed->qbeg ;
+  SwTask->rBeg = seed->rbeg ;     // for testing
+  SwTask->seedLength = seed->len ;
+  SwTask->idx = idx ;
+  SwTask->l_query = l_query ;
+  return SwTask;
 }
-
-
 
 inline void SWRead::prepareChainRef(
     const ktp_aux_t* aux,
