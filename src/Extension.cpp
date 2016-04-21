@@ -11,10 +11,10 @@
 
 #include "SWTask.h"
 #include "SWRead.h"
-#include "chain2alnhw.h"
+#include "Extension.h"
 
 #define FPGA_RET_PARAM_NUM 5
-#define chunk_size 2000
+#define chunk_size 2000 
 
 //#define USE_FPGA
 
@@ -42,22 +42,22 @@ inline int Short2CharArray(char *arr, int idx, short num)
 }
 
 void SwFPGA(
-    std::vector<ExtParam*> &tasks, 
-    int batch_num, 
-    mem_alnreg_v *av)
+    ExtParam** tasks,
+    int batch_num,
+    mem_opt_t *opt)
 {
   uint64_t start_ts = blaze::getUs();
 
   int Buf1Len = 32 + 32*batch_num;
   char* buf1 = new char[Buf1Len];
   //------------------ store the public options at the beginning-----------------
-  buf1[0] = (char)tasks[0]->oDel;
-  buf1[1] = (char)tasks[0]->eDel;
-  buf1[2] = (char)tasks[0]->oIns;
-  buf1[3] = (char)tasks[0]->eIns;
-  buf1[4] = (char)tasks[0]->penClip5;
-  buf1[5] = (char)tasks[0]->penClip3;
-  buf1[6] = (char)tasks[0]->w;
+  buf1[0] = (char)opt->o_del;
+  buf1[1] = (char)opt->e_del;
+  buf1[2] = (char)opt->o_ins;
+  buf1[3] = (char)opt->e_ins;
+  buf1[4] = (char)opt->pen_clip5;
+  buf1[5] = (char)opt->pen_clip3;
+  buf1[6] = (char)opt->w;
   Int2CharArray(buf1,8,batch_num);
 
   //-------------------pack the batch of parameters of each SW--------------------
@@ -81,10 +81,10 @@ void SwFPGA(
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->qBeg));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->h0));
     buf1idx = Short2CharArray(buf1,buf1idx,(short)(tasks[i]->idx));
-    LeftMaxIns = (short)((double)(tasks[i]->leftQlen*1+ tasks[i]->penClip5 -tasks[i]->oIns)/tasks[i]->eIns+1);
-    LeftMaxDel = (short)((double)(tasks[i]->leftQlen*1 + tasks[i]->penClip5 -tasks[i]->oDel)/tasks[i]->eDel+1);
-    RightMaxIns = (short)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oIns)/tasks[i]->eIns+1);
-    RightMaxDel = (short)((double)(tasks[i]->rightQlen*1 + tasks[i]->penClip3 -tasks[i]->oDel)/tasks[i]->eDel+1);         // 1 stands for tasks[i]->mat.max
+    LeftMaxIns = (short)((double)(tasks[i]->leftQlen* 1 + opt->pen_clip5 -opt->o_ins)/opt->e_ins+1);
+    LeftMaxDel = (short)((double)(tasks[i]->leftQlen* 1 + opt->pen_clip5 -opt->o_del)/opt->e_del+1);
+    RightMaxIns = (short)((double)(tasks[i]->rightQlen *1 + opt->pen_clip3 -opt->o_ins)/opt->e_ins+1);
+    RightMaxDel = (short)((double)(tasks[i]->rightQlen* 1 + opt->pen_clip3 -opt->o_del)/opt->e_del+1);         // 1 stands for tasks[i]->mat.max
     buf1idx = Short2CharArray(buf1,buf1idx,LeftMaxIns);
     buf1idx = Short2CharArray(buf1,buf1idx,LeftMaxDel);
     buf1idx = Short2CharArray(buf1,buf1idx,RightMaxIns);
@@ -255,29 +255,26 @@ void SwFPGA(
       }
     }
 
-    kv_push(mem_alnreg_t,av[regs_idx],*newreg);
     tasks[i]->read_obj->finish();
   }
   
-  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
+ // fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] data_ptr;
   delete [] output_ptr;
 }
 
 void extendOnCPU(
-    std::vector<ExtParam*> &tasks,
+    ExtParam** tasks,
     int numoftask,
-    mem_opt_t *opt,
-    mem_alnreg_v *av) 
+    mem_opt_t *opt)
 {
+  int aw[2];
+  int max_off[2];
+  aw[0] = opt->w;
+  aw[1] = opt->w;
+
   for (int i = 0; i < numoftask; i++) {
-    int aw[2];int max_off[2];
-    int tmpidx = tasks[i]->idx;
-    aw[0]=opt->w;
-    aw[1]=opt->w;
-
     mem_alnreg_t* newreg = tasks[i]->newreg;
-
     if(tasks[i]->qBeg){
       int qle,tle,gtle,gscore;
       for (int j=0;j<MAX_BAND_TRY;j++){
@@ -289,13 +286,13 @@ void extendOnCPU(
             tasks[i]->leftRlen,
             tasks[i]->leftRs,
             5, opt->mat,
-            tasks[i]->oDel,
-            tasks[i]->eDel,
-            tasks[i]->oIns,
-            tasks[i]->eIns,
+            opt->o_del,
+            opt->e_del,
+            opt->o_ins,
+            opt->e_ins,
             aw[0],
-            tasks[i]->penClip5,
-            tasks[i]->zdrop,
+            opt->pen_clip5,
+            opt->zdrop,
             tasks[i]->h0,
             &qle, &tle, &gtle,
             &gscore, &max_off[0]);
@@ -319,7 +316,8 @@ void extendOnCPU(
       newreg->rb = tasks[i]->rBeg;
     }
     if (tasks[i]->rightQlen) {
-      int qle,tle,gtle,gscore,sc0 = newreg->score;
+      int qle,tle,gtle,gscore;
+      int sc0 = newreg->score;
 
       for (int j = 0; j < MAX_BAND_TRY; j++) {
         int prev = newreg->score;
@@ -330,17 +328,17 @@ void extendOnCPU(
             tasks[i]->rightRlen,
             tasks[i]->rightRs,
             5, opt->mat,
-            tasks[i]->oDel,
-            tasks[i]->eDel,
-            tasks[i]->oIns,
-            tasks[i]->eIns,
+            opt->o_del,
+            opt->e_del,
+            opt->o_ins,
+            opt->e_ins,
             aw[0],
-            tasks[i]->penClip5,
-            tasks[i]->zdrop,
+            opt->pen_clip3,
+            opt->zdrop,
             sc0,
             &qle, &tle, &gtle,
             &gscore, &max_off[1]);
-        if (newreg->score == prev ||
+       if (newreg->score == prev ||
             max_off[1] < (aw[1]>>1) + (aw[1]>>2)) 
           break;
       }
@@ -372,22 +370,13 @@ void extendOnCPU(
         newreg->seedcov += t->len; 
       }
     }
-    // Add current aligned region to corresponding reads
-    kv_push(mem_alnreg_t, av[tmpidx], *newreg);
-    
     // Notify the read that the current task is finished
     tasks[i]->read_obj->finish();
-  }
-}
 
-void freeTasks(std::vector<ExtParam*> &sw_task_v, int task_num) {
-
-  for (int i = 0; i < task_num; i++) {
-    delete [] sw_task_v[i]->leftQs;
-    delete [] sw_task_v[i]->leftRs;
-    delete [] sw_task_v[i]->rightQs;
-    delete [] sw_task_v[i]->rightRs;
-    delete sw_task_v[i];
+    // free the tasks
+    delete [] tasks[i]->leftQs;
+    delete [] tasks[i]->leftRs;
+    delete tasks[i];
   }
 }
 
@@ -412,8 +401,7 @@ void mem_chain2aln_hw(
   }
 
   // Initialize batch of SW tasks
-  std::vector<ExtParam*> sw_task_v(chunk_size);
-
+  ExtParam **sw_task_v = new ExtParam*[chunk_size];
   // Initialize batch of SWRead objects
   std::list<SWRead*> read_batch;
   for (int i = 0; i < batch_num; i++) {
@@ -436,8 +424,10 @@ void mem_chain2aln_hw(
 
       uint64_t start_ts;
       ExtParam* param_task;
-
-      switch ((*iter)->nextTask(param_task)) {
+      //int64_t nt_time = blaze::getUs();
+      SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+      //int nt_cost = blaze::getUs()-nt_time; 
+      switch (status) {
 
         case SWRead::TaskStatus::Successful:
           sw_task_v[task_num] = param_task;
@@ -445,27 +435,25 @@ void mem_chain2aln_hw(
           if (task_num >= chunk_size) {
             start_ts = blaze::getUs();
             #ifdef USE_FPGA
-            SwFPGA(sw_task_v,task_num,av);
+            SwFPGA(sw_task_v, task_num, aux->opt);
             #else
-            extendOnCPU(sw_task_v, task_num, aux->opt, av);
+            extendOnCPU(sw_task_v, task_num, aux->opt);
             #endif
             swFPGA_time += blaze::getUs() - start_ts;
             swFPGA_num ++;
-
-            freeTasks(sw_task_v, task_num);
+            
             task_num = 0;
           }
-          iter++;
+          ++iter;
           break;
 
         case SWRead::TaskStatus::Pending:
           // No more tasks, must do extend before proceeding
           start_ts = blaze::getUs();
-          extendOnCPU(sw_task_v, task_num, aux->opt, av);
+          extendOnCPU(sw_task_v, task_num, aux->opt );
           extCPU_time += blaze::getUs() - start_ts;
           extCPU_num ++;
 
-          freeTasks(sw_task_v, task_num);
           task_num = 0;
           break;
 
@@ -484,6 +472,7 @@ void mem_chain2aln_hw(
       }
     }
   }
+  delete [] sw_task_v;
   fprintf(stderr, "%d tasks is batched, %d is not\n", swFPGA_num, extCPU_num);
   fprintf(stderr, "Batched tasks takes %dus\n", swFPGA_time);
   fprintf(stderr, "Normal tasks takes %dus\n", extCPU_time);

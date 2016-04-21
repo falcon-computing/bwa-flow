@@ -34,7 +34,6 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   ktp_aux_t aux;
-
   memset(&aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};
@@ -43,6 +42,8 @@ int main(int argc, char *argv[]) {
     ksprintf(&pg, " %s", argv[i]);
   }
   bwa_pg = pg.s;
+
+  int chunk_size = 2000;
 
   // get the index and the options
   pre_process(argc-1, argv+1, &aux);
@@ -56,6 +57,7 @@ int main(int argc, char *argv[]) {
   PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);
+  bwa_flow.addConst("chunk_size", chunk_size);
 
   bwa_flow.addStage(0, &input_stage);
   bwa_flow.addStage(1, &seq2chain_stage);
@@ -63,7 +65,6 @@ int main(int argc, char *argv[]) {
   bwa_flow.addStage(3, &reg2sam_stage);
   bwa_flow.addStage(4, &output_stage);
   bwa_flow.start();
-
   bwa_flow.wait();
   //bwa_flow.printPerf();
   

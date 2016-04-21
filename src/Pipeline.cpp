@@ -2,6 +2,9 @@
 #include "bwa/utils.h"
 
 #include "Pipeline.h"  
+#include "Extension.h"
+
+#define OFFLOAD
 
 void SeqsProducer::compute() {
 
@@ -71,6 +74,15 @@ void ChainsToRegions::compute() {
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
+  var = this->getConst("chunk_size");
+  int chunk_size = boost::any_cast<int>(var);
+
+  // Batch of SWTasks
+  ExtParam **task_batch = new ExtParam*[chunk_size];
+
+  // Batch of SWReads
+  std::list<SWRead*> read_batch;
+
   while (true) { 
     ChainsRecord record;
     bool ready = this->getInput(record);
@@ -111,6 +123,68 @@ void ChainsToRegions::compute() {
     }
     delete read_batch;
     freeChains(chains, batch_num);
+#else
+    int task_num = 0;
+    std::list<SWRead*>* new_reads = record.read_batch;
+    
+    // copy all new reads to current read_batch
+    read_batch.insert(read_batch.end(), new_reads->begin(), new_reads->end());
+
+    delete new_reads;
+
+    DLOG(INFO) << "Add " << read_batch.size() << " new reads to process";
+
+    //std::unordered_map<uint64_t, int> tasks_remain;
+    //std::unordered_map<uint64_t, RegionsRecord> output_buf;;
+
+    while (!read_batch.empty()) {
+
+      std::list<SWRead*>::iterator iter = read_batch.begin();
+      while (iter != read_batch.end()) {
+
+        uint64_t start_ts;
+        ExtParam* param_task;
+        SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+
+        switch (status) {
+
+          case SWRead::TaskStatus::Successful:
+            task_batch[task_num] = param_task;
+            task_num++;
+            if (task_num >= chunk_size) {
+#ifdef USE_FPGA
+              SwFPGA(task_batch, task_num, aux->opt);
+#else
+              extendOnCPU(task_batch, task_num, aux->opt);
+#endif
+              task_num = 0;
+            }
+            ++iter;
+            break;
+
+          case SWRead::TaskStatus::Pending:
+            // No more tasks, must do extend before proceeding
+            extendOnCPU(task_batch, task_num, aux->opt);
+
+            task_num = 0;
+            break;
+
+          case SWRead::TaskStatus::Finished:
+            //uint64_t start_idx = (*iter)->start_idx();
+            //task_remain[start_idx]--;
+            //if (task_remain[start_idx] == 0) {
+            //  pushOutput(output_buf[start_idx]);
+            //}
+
+            // Read is finished, remove from batch
+            delete *iter;
+            iter = read_batch.erase(iter);
+            break;
+
+          default: ;
+        }
+      }
+    }
 #endif
 
     RegionsRecord output;
@@ -121,6 +195,7 @@ void ChainsToRegions::compute() {
 
     pushOutput(output);
   }
+  delete [] task_batch;
 }
 
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {

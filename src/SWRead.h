@@ -80,8 +80,6 @@ class SWRead {
   const mem_chain_v* chains_;
   mem_chainref_t*    ref_;
   mem_alnreg_v*      alnregs_;
-
-  mem_alnreg_t*      newreg_;
 };
 
 #endif
