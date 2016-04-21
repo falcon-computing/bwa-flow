@@ -11,6 +11,7 @@
 
 #include "SWTask.h"
 #include "SWRead.h"
+#include "chain2alnhw.h"
 
 #define FPGA_RET_PARAM_NUM 5
 #define chunk_size 2000
@@ -263,8 +264,6 @@ void SwFPGA(
   delete [] output_ptr;
 }
 
-#define MAX_BAND_TRY  2
-
 void extendOnCPU(
     std::vector<ExtParam*> &tasks,
     int numoftask,
@@ -427,6 +426,9 @@ void mem_chain2aln_hw(
   fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
 
   int task_num = 0;
+  //std::unordered_map<uint64_t, int> tasks_remain;
+  //std::unordered_map<uint64_t, RegionsRecord> output_buf;;
+
   while (!read_batch.empty()) {
     
     std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -469,6 +471,11 @@ void mem_chain2aln_hw(
 
         case SWRead::TaskStatus::Finished:
           // Read is finished, remove from batch
+          //uint64_t start_idx = (*iter)->start_idx();
+          //task_remain[start_idx]--;
+          //if (task_remain[start_idx] == 0) {
+          //  pushOutput(output_buf[start_idx]);
+          //}
           delete *iter;
           iter = read_batch.erase(iter);
           break;

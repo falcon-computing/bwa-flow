@@ -41,9 +41,18 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   bseq1_t* seqs = seqs_record.seqs;
   int batch_num = seqs_record.batch_num;
   
-  mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+  mem_chain_v*  chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+  mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
+  std::list<SWRead*>* read_batch = new std::list<SWRead*>;
+
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(aux, &seqs[i]);
+    kv_init(alnreg[i]);
+
+    SWRead *read_ptr = new SWRead(i, aux, 
+        seqs+i, chains+i, alnreg+i);
+
+    read_batch->push_back(read_ptr); 
   }
 
   ChainsRecord ret;
@@ -51,6 +60,8 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.batch_num = batch_num;
   ret.seqs = seqs;
   ret.chains = chains;
+  ret.alnreg = alnreg;
+  ret.read_batch = read_batch;
 
   return ret;
 }
@@ -73,14 +84,13 @@ void ChainsToRegions::compute() {
       break; 
     }
 
-    bseq1_t* seqs       = record.seqs;
-    mem_chain_v* chains = record.chains;
-    int batch_num       = record.batch_num;
+    bseq1_t* seqs        = record.seqs;
+    mem_chain_v* chains  = record.chains;
+    int batch_num        = record.batch_num;
+    mem_alnreg_v* alnreg = record.alnreg;
 
-    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
-
+#ifndef OFFLOAD
     for (int i = 0; i < batch_num; i++) {
-      kv_init(alnreg[i]);
       for (int j = 0; j < chains[i].n; j++) {
         mem_chain2aln(
             aux->opt, 
@@ -92,7 +102,16 @@ void ChainsToRegions::compute() {
             alnreg+i);
       }
     }
+    std::list<SWRead*>* read_batch = record.read_batch;
+    for (std::list<SWRead*>::iterator iter = read_batch->begin(); 
+         iter != read_batch->end();
+         iter ++) 
+    {
+      delete *iter;
+    }
+    delete read_batch;
     freeChains(chains, batch_num);
+#endif
 
     RegionsRecord output;
     output.start_idx = record.start_idx;

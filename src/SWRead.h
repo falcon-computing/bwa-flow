@@ -70,6 +70,7 @@ class SWRead {
   bool is_pend_;
   bool is_finished_;
   
+  int start_idx_;
   int read_idx_;
   int chain_idx_;
   int seed_idx_;

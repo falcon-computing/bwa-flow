@@ -1,6 +1,8 @@
 #ifndef BWA_FLOW_PIPELINE_H
 #define BWA_FLOW_PIPELINE_H
 
+#include <list>
+
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
 #include "kflow/Pipeline.h"
@@ -10,6 +12,7 @@
 #include "kflow/SinkStage.h"
 
 #include "bwa_wrapper.h"
+#include "SWRead.h"
 
 // Common data structures
 struct SeqsRecord {
@@ -23,6 +26,8 @@ struct ChainsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
+  mem_alnreg_v* alnreg;
+  std::list<SWRead*>* read_batch;
 };
 
 struct RegionsRecord {
