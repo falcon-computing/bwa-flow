@@ -141,26 +141,25 @@ void ChainsToRegions::compute() {
 
   while (flag_more_reads || !read_batch_.empty()) { 
 
-    if (flag_need_reads || read_batch_.empty()) {
-      // try to get another input
+    if (read_batch_.empty()) {
+      // get initial input batch
+      std::list<SWRead*>::iterator iter;
       if (!addBatch()) {
         flag_more_reads = false;
-        flag_need_reads = false;
-      }
-      else {
-        flag_need_reads = false;
       }
     }
     else {
       std::list<SWRead*>::iterator iter = read_batch_.begin();
 
-      while (!flag_need_reads && iter != read_batch_.end()) {
+      while (iter != read_batch_.end()) {
 
         uint64_t start_ts;
         uint64_t start_idx;
 
         ExtParam* param_task;
         SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+
+        int curr_size = 0;
 
         switch (status) {
 
@@ -174,22 +173,32 @@ void ChainsToRegions::compute() {
 #else
               extendOnCPU(task_batch_, task_num, aux->opt);
 #endif
+              iter = read_batch_.begin() ;  // go back to the start
+
               swFPGA_time += blaze::getUs() - start_ts;
               swFPGA_num ++;
 
               task_num = 0;
             }
-            ++iter;
+            else {
+              ++iter;
+            }
             break;
 
           case SWRead::TaskStatus::Pending:
             if (flag_more_reads) {
               // Try to get a new batch
-              flag_need_reads = true;
+              curr_size = read_batch_.size(); 
+
+              if (addBatch()) {
+                iter = read_batch_.begin();
+                std::advance(iter, curr_size);
+              }
+              else {
+                flag_more_reads = false;
+              }
             }
             else {
-              flag_need_reads = false;
-
               // No more new tasks, must do extend before proceeding
               start_ts = blaze::getUs();
 
@@ -197,6 +206,8 @@ void ChainsToRegions::compute() {
 
               extCPU_time += blaze::getUs() - start_ts;
               extCPU_num ++;
+
+              iter = read_batch_.begin() ;  // go back to the start
 
               task_num = 0;
             }
@@ -213,8 +224,6 @@ void ChainsToRegions::compute() {
 
             // Check if corresponding batch is finished
             if (tasks_remain_[start_idx] == 0) {
-              DLOG(INFO) << "Pushing output " << start_idx;
-
               pushOutput(output_buf_[start_idx]);
 
               // Free data in the input record
@@ -224,6 +233,10 @@ void ChainsToRegions::compute() {
               tasks_remain_.erase(start_idx);
               input_buf_.erase(start_idx);
               output_buf_.erase(start_idx);
+
+              DLOG(INFO) << "Pushing output " << start_idx
+                         << ", currently there are " << tasks_remain_.size()
+                         << " active batches.";
             }
             break;
 

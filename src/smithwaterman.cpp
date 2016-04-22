@@ -56,7 +56,7 @@ void sw_extend(uint11_t qs_baddr, uint4_t *qs, uint11_t ts_baddr, uint8_t qlen, 
 	ap_int<12> max_i, max_ie, max_off;
 	ap_int<12> gscore;
 	uint11_t ts_baddr_t;
-	char max_j;
+	short max_j;
 	char oe_del = o_del + e_del;
 	char oe_ins = o_ins + e_ins;
 	uint8_t beg, end;
@@ -71,12 +71,12 @@ void sw_extend(uint11_t qs_baddr, uint4_t *qs, uint11_t ts_baddr, uint8_t qlen, 
 	int16_t h1_init_val;
 	//	char h1_init_tmp=0;
 	int16_t max;
-	int16_t h, e;
+	int16_t h, e,M;
 	int16_t e_tmp;
 	int16_t h_tmp;
         int16_t h1_reg;
 	int16_t t, f, h1, m;
-	char mj;
+	short mj;
 	ap_uint<3> q_i, q_j;
 	ap_int<10> prev;
 	char isBreak;
@@ -122,14 +122,17 @@ target_loop : for (i = 0; i < tlen; i++) {
 					 ts_baddr_t = ts_baddr + i;
 					 //#pragma HLS resource variable=ts_baddr_t core=AddSub_DSP
 					 q_i = qs[ts_baddr_t];
-					 h1_init_val -= e_del;
-					 h1 = h1_init_val;
-					 if (h1 < 0) h1 = 0;
+
 					 if (beg < i - aw1) beg = i - aw1;
 					 //#pragma HLS resource variable=beg core=AddSub_DSP
 					 if (end > i + aw1 + 1) end = i + aw1 + 1;
 					 //#pragma HLS resource variable=end core=AddSub_DSP
 					 if (end > qlen) end = qlen;
+					 if(beg ==0){
+                                           h1_init_val -= e_del;
+					   h1 = h1_init_val;
+					   if (h1 < 0) h1 = 0;
+                                         } else h1 = 0;
 					 backw_tmp = 0; backw_reg = 0;
 					 forw_tmp = 0; forw_reg = 0;
 					 forw_update = 0;
@@ -145,25 +148,41 @@ query_loop : for (j = beg; j < end; ++j) {
 						 e = 0;
 						 if (j == 0) {
 							 h = h0;
+                                                         M = h0;
 						 }
 						 else if (j == 1) {
 							 h = tmp_eme;
+                                                         M = tmp_eme;
 						 }
 						 else {
 							 tmp_eme -= e_ins;
 							 h = (tmp_eme > 0) ? tmp_eme : 0;
+							 M = (tmp_eme > 0) ? tmp_eme : 0;
 						 }
 					 }
 					 else {
 						 e = e_tmp;
 						 h = h_tmp;
+                                                 M = h_tmp;
 					 }
 					 h1_reg = h1;
-					 h += my_mat[q_i][q_j];
-					 h = h > e? h : e;
+					 //h += my_mat[q_i][q_j];
+                                         M = M?M+my_mat[q_i][q_j]:0;
+					 h = M > e? M : e;
 					 h = h > f? h : f;
 					 h1 = h;             // save H(i,j) to h1 for the next column
-					 if (h1_reg == 0) {
+					 
+					 t = M - oe_del;
+					 t = (t > 0) ? t : 0;
+					 e -= e_del;
+					 e = (e > t) ? e : t;   // computed E(i+1,j)
+					 t = M - oe_ins;
+					 t = t > 0? t : 0;
+					 f -= e_ins;
+					 f = (f > t) ? f : t;   // computed F(i,j+1)
+					 eh_e[j] = e; // save E(i+1,j) for the next row
+					 eh_h[j] = h1_reg;          // set H(i,j-1) for the next row
+                                         if (h1_reg == 0 && e ==0) {
 						 backw_tmp = 0;
 					 }
 					 else {
@@ -173,40 +192,31 @@ query_loop : for (j = beg; j < end; ++j) {
 					 {
 						 mj = j;
 						 m = h;
-						 backw_reg = backw_tmp;
 					 }
-					 if (j >= mj+2) {
-						 if (forw_update == 0) { //((h1_reg == 0) &&
-							 if (h1_reg == 0) {
-								 forw_update = 1;
-							 }
-							 else {
-								 forw_tmp++;
-							 }
-						 }
-					 }
-					 else {
-						 forw_tmp = 0;
-						 forw_update = 0;
-					 }
-					 t = h - oe_del;
-					 t = (t > 0) ? t : 0;
-					 e -= e_del;
-					 e = (e > t) ? e : t;   // computed E(i+1,j)
-					 t = h - oe_ins;
-					 t = t > 0? t : 0;
-					 f -= e_ins;
-					 f = (f > t) ? f : t;   // computed F(i,j+1)
-					 eh_e[j] = e; // save E(i+1,j) for the next row
-					 eh_h[j] = h1_reg;          // set H(i,j-1) for the next row
+				        if (forw_update == 0) { //((h1_reg == 0) &&
+				            if (h1_reg == 0 && e ==0) {
+						 forw_tmp++;
+	         			     }
+				            else {
+					         forw_update = 1;
+				            }
+				         }
+					 
+                                         if(h1_reg ==0 && e ==0){
+                                             backw_tmp++;     
+                                         }
+                                         else
+                                             backw_tmp = 0;
+                                      
+                                         
 			 }
 			 eh_h[end] = h1;
 			 eh_e[end] = 0;
-			 if ((forw_update == 0) && (h1 != 0)) {
+			/* if ((forw_update == 0) && (h1 != 0)) {
 				 if ((j >= mj+2) || (forw_tmp != 0)) {
 					 forw_tmp++;
 				 }
-			 }
+			 }*/
 			 if (j == qlen) {
 				 if (gscore <= h1) {
 					 max_ie = i;
@@ -224,11 +234,12 @@ query_loop : for (j = beg; j < end; ++j) {
 			 }
 			 //j = mj - backw_reg;
 			 //beg = j + 1;
-			 beg = mj - backw_reg + 1;
+			 //beg = mj - backw_reg + 1;
+			 beg = beg + forw_tmp;
 			 //#pragma HLS resource variable=beg core=AddSub_DSP
 			 //j = mj + 2 + forw_tmp;
 			 //end = j;
-			 end = mj + 2 + forw_tmp;
+			 end = end - backw_tmp + 2 <qlen ? end-backw_tmp +2:qlen;
 			 //#pragma HLS resource variable=end core=AddSub_DSP
 		}
 		*qle_ret = max_j + 1;

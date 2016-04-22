@@ -51,9 +51,9 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline bwa_flow(5);
 
   SeqsProducer    input_stage;
-  SeqsToChains    seq2chain_stage(1);
+  SeqsToChains    seq2chain_stage(6);
   ChainsToRegions chain2reg_stage(1);
-  RegionsToSam    reg2sam_stage(1);
+  RegionsToSam    reg2sam_stage(6);
   PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);
@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
   bwa_flow.addStage(4, &output_stage);
   bwa_flow.start();
   bwa_flow.wait();
-  //bwa_flow.printPerf();
+  bwa_flow.printPerf();
   
   // Free all global variables
   //delete agent;
