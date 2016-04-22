@@ -437,8 +437,10 @@ void mem_chain2aln_hw(
             start_ts = blaze::getUs();
             #ifdef USE_FPGA
             SwFPGA(sw_task_v,task_num,aux->opt);
+            iter = read_batch.begin() ;  // go back to the start
             #else
             extendOnCPU(sw_task_v, task_num, aux->opt);
+            iter = read_batch.begin() ;  // go back to the start
             #endif
             swFPGA_time += blaze::getUs() - start_ts;
             swFPGA_num ++;
@@ -446,7 +448,9 @@ void mem_chain2aln_hw(
             task_num = 0;
             freeTasks(sw_task_v, task_num);
           }
+          else{
           ++iter;
+          }
           break;
 
         case SWRead::TaskStatus::Pending:
