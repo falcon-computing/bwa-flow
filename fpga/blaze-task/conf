@@ -14,7 +14,7 @@ platform : {
     }
     param : {
       key : "kernel_name"
-      value : "mmult"
+      value : "sw_top"
     }
 	}
 }

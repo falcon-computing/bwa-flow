@@ -16,12 +16,15 @@
 #define FPGA_RET_PARAM_NUM 5
 #define chunk_size 2000 
 
-//#define USE_FPGA
+#define USE_FPGA
+//#define SMITHWATERMAN_SIM
 
+#ifdef SMITHWATERMAN_SIM
 // hw data structures
-//extern "C"{
-//void sw_top (int *a, int *output_a, int __inc);
-//}
+extern "C"{
+void sw_top (int *a, int *output_a, int __inc);
+}
+#endif
 
 blaze::AccAgent* agent;
 
@@ -215,9 +218,10 @@ void SwFPGA(
   delete buf2;             
   //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
-  // sw_top (data_ptr, (int *)output_ptr,batch_num);
-  
   start_ts = blaze::getUs();
+#ifdef SMITHWATERMAN_SIM
+  sw_top (data_ptr, (int *)output_ptr,batch_num);
+#else
   blaze::Task_ptr fpga_task = agent->createTask(acc_id);
   if (!fpga_task) {
     throw blaze::internalError("Task is not created");
@@ -225,16 +229,18 @@ void SwFPGA(
   agent->writeInput(fpga_task, acc_id, data_ptr, 1, input_length/4, sizeof(int));
   agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
+#endif
 
-  //.fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  // fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
     
-    mem_alnreg_t *newreg =tasks[i]->newreg;
     int task_idx = ((int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
                     output_ptr[0+FPGA_RET_PARAM_NUM*2*i];
     int regs_idx = tasks[task_idx]->idx;
+
+    mem_alnreg_t *newreg = tasks[task_idx]->newreg;
 
     newreg->qb = output_ptr[2+FPGA_RET_PARAM_NUM*2*i]; 
     newreg->rb = output_ptr[4+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg;
@@ -243,10 +249,11 @@ void SwFPGA(
     newreg->score = output_ptr[6+FPGA_RET_PARAM_NUM*2*i]; 
     newreg->truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
     newreg->w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+
     // compute the seed cov
     newreg->seedcov=0;  // TODO:add the seedcov compute function
-    for (int j = 0; j < tasks[i]->chain->n; ++j){
-      const mem_seed_t *t = &tasks[i]->chain->seeds[j];
+    for (int j = 0; j < tasks[task_idx]->chain->n; ++j){
+      const mem_seed_t *t = &tasks[task_idx]->chain->seeds[j];
       if (t->qbeg >= newreg->qb && 
           t->qbeg + t->len <= newreg->qe && 
           t->rbeg >= newreg->rb && 
@@ -255,7 +262,7 @@ void SwFPGA(
       }
     }
 
-    tasks[i]->read_obj->finish();
+    tasks[task_idx]->read_obj->finish();
   }
   
  // fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
@@ -432,12 +439,11 @@ void mem_chain2aln_hw(
           task_num++;
           if (task_num >= chunk_size) {
             start_ts = blaze::getUs();
-            #ifdef USE_FPGA
+#ifdef USE_FPGA
             SwFPGA(sw_task_v, task_num, aux->opt);
-            #else
+#else
             extendOnCPU(sw_task_v, task_num, aux->opt);
-            #endif
-
+#endif
             iter = read_batch.begin() ;  // go back to the start
 
             swFPGA_time += blaze::getUs() - start_ts;
