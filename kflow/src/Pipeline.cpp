@@ -71,11 +71,11 @@ QueueBase* Pipeline::getOutputQueue() {
 
 void Pipeline::printPerf() {
 
-  std::cout << "Pipeline time: " 
+  LOG(INFO) << "Pipeline time: " 
             << (double)(end_ts-start_ts)/1e3 
             << "ms\n";
   for (int i=0; i<num_stages; i++) {
-    std::cout << stages[i]->printPerf();
+    LOG(INFO) << stages[i]->printPerf();
   }
 }
 
