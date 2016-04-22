@@ -2,6 +2,7 @@
 #define BWA_FLOW_PIPELINE_H
 
 #include <list>
+#include <unordered_map>
 
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
@@ -63,6 +64,19 @@ class ChainsToRegions
       kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord>(n) {;}
 
   void compute();
+ private:
+  bool addBatch();
+
+  // Batch of SWTasks
+  ExtParam**         task_batch_;
+
+  // Batch of SWReads
+  std::list<SWRead*> read_batch_;
+
+  // Table to keep track of each record
+  std::unordered_map<uint64_t, int> tasks_remain_;
+  std::unordered_map<uint64_t, ChainsRecord> input_buf_;
+  std::unordered_map<uint64_t, RegionsRecord> output_buf_;
 };
 
 class RegionsToSam : public kestrelFlow::MapStage<RegionsRecord, SeqsRecord> {

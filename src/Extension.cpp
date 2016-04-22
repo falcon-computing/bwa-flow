@@ -405,7 +405,7 @@ void mem_chain2aln_hw(
   // Initialize batch of SWRead objects
   std::list<SWRead*> read_batch;
   for (int i = 0; i < batch_num; i++) {
-    SWRead *read_ptr = new SWRead(i, aux, 
+    SWRead *read_ptr = new SWRead(0, i, aux, 
         seqs+i, chains+i, av+i);
 
     read_batch.push_back(read_ptr); 
@@ -414,8 +414,6 @@ void mem_chain2aln_hw(
   fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
 
   int task_num = 0;
-  //std::unordered_map<uint64_t, int> tasks_remain;
-  //std::unordered_map<uint64_t, RegionsRecord> output_buf;;
 
   while (!read_batch.empty()) {
     

@@ -1,11 +1,12 @@
 #include "SWRead.h"
 
-SWRead::SWRead(int idx,
+SWRead::SWRead(int start_idx, int idx,
     ktp_aux_t* aux,
     const bseq1_t* seq, 
     const mem_chain_v* chains,
     mem_alnreg_v* alnregs):
-  is_pend_(false),
+  is_pend_(false), 
+  start_idx_(start_idx),
   read_idx_(idx), chain_idx_(0),
   aux_(aux), seq_(seq), chains_(chains),
   ref_(NULL), alnregs_(alnregs)

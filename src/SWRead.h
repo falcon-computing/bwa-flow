@@ -7,7 +7,7 @@
 class SWRead {
  public:
 
-  SWRead(int idx,
+  SWRead(int start_idx, int idx,
       ktp_aux_t* aux,
       const bseq1_t* seq, 
       const mem_chain_v* chains,
@@ -32,6 +32,7 @@ class SWRead {
   void finish();
 
   int index() { return read_idx_; }
+  int start_idx() { return start_idx_; }
  
  private:
 
