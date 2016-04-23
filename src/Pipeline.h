@@ -38,17 +38,17 @@ struct RegionsRecord {
   mem_alnreg_v* alnreg;
 };
 
-class SeqsProducer : public kestrelFlow::SourceStage<SeqsRecord> {
+class SeqsProducer : public kestrelFlow::SourceStage<SeqsRecord, 4> {
  public:
-  SeqsProducer(): kestrelFlow::SourceStage<SeqsRecord>() {;}
+  SeqsProducer(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
   void compute();
 };
 
 class SeqsToChains 
-: public kestrelFlow::MapStage<SeqsRecord, ChainsRecord> {
+: public kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16> {
  public:
   SeqsToChains(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, ChainsRecord>(n),
+      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16>(n),
       aux(NULL) {;}
 
   ChainsRecord compute(SeqsRecord const & record);
@@ -58,31 +58,28 @@ class SeqsToChains
 
 // TODO: this in the future may not be a map stage anymore
 class ChainsToRegions
-: public kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord> {
+: public kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>
+{
  public:
   ChainsToRegions(int n=1): 
-      kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord>(n) {;}
+      kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>(n) {;}
 
   void compute();
  private:
-  bool addBatch();
+  inline bool addBatch(
+      std::list<SWRead*> &read_batch,
+      std::unordered_map<uint64_t, int> &tasks_remain,
+      std::unordered_map<uint64_t, ChainsRecord> &input_buf,
+      std::unordered_map<uint64_t, RegionsRecord> &output_buf);
 
-  // Batch of SWTasks
-  ExtParam**         task_batch_;
-
-  // Batch of SWReads
-  std::list<SWRead*> read_batch_;
-
-  // Table to keep track of each record
-  std::unordered_map<uint64_t, int> tasks_remain_;
-  std::unordered_map<uint64_t, ChainsRecord> input_buf_;
-  std::unordered_map<uint64_t, RegionsRecord> output_buf_;
 };
 
-class RegionsToSam : public kestrelFlow::MapStage<RegionsRecord, SeqsRecord> {
+class RegionsToSam
+: public kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 4> 
+{
  public:
   RegionsToSam(int n=1): 
-      kestrelFlow::MapStage<RegionsRecord, SeqsRecord>(n),
+      kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 4>(n),
       aux(NULL) {;}
 
   SeqsRecord compute(RegionsRecord const & record);
@@ -90,9 +87,9 @@ class RegionsToSam : public kestrelFlow::MapStage<RegionsRecord, SeqsRecord> {
   ktp_aux_t* aux;
 };
 
-class PrintSam : public kestrelFlow::SinkStage<SeqsRecord> {
+class PrintSam : public kestrelFlow::SinkStage<SeqsRecord, 4> {
  public:
-  PrintSam(): kestrelFlow::SinkStage<SeqsRecord>() {;}
+  PrintSam(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
   void compute();
 };
 

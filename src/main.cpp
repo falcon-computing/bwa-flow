@@ -27,6 +27,10 @@ void *ko_read1 = 0, *ko_read2 = 0;
 
 int main(int argc, char *argv[]) {
 
+  // Initialize Google Log
+  FLAGS_logtostderr = 1;
+  google::InitGoogleLogging(argv[0]);
+
 	double t_real = realtime();
 
   // Preprocessing
@@ -45,15 +49,18 @@ int main(int argc, char *argv[]) {
 
   int chunk_size = 2000;
 
-  // get the index and the options
+  // Start FPGA manager
+  agent = new blaze::AccAgent("conf");
+
+  // Get the index and the options
   pre_process(argc-1, argv+1, &aux);
 
   kestrelFlow::Pipeline bwa_flow(5);
 
   SeqsProducer    input_stage;
-  SeqsToChains    seq2chain_stage(6);
+  SeqsToChains    seq2chain_stage(1);
   ChainsToRegions chain2reg_stage(1);
-  RegionsToSam    reg2sam_stage(6);
+  RegionsToSam    reg2sam_stage(1);
   PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);
