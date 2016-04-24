@@ -16,7 +16,7 @@
 #define chunk_size 2000 
 
 #define USE_FPGA
-#define SMITHWATERMAN_SIM
+//#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
 // hw data structures
@@ -233,7 +233,7 @@ void SwFPGA(
   if (!fpga_task) {
     throw blaze::internalError("Task is not created");
   }
-  agent->writeInput(fpga_task, acc_id, (int*)buf1, 1, input_length/4, sizeof(int));
+  agent->writeInput(fpga_task, acc_id, (int*)buf1, 1, data_size, sizeof(int));
   agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
 #endif
