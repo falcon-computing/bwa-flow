@@ -58,9 +58,9 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline bwa_flow(5);
 
   SeqsProducer    input_stage;
-  SeqsToChains    seq2chain_stage(1);
+  SeqsToChains    seq2chain_stage(6);
   ChainsToRegions chain2reg_stage(1);
-  RegionsToSam    reg2sam_stage(1);
+  RegionsToSam    reg2sam_stage(2);
   PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);

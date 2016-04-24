@@ -1,10 +1,14 @@
+#include <boost/smart_ptr.hpp>
+#include <boost/thread/thread.hpp>
+#include <list>
+#include <queue>
+
 #include "bwa/utils.h"
-
-#include "Pipeline.h"  
 #include "Extension.h"
+#include "Pipeline.h"  
 
-//#define OFFLOAD
-//#define USE_FPGA
+#define OFFLOAD
+#define USE_FPGA
 
 void SeqsProducer::compute() {
 
@@ -132,10 +136,20 @@ void ChainsToRegions::compute() {
 #ifdef OFFLOAD
   var = this->getConst("chunk_size");
   int chunk_size = boost::any_cast<int>(var);
-  int task_num = 0;
+
+  const int stage_num = 3;
+  int stage_cnt = 0;
+  std::queue<boost::shared_ptr<boost::thread> > stage_workers;
+
+  int task_num[stage_num] = {0};
 
   // Batch of SWTasks
-  ExtParam** task_batch = new ExtParam*[chunk_size];
+  ExtParam** task_batch[stage_num];
+
+  for (int i = 0; i < stage_num; i++) {
+    task_num[i] = 0;
+    task_batch[i] = new ExtParam*[chunk_size];
+  }
 
   // Batch of SWReads
   std::list<SWRead*> read_batch;
@@ -182,25 +196,40 @@ void ChainsToRegions::compute() {
         switch (status) {
 
           case SWRead::TaskStatus::Successful:
-            task_batch[task_num] = param_task;
-            task_num++;
-            if (task_num >= chunk_size) {
+
+            task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
+            task_num[stage_cnt]++;
+            if (task_num[stage_cnt] >= chunk_size) {
               start_ts = blaze::getUs();
+
+              if (stage_workers.size() >= stage_num - 1) {
+                stage_workers.front()->join();
+                stage_workers.pop();
+              }
 #ifdef USE_FPGA
-              SwFPGA(task_batch, task_num, aux->opt);
+              boost::shared_ptr<boost::thread> worker(new 
+                  boost::thread(&SwFPGA,
+                    task_batch[stage_cnt],
+                    task_num[stage_cnt],
+                    aux->opt));
+              //SwFPGA(task_batch, task_num, aux->opt);
 #else
-              extendOnCPU(task_batch, task_num, aux->opt);
+              boost::shared_ptr<boost::thread> worker(new 
+                  boost::thread(&extendOnCPU,
+                    task_batch[stage_cnt],
+                    task_num[stage_cnt],
+                    aux->opt));
+              //extendOnCPU(task_batch, task_num, aux->opt);
 #endif
-              iter = read_batch.begin() ;  // go back to the start
+              stage_workers.push(worker);
+
+              task_num[stage_cnt] = 0;
+              stage_cnt = (stage_cnt + 1) % stage_num;
 
               swFPGA_time += blaze::getUs() - start_ts;
               swFPGA_num ++;
-
-              task_num = 0;
             }
-            else {
-              ++iter;
-            }
+            iter ++;
             break;
 
           case SWRead::TaskStatus::Pending:
@@ -220,16 +249,21 @@ void ChainsToRegions::compute() {
             }
             else {
               // No more new tasks, must do extend before proceeding
-              start_ts = blaze::getUs();
+              if (!stage_workers.empty()) {
+                stage_workers.front()->join();
+                stage_workers.pop();
+              }
+              else {
+                start_ts = blaze::getUs();
 
-              extendOnCPU(task_batch, task_num, aux->opt);
+                extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
 
-              extCPU_time += blaze::getUs() - start_ts;
-              extCPU_num ++;
+                extCPU_time += blaze::getUs() - start_ts;
+                extCPU_num ++;
 
-              iter = read_batch.begin() ;  // go back to the start
-
-              task_num = 0;
+                task_num[stage_cnt] = 0;
+                iter++;
+              }
             }
             break;
 
@@ -269,7 +303,9 @@ void ChainsToRegions::compute() {
   DLOG(INFO) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
   DLOG(INFO) << "Waiting for input takes " << wait_time << "us";
 
-  delete [] task_batch;
+  for (int i = 0; i < stage_num; i++) {
+    delete [] task_batch[i];
+  }
 #else
   while (true) { 
     ChainsRecord record;

@@ -5,7 +5,11 @@
 #include <limits.h>
 #include <math.h>
 #include <vector>
+#include <queue>
 #include <list>
+#include <boost/smart_ptr.hpp>
+#include <boost/thread/thread.hpp>
+
 #include "bwa_wrapper.h"
 #include "blaze/AccAgent.h"
 
@@ -53,7 +57,11 @@ void SwFPGA(
   int Buf1Len = 32 + 32*batch_num;
   int data_size = Buf1Len >> 2;
   for (int i = 0; i <batch_num ; i++){
-    data_size +=((((tasks[i]->leftQlen + tasks[i]->leftRlen + tasks[i]->rightQlen + tasks[i]->rightRlen)+1)/2)+3)/4; 
+    data_size +=((((tasks[i]->leftQlen + 
+                    tasks[i]->leftRlen + 
+                    tasks[i]->rightQlen + 
+                    tasks[i]->rightRlen) + 1) / 
+                2)+3)/4; 
   } 
   char* buf1 = new char[data_size << 2];
   //------------------ store the public options at the beginning-----------------
@@ -98,7 +106,7 @@ void SwFPGA(
     *((int*)(&buf1[buf1idx]))= i; buf1idx +=4;
   }
 
-  fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
   i = 0;
   int j = 0;
   int TmpIntVar = 0;
@@ -164,9 +172,9 @@ void SwFPGA(
     i = i + 1;
   }
 
+  //fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
-
-  fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
 #ifdef SMITHWATERMAN_SIM
@@ -181,7 +189,7 @@ void SwFPGA(
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
 #endif
 
-  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
@@ -213,9 +221,13 @@ void SwFPGA(
     }
 
     tasks[task_idx]->read_obj->finish();
-  }
-  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
 
+    delete [] tasks[task_idx]->leftQs;
+    delete [] tasks[task_idx]->leftRs;
+    delete tasks[task_idx];
+  }
+ 
+  //fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] buf1;
   delete [] output_ptr;
 }
@@ -336,3 +348,4 @@ void extendOnCPU(
     delete tasks[i];
   }
 }
+
