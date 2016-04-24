@@ -3,7 +3,7 @@
 #include "Pipeline.h"  
 #include "Extension.h"
 
-#define OFFLOAD
+//#define OFFLOAD
 //#define USE_FPGA
 
 void SeqsProducer::compute() {
@@ -70,7 +70,9 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.seqs = seqs;
   ret.chains = chains;
   ret.alnreg = alnreg;
+#ifdef OFFLOAD
   ret.read_batch = read_batch;
+#endif
 
   return ret;
 }
@@ -149,6 +151,8 @@ void ChainsToRegions::compute() {
   int      swFPGA_num  = 0;
   int      extCPU_num  = 0;
 
+  uint64_t wait_time = 0;
+
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
@@ -156,10 +160,11 @@ void ChainsToRegions::compute() {
 
     if (read_batch.empty()) {
       // get initial input batch
-      std::list<SWRead*>::iterator iter;
+      uint64_t start_ts = blaze::getUs();
       if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
         flag_more_reads = false;
       }
+      wait_time += blaze::getUs() - start_ts;
     }
     else {
       std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -203,6 +208,7 @@ void ChainsToRegions::compute() {
               // Try to get a new batch
               curr_size = read_batch.size(); 
 
+              start_ts = blaze::getUs();
               if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
                 iter = read_batch.begin();
                 std::advance(iter, curr_size);
@@ -210,6 +216,7 @@ void ChainsToRegions::compute() {
               else {
                 flag_more_reads = false;
               }
+              wait_time += blaze::getUs() - start_ts;
             }
             else {
               // No more new tasks, must do extend before proceeding
@@ -229,11 +236,11 @@ void ChainsToRegions::compute() {
           case SWRead::TaskStatus::Finished:
             // Read is finished, remove from batch
             start_idx = (*iter)->start_idx();
+            tasks_remain[start_idx]--;
 
             delete *iter;
 
             iter = read_batch.erase(iter);
-            tasks_remain[start_idx]--;
 
             // Check if corresponding batch is finished
             if (tasks_remain[start_idx] == 0) {
@@ -260,6 +267,7 @@ void ChainsToRegions::compute() {
   }
   DLOG(INFO) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
   DLOG(INFO) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
+  DLOG(INFO) << "Waiting for input takes " << wait_time << "us";
 
   delete [] task_batch;
 #else
