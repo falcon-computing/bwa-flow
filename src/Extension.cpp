@@ -14,9 +14,8 @@
 #include "Extension.h"
 
 #define FPGA_RET_PARAM_NUM 5
-#define chunk_size 2000 
 
-#define USE_FPGA
+//#define USE_FPGA
 //#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
@@ -216,7 +215,7 @@ void SwFPGA(
   memcpy(&data_ptr[Buf1Len/4],buf2,input_length-Buf1Len);                          
   delete buf1;
   delete buf2;             
-  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
 #ifdef SMITHWATERMAN_SIM
@@ -231,7 +230,7 @@ void SwFPGA(
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
 #endif
 
-  // fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
@@ -265,7 +264,7 @@ void SwFPGA(
     tasks[task_idx]->read_obj->finish();
   }
   
- // fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] data_ptr;
   delete [] output_ptr;
 }
@@ -385,104 +384,4 @@ void extendOnCPU(
     delete [] tasks[i]->leftRs;
     delete tasks[i];
   }
-}
-
-void mem_chain2aln_hw(
-    ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const mem_chain_v* chains,
-    mem_alnreg_v *av,
-    int batch_num)
-{
-  // For statistics
-  uint64_t swFPGA_time = 0;
-  uint64_t extCPU_time = 0;
-  int      swFPGA_num  = 0;
-  int      extCPU_num  = 0;
-
-  uint64_t start_ts = blaze::getUs();
-
-  // Initialize output aligned regions
-  for (int i=0;i<batch_num; i++){
-    kv_init(av[i]);
-  }
-
-  // Initialize batch of SW tasks
-  ExtParam **sw_task_v = new ExtParam*[chunk_size];
-  // Initialize batch of SWRead objects
-  std::list<SWRead*> read_batch;
-  for (int i = 0; i < batch_num; i++) {
-    SWRead *read_ptr = new SWRead(0, i, aux, 
-        seqs+i, chains+i, av+i);
-
-    read_batch.push_back(read_ptr); 
-  }
-
-  fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
-
-  int task_num = 0;
-
-  while (!read_batch.empty()) {
-    
-    std::list<SWRead*>::iterator iter = read_batch.begin();
-    while (iter != read_batch.end()) {
-
-      uint64_t start_ts;
-      ExtParam* param_task;
-      //int64_t nt_time = blaze::getUs();
-      SWRead::TaskStatus status = (*iter)->nextTask(param_task);
-      //int nt_cost = blaze::getUs()-nt_time; 
-      switch (status) {
-
-        case SWRead::TaskStatus::Successful:
-          sw_task_v[task_num] = param_task;
-          task_num++;
-          if (task_num >= chunk_size) {
-            start_ts = blaze::getUs();
-#ifdef USE_FPGA
-            SwFPGA(sw_task_v, task_num, aux->opt);
-#else
-            extendOnCPU(sw_task_v, task_num, aux->opt);
-#endif
-            iter = read_batch.begin() ;  // go back to the start
-
-            swFPGA_time += blaze::getUs() - start_ts;
-            swFPGA_num ++;
-            
-            task_num = 0;
-          }
-          else {
-            iter++;
-          }
-          break;
-
-        case SWRead::TaskStatus::Pending:
-          // No more tasks, must do extend before proceeding
-          start_ts = blaze::getUs();
-          extendOnCPU(sw_task_v, task_num, aux->opt );
-          extCPU_time += blaze::getUs() - start_ts;
-          extCPU_num ++;
-
-          task_num = 0;
-          break;
-
-        case SWRead::TaskStatus::Finished:
-          // Read is finished, remove from batch
-          //uint64_t start_idx = (*iter)->start_idx();
-          //task_remain[start_idx]--;
-          //if (task_remain[start_idx] == 0) {
-          //  pushOutput(output_buf[start_idx]);
-          //}
-          delete *iter;
-          iter = read_batch.erase(iter);
-          break;
-
-        default: ;
-      }
-    }
-  }
-  delete [] sw_task_v;
-  fprintf(stderr, "%d tasks is batched, %d is not\n", swFPGA_num, extCPU_num);
-  fprintf(stderr, "Batched tasks takes %dus\n", swFPGA_time);
-  fprintf(stderr, "Normal tasks takes %dus\n", extCPU_time);
 }
