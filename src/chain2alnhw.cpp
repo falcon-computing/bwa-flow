@@ -5,7 +5,11 @@
 #include <limits.h>
 #include <math.h>
 #include <vector>
+#include <queue>
 #include <list>
+#include <boost/smart_ptr.hpp>
+#include <boost/thread/thread.hpp>
+
 #include "bwa_wrapper.h"
 #include "blaze/AccAgent.h"
 
@@ -13,9 +17,9 @@
 #include "SWRead.h"
 
 #define FPGA_RET_PARAM_NUM 5
-#define chunk_size 2000 
+#define chunk_size 20
 
-#define USE_FPGA
+//#define USE_FPGA
 //#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
@@ -51,7 +55,11 @@ void SwFPGA(
   int Buf1Len = 32 + 32*batch_num;
   int data_size = Buf1Len >> 2;
   for (int i = 0; i <batch_num ; i++){
-    data_size +=((((tasks[i]->leftQlen + tasks[i]->leftRlen + tasks[i]->rightQlen + tasks[i]->rightRlen)+1)/2)+3)/4; 
+    data_size +=((((tasks[i]->leftQlen + 
+                    tasks[i]->leftRlen + 
+                    tasks[i]->rightQlen + 
+                    tasks[i]->rightRlen) + 1) / 
+                2)+3)/4; 
   } 
   char* buf1 = new char[data_size << 2];
   //------------------ store the public options at the beginning-----------------
@@ -96,7 +104,7 @@ void SwFPGA(
     *((int*)(&buf1[buf1idx]))= i; buf1idx +=4;
   }
 
-  fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
   i = 0;
   int j = 0;
   int TmpIntVar = 0;
@@ -221,9 +229,9 @@ void SwFPGA(
     i = i + 1;
   }
 
-  fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
-  fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
 #ifdef SMITHWATERMAN_SIM
@@ -270,9 +278,13 @@ void SwFPGA(
     }
 
     tasks[task_idx]->read_obj->finish();
+
+    delete [] tasks[task_idx]->leftQs;
+    delete [] tasks[task_idx]->leftRs;
+    delete tasks[task_idx];
   }
   
-  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
+  //fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] buf1;
   delete [] output_ptr;
 }
@@ -389,6 +401,10 @@ void extendOnCPU(
     }
     // Notify the read that the current task is finished
     tasks[i]->read_obj->finish();
+
+    delete [] tasks[i]->leftQs;
+    delete [] tasks[i]->leftRs;
+    delete tasks[i];
   }
 }
 
@@ -409,20 +425,19 @@ void mem_chain2aln_hw(
     int batch_num)
 {
   // For statistics
-  uint64_t swFPGA_time = 0;
-  uint64_t extCPU_time = 0;
-  int      swFPGA_num  = 0;
-  int      extCPU_num  = 0;
+  uint64_t getTask_time = 0;
+  uint64_t swFPGA_time  = 0;
+  uint64_t extCPU_time  = 0;
+  int      swFPGA_num   = 0;
+  int      extCPU_num   = 0;
+  int      join_num     = 0;
 
-  uint64_t start_ts = blaze::getUs();
 
   // Initialize output aligned regions
   for (int i=0;i<batch_num; i++){
     kv_init(av[i]);
   }
 
-  // Initialize batch of SW tasks
-  ExtParam **sw_task_v = new ExtParam*[chunk_size];
   // Initialize batch of SWRead objects
   std::list<SWRead*> read_batch;
   for (int i = 0; i < batch_num; i++) {
@@ -432,9 +447,22 @@ void mem_chain2aln_hw(
     read_batch.push_back(read_ptr); 
   }
 
-  fprintf(stderr, "Preparation takes %dus\n", blaze::getUs()-start_ts);
+  // Create thread for ping pong
+  const int stage_num = 2;
+  int stage_cnt = 0;
+  //boost::thread_group stage_workers;
+  std::queue<boost::shared_ptr<boost::thread> > stage_workers;
 
-  int task_num = 0;
+  // Initialize batch of SW tasks
+  int task_num[stage_num] = {0};
+  ExtParam **sw_task_v[stage_num];
+  for (int i = 0; i < stage_num; i++) {
+    task_num[i] = 0;
+    sw_task_v[i] = new ExtParam*[chunk_size];
+  }
+
+  uint64_t start_ts = blaze::getUs();
+
   while (!read_batch.empty()) {
     
     std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -442,43 +470,67 @@ void mem_chain2aln_hw(
 
       uint64_t start_ts;
       ExtParam* param_task;
-      //int64_t nt_time = blaze::getUs();
+      uint64_t nt_time = blaze::getUs();
       SWRead::TaskStatus status = (*iter)->nextTask(param_task);
-      //int nt_cost = blaze::getUs()-nt_time; 
+      getTask_time += blaze::getUs()-nt_time; 
+
       switch (status) {
 
         case SWRead::TaskStatus::Successful:
-          sw_task_v[task_num] = param_task;
-          task_num++;
-          if (task_num >= chunk_size) {
+          sw_task_v[stage_cnt][task_num[stage_cnt]] = param_task;
+          task_num[stage_cnt]++;
+          if (task_num[stage_cnt] >= chunk_size) {
             start_ts = blaze::getUs();
+            if (stage_workers.size() >= stage_num - 1) {
+              stage_workers.front()->join();
+              stage_workers.pop();
+            }
 #ifdef USE_FPGA
-            SwFPGA(sw_task_v,task_num,aux->opt);
-            iter = read_batch.begin() ;  // go back to the start
+            boost::shared_ptr<boost::thread> worker(new 
+                boost::thread(&SwFPGA,
+                  sw_task_v[stage_cnt],
+                  task_num[stage_cnt],
+                  aux->opt));
+            //SwFPGA(sw_task_v, task_num, aux->opt);
 #else
-            extendOnCPU(sw_task_v, task_num, aux->opt);
-            iter = read_batch.begin() ;  // go back to the start
+            boost::shared_ptr<boost::thread> worker(new 
+                boost::thread(&extendOnCPU,
+                  sw_task_v[stage_cnt],
+                  task_num[stage_cnt],
+                  aux->opt));
 #endif
+            stage_workers.push(worker);
+
+            task_num[stage_cnt] = 0;
+
+            stage_cnt = (stage_cnt + 1) % stage_num;
+
             swFPGA_time += blaze::getUs() - start_ts;
             swFPGA_num ++;
-            
-            task_num = 0;
-            freeTasks(sw_task_v, task_num);
           }
-          else{
-          ++iter;
-          }
+          iter++;
           break;
 
         case SWRead::TaskStatus::Pending:
-          // No more tasks, must do extend before proceeding
           start_ts = blaze::getUs();
-          extendOnCPU(sw_task_v, task_num, aux->opt );
-          extCPU_time += blaze::getUs() - start_ts;
-          extCPU_num ++;
+          if (!stage_workers.empty()) {
+            stage_workers.front()->join();
+            stage_workers.pop();
+            join_num ++;
+            //iter = read_batch.begin();
+          }
+          else {
+            // No more tasks, must do extend before proceeding
+            extendOnCPU(sw_task_v[stage_cnt],
+                task_num[stage_cnt],
+                aux->opt);
 
-          task_num = 0;
-          freeTasks(sw_task_v, task_num);
+            task_num[stage_cnt] = 0;
+            iter++;
+
+            extCPU_num ++;
+          }
+          extCPU_time += blaze::getUs() - start_ts;
           break;
 
         case SWRead::TaskStatus::Finished:
@@ -491,8 +543,12 @@ void mem_chain2aln_hw(
       }
     }
   }
-  delete [] sw_task_v;
-  fprintf(stderr, "%d tasks is batched, %d is not\n", swFPGA_num, extCPU_num);
-  fprintf(stderr, "Batched tasks takes %dus\n", swFPGA_time);
-  fprintf(stderr, "Normal tasks takes %dus\n", extCPU_time);
+  for (int i = 0; i < stage_num; i++) {
+    delete [] sw_task_v[i];
+  }
+  fprintf(stderr, "%d force join tasks\n", join_num);
+  fprintf(stderr, "%d Batched tasks takes %dus\n", swFPGA_num, swFPGA_time);
+  fprintf(stderr, "%d Normal tasks takes %dus\n", extCPU_num, extCPU_time);
+  fprintf(stderr, "getTasks take %dus\n", getTask_time);
+  fprintf(stderr, "All tasks takes %dus\n", blaze::getUs()-start_ts);
 }
