@@ -5,7 +5,6 @@ include /curr/diwu/prog/blaze/Makefile.config
 
 MANAGER_DIR=/curr/diwu/prog/blaze/manager
 
-
 CC	:= gcc
 PP	:= g++
 
@@ -14,6 +13,7 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
            $(SRC_DIR)/Extension.o\
+           $(SRC_DIR)/FPGAAgent.o \
 	   $(SRC_DIR)/main.o \
 	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/util.o
@@ -21,9 +21,8 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 PROG	:= ./bin/bwa
 INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(KFLOW_DIR)/include \
-	   -I$(MANAGER_DIR)/include \
 	   -I$(BOOST_DIR)/include \
-           -I/curr/software/Xilinx/Vivado_HLS/2015.4/include\
+	   -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 \
 	   -I$(PROTOBUF_DIR)/include \
 	   -I$(GLOG_DIR)/include \
 	   -I$(JAVA_HOME)/include \
@@ -31,7 +30,6 @@ INCLUDES:= -I. -I$(BWA_DIR) \
 	
 LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(KFLOW_DIR)/lib -lkflow \
-	   -L$(MANAGER_DIR)/lib -lblaze \
 	   -L$(BOOST_DIR)/lib \
 	   	-lboost_system \
 		-lboost_thread \
@@ -40,6 +38,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
+	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
 	   -lpthread -lm -ldl -lz -lrt
 
 all:$(PROG)

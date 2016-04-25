@@ -6,8 +6,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <zlib.h>
+<<<<<<< HEAD
 #include <string>
 #include <glog/logging.h>
+=======
+#include <glog/logging.h>
+#include <string>
+>>>>>>> hw_test
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -20,6 +25,12 @@
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
 #include "util.h"
+<<<<<<< HEAD
+=======
+#include "FPGAAgent.h"
+
+FPGAAgent* agent;
+>>>>>>> hw_test
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
@@ -49,8 +60,8 @@ int main(int argc, char *argv[]) {
 
   int chunk_size = 2000;
 
-  // Start FPGA manager
-  agent = new blaze::AccAgent("conf");
+  // Start FPGA agent
+  agent = new FPGAAgent("/curr/diwu/prog/acc_lib/bwa-sm/sm-80pe.xclbin", 2000);
 
   // Get the index and the options
   pre_process(argc-1, argv+1, &aux);
@@ -76,7 +87,8 @@ int main(int argc, char *argv[]) {
   bwa_flow.printPerf();
   
   // Free all global variables
-  //delete agent;
+  delete agent;
+
   free(aux.opt);
   bwa_idx_destroy(aux.idx);
   kseq_destroy(aux.ks);

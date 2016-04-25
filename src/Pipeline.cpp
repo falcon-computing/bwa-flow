@@ -6,6 +6,7 @@
 #include "bwa/utils.h"
 #include "Extension.h"
 #include "Pipeline.h"  
+#include "util.h"
 
 #define OFFLOAD
 #define USE_FPGA
@@ -142,7 +143,6 @@ void ChainsToRegions::compute() {
   std::queue<boost::shared_ptr<boost::thread> > stage_workers;
 
   int task_num[stage_num] = {0};
-  blaze::Task_ptr fpga_task[stage_num];
 
   // Batch of SWTasks
   ExtParam** task_batch[stage_num];
@@ -171,7 +171,7 @@ void ChainsToRegions::compute() {
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
-  uint64_t last_batch_ts = blaze::getUs();
+  uint64_t last_batch_ts = getUs();
   while (flag_more_reads || !read_batch.empty()) { 
 
     if (read_batch.empty()) {
@@ -200,23 +200,24 @@ void ChainsToRegions::compute() {
             task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
             task_num[stage_cnt]++;
             if (task_num[stage_cnt] >= chunk_size) {
-              start_ts = blaze::getUs();
+              start_ts = getUs();
 #ifdef USE_FPGA
-              uint64_t pd_ts = blaze::getUs();
-              fpga_task[stage_cnt] = packData(task_batch[stage_cnt],
+              uint64_t pd_ts = getUs();
+              fpga_task[stage_cnt] = packData(stage_cnt,
+                  task_batch[stage_cnt],
                   task_num[stage_cnt],
                   aux->opt);
 
               if (!stage_workers.empty()) {
                 stage_workers.front()->join();
                 stage_workers.pop();
-                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << " us";
-                DLOG(INFO) << "packData takes " << blaze::getUs() - pd_ts << " us";
+                DLOG(INFO) << "Batch takes " << getUs() - last_batch_ts << " us";
+                DLOG(INFO) << "packData takes " << getUs() - pd_ts << " us";
               }
               boost::shared_ptr<boost::thread> worker(new 
                   boost::thread(&SwFPGA,
+                    stage_cnt,
                     task_batch[stage_cnt],
-                    fpga_task[stage_cnt], 
                     task_num[stage_cnt],
                     aux->opt));
               //SwFPGA(task_batch, task_num, aux->opt);
@@ -224,7 +225,7 @@ void ChainsToRegions::compute() {
               if (!stage_workers.empty()) {
                 stage_workers.front()->join();
                 stage_workers.pop();
-                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << " us";
+                DLOG(INFO) << "Batch takes " << getUs() - last_batch_ts << " us";
               }
 
               boost::shared_ptr<boost::thread> worker(new 
@@ -234,13 +235,13 @@ void ChainsToRegions::compute() {
                     aux->opt));
               //extendOnCPU(task_batch, task_num, aux->opt);
 #endif
-              last_batch_ts = blaze::getUs();
+              last_batch_ts = getUs();
               stage_workers.push(worker);
 
               task_num[stage_cnt] = 0;
               stage_cnt = (stage_cnt + 1) % stage_num;
 
-              swFPGA_time += blaze::getUs() - start_ts;
+              swFPGA_time += getUs() - start_ts;
               swFPGA_num ++;
             }
             iter ++;
@@ -251,7 +252,7 @@ void ChainsToRegions::compute() {
               // Try to get a new batch
               curr_size = read_batch.size(); 
 
-              start_ts = blaze::getUs();
+              start_ts = getUs();
               if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
                 iter = read_batch.begin();
                 std::advance(iter, curr_size);
@@ -259,7 +260,7 @@ void ChainsToRegions::compute() {
               else {
                 flag_more_reads = false;
               }
-              wait_time += blaze::getUs() - start_ts;
+              wait_time += getUs() - start_ts;
             }
             else {
               // No more new tasks, must do extend before proceeding
@@ -268,11 +269,11 @@ void ChainsToRegions::compute() {
                 stage_workers.pop();
               }
               else {
-                start_ts = blaze::getUs();
+                start_ts = getUs();
 
                 extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
 
-                extCPU_time += blaze::getUs() - start_ts;
+                extCPU_time += getUs() - start_ts;
                 extCPU_num ++;
 
                 task_num[stage_cnt] = 0;

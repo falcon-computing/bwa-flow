@@ -11,11 +11,11 @@
 #include <boost/thread/thread.hpp>
 
 #include "bwa_wrapper.h"
-#include "blaze/AccAgent.h"
-
+#include "Extension.h"
+#include "FPGAAgent.h"
 #include "SWTask.h"
 #include "SWRead.h"
-#include "Extension.h"
+#include "util.h"
 
 #define FPGA_RET_PARAM_NUM 5
 #define USE_FPGA
@@ -28,13 +28,13 @@ void sw_top (int *a, int *output_a, int __inc);
 }
 #endif
 
-blaze::AccAgent* agent;
+extern FPGAAgent* agent;
 
-blaze::Task_ptr packData(
-      ExtParam** &tasks,
-      int batch_num,
-      mem_opt_t *opt
-     )
+void packData(
+    int stage_cnt,
+    ExtParam** &tasks,
+    int batch_num,
+    mem_opt_t *opt)
 {
   int Buf1Len = 32 + 32*batch_num;
   int data_size = Buf1Len >> 2;
@@ -90,6 +90,7 @@ blaze::Task_ptr packData(
   int j = 0;
   int TmpIntVar = 0;
   int counter8 = 0;
+
   while(i < batch_num) {
     if(tasks[i]->leftQlen > 0) {
       j = 0;
@@ -151,33 +152,26 @@ blaze::Task_ptr packData(
     delete [] tasks[i]->leftRs;
     i = i + 1;
   }
+  agent->writeInput(buf1, data_size*sizeof(int), stage_cnt);
 
-  blaze::Task_ptr fpga_task = agent->createTask(acc_id);
-  if(!(fpga_task)){
-    throw blaze::internalError("task is not created");
-  }
-  agent->writeInput(fpga_task, acc_id, (int *)buf1, 1, data_size, sizeof(int));
   delete [] buf1;
-  return fpga_task; 
 }
 
 void SwFPGA(
+    int stage_cnt,
     ExtParam** &tasks,
-    blaze::Task_ptr fpga_task,
     int batch_num,
     mem_opt_t *opt)
 {
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
-  uint64_t start_ts = blaze::getUs();
-#ifdef SMITHWATERMAN_SIM
-  sw_top ((int*)buf1, (int *)output_ptr,batch_num);
-#else
-  agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
-  agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
-#endif
-  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  uint64_t start_ts = getUs();
 
-  start_ts = blaze::getUs();
+  agent->start(batch_num, stage_cnt);
+  agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
+
+  //fprintf(stderr, "FPGA kernel used %dus\n", getUs()-start_ts); 
+
+  start_ts = getUs();
   for (int i = 0; i < batch_num; i++) {  
     
     int task_idx = ((int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
@@ -208,7 +202,8 @@ void SwFPGA(
     tasks[task_idx]->read_obj->finish();
     delete tasks[task_idx];
   }
-  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
+ 
+  //fprintf(stderr, "FPGA output used %dus\n", getUs()-start_ts); 
   delete [] output_ptr;
 }
 
@@ -328,3 +323,154 @@ void extendOnCPU(
     delete tasks[i];
   }
 }
+
+#if 0
+void mem_chain2aln_hw(
+    ktp_aux_t *aux,
+    const bseq1_t *seqs,
+    const mem_chain_v* chains,
+    mem_alnreg_v *av,
+    int batch_num)
+{
+  // For statistics
+  uint64_t getTask_time = 0;
+  uint64_t swFPGA_time  = 0;
+  uint64_t extCPU_time  = 0;
+  int      swFPGA_num   = 0;
+  int      extCPU_num   = 0;
+  int      join_num     = 0;
+
+
+  // Initialize output aligned regions
+  for (int i=0;i<batch_num; i++){
+    kv_init(av[i]);
+  }
+
+  // Initialize batch of SWRead objects
+  std::list<SWRead*> read_batch;
+  for (int i = 0; i < batch_num; i++) {
+    SWRead *read_ptr = new SWRead(i, aux, 
+        seqs+i, chains+i, av+i);
+
+    read_batch.push_back(read_ptr); 
+  }
+
+  // Create thread for ping pong
+  const int stage_num = 2;
+  int stage_cnt = 0;
+  //boost::thread_group stage_workers;
+  std::queue<boost::shared_ptr<boost::thread> > stage_workers;
+
+  // Initialize batch of SW tasks
+  int task_num[stage_num] = {0};
+  ExtParam **sw_task_v[stage_num];
+  for (int i = 0; i < stage_num; i++) {
+    task_num[i] = 0;
+    sw_task_v[i] = new ExtParam*[chunk_size];
+  }
+
+  uint64_t start_ts = getUs();
+  uint64_t last_ts;
+  while (!read_batch.empty()) {
+    
+    std::list<SWRead*>::iterator iter = read_batch.begin();
+    while (iter != read_batch.end()) {
+
+      uint64_t start_ts;
+      ExtParam* param_task;
+      uint64_t nt_time = getUs();
+      SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+      getTask_time += getUs()-nt_time; 
+
+      switch (status) {
+
+        case SWRead::TaskStatus::Successful:
+          sw_task_v[stage_cnt][task_num[stage_cnt]] = param_task;
+          task_num[stage_cnt]++;
+          if (task_num[stage_cnt] >= chunk_size) {
+            start_ts = getUs();
+#ifdef USE_FPGA
+            uint64_t pd_ts = getUs();
+            packData(stage_cnt,
+                sw_task_v[stage_cnt],
+                task_num[stage_cnt],
+                aux->opt);
+
+            if (stage_workers.size() >= stage_num - 1) {
+              stage_workers.front()->join();
+              stage_workers.pop();
+            }
+            fprintf(stderr, "the time since last kernal call is %dus\n", getUs()-last_ts);
+            fprintf(stderr, "the time used in nextTask is %dus\n", getTask_time);
+            fprintf(stderr, "the time used in packData is %dus\n", getUs()-pd_ts);        
+
+            last_ts = getUs();
+            getTask_time = 0 ;
+            boost::shared_ptr<boost::thread> worker(new 
+                boost::thread(&SwFPGA,
+                  stage_cnt,
+                  sw_task_v[stage_cnt],
+                  task_num[stage_cnt],
+                  aux->opt));
+#else
+            if (stage_workers.size() >= stage_num - 1) {
+              stage_workers.front()->join();
+              stage_workers.pop();
+            }
+            boost::shared_ptr<boost::thread> worker(new 
+                boost::thread(&extendOnCPU,
+                  sw_task_v[stage_cnt],
+                  task_num[stage_cnt],
+                  aux->opt));
+#endif
+            stage_workers.push(worker);
+
+            task_num[stage_cnt] = 0;
+
+            stage_cnt = (stage_cnt + 1) % stage_num;
+            swFPGA_time += getUs() - start_ts;
+            swFPGA_num ++;
+          }
+          iter++;
+          break;
+
+        case SWRead::TaskStatus::Pending:
+          start_ts = getUs();
+          if (!stage_workers.empty()) {
+            stage_workers.front()->join();
+            stage_workers.pop();
+            join_num ++;
+          }
+          else {
+            // No more tasks, must do extend before proceeding
+            extendOnCPU(sw_task_v[stage_cnt],
+                task_num[stage_cnt],
+                aux->opt);
+
+            task_num[stage_cnt] = 0;
+            iter++;
+
+            extCPU_num ++;
+          }
+          extCPU_time += getUs() - start_ts;
+          break;
+
+        case SWRead::TaskStatus::Finished:
+          // Read is finished, remove from batch
+          delete *iter;
+          iter = read_batch.erase(iter);
+          break;
+
+        default: ;
+      }
+    }
+  }
+  for (int i = 0; i < stage_num; i++) {
+    delete [] sw_task_v[i];
+  }
+  fprintf(stderr, "%d force join tasks\n", join_num);
+  fprintf(stderr, "%d Batched tasks takes %dus\n", swFPGA_num, swFPGA_time);
+  fprintf(stderr, "%d Normal tasks takes %dus\n", extCPU_num, extCPU_time);
+  fprintf(stderr, "All tasks takes %dus\n", getUs()-start_ts);
+}
+#endif

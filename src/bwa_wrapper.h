@@ -20,8 +20,6 @@
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
 
-#include "blaze/AccAgent.h"
-
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"
 #endif
@@ -29,11 +27,8 @@ extern "C"{
 KSEQ_DECLARE(gzFile)
 }
 
-extern blaze::AccAgent* agent;
-const std::string acc_id = "SmithWaterman";
-
-class ktp_aux_t {
- public:
+class ktp_aux_t{
+public:
 	kseq_t *ks, *ks2;
 	mem_opt_t *opt;
 	mem_pestat_t *pes0;
