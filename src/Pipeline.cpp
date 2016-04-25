@@ -142,6 +142,7 @@ void ChainsToRegions::compute() {
   std::queue<boost::shared_ptr<boost::thread> > stage_workers;
 
   int task_num[stage_num] = {0};
+  blaze::Task_ptr fpga_task[stage_num];
 
   // Batch of SWTasks
   ExtParam** task_batch[stage_num];
@@ -200,21 +201,32 @@ void ChainsToRegions::compute() {
             task_num[stage_cnt]++;
             if (task_num[stage_cnt] >= chunk_size) {
               start_ts = blaze::getUs();
+#ifdef USE_FPGA
+              uint64_t pd_ts = blaze::getUs();
+              fpga_task[stage_cnt] = packData(task_batch[stage_cnt],
+                  task_num[stage_cnt],
+                  aux->opt);
 
               if (!stage_workers.empty()) {
-              //if (stage_workers.size() >= stage_num - 1) {
                 stage_workers.front()->join();
                 stage_workers.pop();
-                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << "us";
+                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << " us";
+                DLOG(INFO) << "packData takes " << blaze::getUs() - pd_ts << " us";
               }
-#ifdef USE_FPGA
               boost::shared_ptr<boost::thread> worker(new 
                   boost::thread(&SwFPGA,
                     task_batch[stage_cnt],
+                    fpga_task[stage_cnt], 
                     task_num[stage_cnt],
                     aux->opt));
               //SwFPGA(task_batch, task_num, aux->opt);
 #else
+              if (!stage_workers.empty()) {
+                stage_workers.front()->join();
+                stage_workers.pop();
+                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << " us";
+              }
+
               boost::shared_ptr<boost::thread> worker(new 
                   boost::thread(&extendOnCPU,
                     task_batch[stage_cnt],

@@ -18,8 +18,7 @@
 #include "Extension.h"
 
 #define FPGA_RET_PARAM_NUM 5
-
-//#define USE_FPGA
+#define USE_FPGA
 //#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
@@ -31,29 +30,12 @@ void sw_top (int *a, int *output_a, int __inc);
 
 blaze::AccAgent* agent;
 
-inline int Int2CharArray(char* arr, int idx, int num)
+blaze::Task_ptr packData(
+      ExtParam** &tasks,
+      int batch_num,
+      mem_opt_t *opt
+     )
 {
-  arr[idx] = (char)(num&0xff);
-  arr[idx+1] = (char)((num>>8)&0xff);
-  arr[idx+2] = (char)((num>>16)&0xff);
-  arr[idx+3] = (char)((num>>24)&0xff);
-  return idx+4 ;
-}
-
-inline int Short2CharArray(char *arr, int idx, short num)
-{
-  arr[idx] = (char)(num & 0xff);
-  arr[idx+1] = (char)((num>>8) & 0xff);
-  return idx+2 ;
-}
-
-void SwFPGA(
-    ExtParam** tasks,
-    int batch_num,
-    mem_opt_t *opt)
-{
-  uint64_t start_ts = blaze::getUs();
-
   int Buf1Len = 32 + 32*batch_num;
   int data_size = Buf1Len >> 2;
   for (int i = 0; i <batch_num ; i++){
@@ -63,7 +45,7 @@ void SwFPGA(
                     tasks[i]->rightRlen) + 1) / 
                 2)+3)/4; 
   } 
-  char* buf1 = new char[data_size << 2];
+  char* buf1= new char[data_size << 2];
   //------------------ store the public options at the beginning-----------------
   buf1[0] = (char)opt->o_del;
   buf1[1] = (char)opt->e_del;
@@ -73,7 +55,6 @@ void SwFPGA(
   buf1[5] = (char)opt->pen_clip3;
   buf1[6] = (char)opt->w;
   *(int*)(&buf1[8])= batch_num;
-  //-------------------pack the batch of parameters of each SW--------------------
   int i = 0;
   int LeftMaxIns = 0;
   int LeftMaxDel = 0;
@@ -105,13 +86,10 @@ void SwFPGA(
     *((short*)(&buf1[buf1idx]))= RightMaxDel; buf1idx +=2;
     *((int*)(&buf1[buf1idx]))= i; buf1idx +=4;
   }
-
-  //fprintf(stderr, "FPGA preparation used %dus until buf1\n", blaze::getUs()-start_ts); 
   i = 0;
   int j = 0;
   int TmpIntVar = 0;
   int counter8 = 0;
-
   while(i < batch_num) {
     if(tasks[i]->leftQlen > 0) {
       j = 0;
@@ -169,27 +147,35 @@ void SwFPGA(
       *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
       buf1idx += 4;
     }
+    delete [] tasks[i]->leftQs;
+    delete [] tasks[i]->leftRs;
     i = i + 1;
   }
 
-  //fprintf(stderr, "FPGA preparation used %dus until buf2\n", blaze::getUs()-start_ts); 
-  short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
-  //fprintf(stderr, "FPGA preparation used %dus\n", blaze::getUs()-start_ts); 
+  blaze::Task_ptr fpga_task = agent->createTask(acc_id);
+  if(!(fpga_task)){
+    throw blaze::internalError("task is not created");
+  }
+  agent->writeInput(fpga_task, acc_id, (int *)buf1, 1, data_size, sizeof(int));
+  delete [] buf1;
+  return fpga_task; 
+}
 
-  start_ts = blaze::getUs();
+void SwFPGA(
+    ExtParam** &tasks,
+    blaze::Task_ptr fpga_task,
+    int batch_num,
+    mem_opt_t *opt)
+{
+  short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
+  uint64_t start_ts = blaze::getUs();
 #ifdef SMITHWATERMAN_SIM
   sw_top ((int*)buf1, (int *)output_ptr,batch_num);
 #else
-  blaze::Task_ptr fpga_task = agent->createTask(acc_id);
-  if (!fpga_task) {
-    throw blaze::internalError("Task is not created");
-  }
-  agent->writeInput(fpga_task, acc_id, (int*)buf1, 1, data_size, sizeof(int));
   agent->writeInput(fpga_task, acc_id, &batch_num, 1, 1, sizeof(int));
   agent->readOutput(fpga_task, output_ptr, FPGA_RET_PARAM_NUM*batch_num*4);
 #endif
-
-  //fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
+  fprintf(stderr, "FPGA kernel used %dus\n", blaze::getUs()-start_ts); 
 
   start_ts = blaze::getUs();
   for (int i = 0; i < batch_num; i++) {  
@@ -219,16 +205,10 @@ void SwFPGA(
         newreg->seedcov += t->len; 
       }
     }
-
     tasks[task_idx]->read_obj->finish();
-
-    delete [] tasks[task_idx]->leftQs;
-    delete [] tasks[task_idx]->leftRs;
     delete tasks[task_idx];
   }
- 
-  //fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
-  delete [] buf1;
+  fprintf(stderr, "FPGA output used %dus\n", blaze::getUs()-start_ts); 
   delete [] output_ptr;
 }
 
@@ -348,4 +328,3 @@ void extendOnCPU(
     delete tasks[i];
   }
 }
-

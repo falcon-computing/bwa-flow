@@ -14,7 +14,6 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
            $(SRC_DIR)/Extension.o\
-           $(SRC_DIR)/smithwaterman.o\
 	   $(SRC_DIR)/main.o \
 	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/util.o
