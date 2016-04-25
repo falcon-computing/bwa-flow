@@ -143,7 +143,6 @@ inline ExtParam* SWRead::getTask(
     int idx)
 {
   ExtParam *SwTask = new ExtParam;
-
   int i = 0;
   SwTask->leftQlen = seed->qbeg;
   if(SwTask->leftQlen > 0)
@@ -178,6 +177,7 @@ inline ExtParam* SWRead::getTask(
     SwTask->rightRlen = 0;
     SwTask->rightRs = NULL;
   }
+
   SwTask->h0 = seed->len*opt->a ;
   SwTask->regScore = seed->len*opt->a ;
   SwTask->qBeg = seed->qbeg ;
