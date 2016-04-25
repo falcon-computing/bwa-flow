@@ -24,7 +24,7 @@ class MapPartitionStage :
   MapPartitionStage(int n=1);
 
  protected:
-  virtual void compute() = 0;
+  virtual void compute(int wid) = 0;
 
   bool getInput(U &item);
   void pushOutput(V const & item);
@@ -102,7 +102,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     uint64_t start_ts = getUs();
 #endif
     // call user-defined compute function
-    compute(); 
+    compute(wid); 
 
 #ifndef DISABLE_PROFILING
     // record compute time

@@ -131,242 +131,261 @@ inline bool ChainsToRegions::addBatch(
   return true;
 }
 
-void ChainsToRegions::compute() {
+void ChainsToRegions::compute(int wid) {
 
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
 #ifdef OFFLOAD
-  var = this->getConst("chunk_size");
-  int chunk_size = boost::any_cast<int>(var);
-
-  const int stage_num = 2;
-  int stage_cnt = 0;
-  std::queue<boost::shared_ptr<boost::thread> > stage_workers;
-
-  int task_num[stage_num] = {0};
-
-  // Batch of SWTasks
-  ExtParam** task_batch[stage_num];
-
-  for (int i = 0; i < stage_num; i++) {
-    task_num[i] = 0;
-    task_batch[i] = new ExtParam*[chunk_size];
-  }
-
-  // Batch of SWReads
-  std::list<SWRead*> read_batch;
-
-  // Table to keep track of each record
-  std::unordered_map<uint64_t, int> tasks_remain;
-  std::unordered_map<uint64_t, ChainsRecord> input_buf;
-  std::unordered_map<uint64_t, RegionsRecord> output_buf;
-
-  // For statistics
-  uint64_t swFPGA_time = 0;
-  uint64_t extCPU_time = 0;
-  int      swFPGA_num  = 0;
-  int      extCPU_num  = 0;
-
-  uint64_t wait_time = 0;
-
-  bool flag_need_reads = false;
-  bool flag_more_reads = true;
-
-  uint64_t last_batch_ts = getUs();
-  while (flag_more_reads || !read_batch.empty()) { 
-
-    if (read_batch.empty()) {
-      // get initial input batch
-      if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
-        flag_more_reads = false;
-      }
-    }
-    else {
-      std::list<SWRead*>::iterator iter = read_batch.begin();
-
-      while (iter != read_batch.end()) {
-
-        uint64_t start_ts;
-        uint64_t start_idx;
-
-        ExtParam* param_task;
-        SWRead::TaskStatus status = (*iter)->nextTask(param_task);
-
-        int curr_size = 0;
-
-        switch (status) {
-
-          case SWRead::TaskStatus::Successful:
-
-            task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
-            task_num[stage_cnt]++;
-            if (task_num[stage_cnt] >= chunk_size) {
-              start_ts = getUs();
-#ifdef USE_FPGA
-              uint64_t pd_ts = getUs();
-              packData(stage_cnt,
-                  task_batch[stage_cnt],
-                  task_num[stage_cnt],
-                  aux->opt);
-
-              if (!stage_workers.empty()) {
-                VLOG(2) << "packData takes " << getUs() - pd_ts << " us";
-                stage_workers.front()->join();
-                stage_workers.pop();
-                VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
-              }
-              boost::shared_ptr<boost::thread> worker(new 
-                  boost::thread(&SwFPGA,
-                    stage_cnt,
-                    task_batch[stage_cnt],
-                    task_num[stage_cnt],
-                    aux->opt));
-              //SwFPGA(task_batch, task_num, aux->opt);
+  if (wid == 0) {
 #else
-              if (!stage_workers.empty()) {
-                stage_workers.front()->join();
-                stage_workers.pop();
-                VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
-              }
+  if (wid == -1) {
+#endif
+    VLOG(1) << "Worker " << wid << " is working on FPGA";
+    var = this->getConst("chunk_size");
+    int chunk_size = boost::any_cast<int>(var);
 
-              boost::shared_ptr<boost::thread> worker(new 
-                  boost::thread(&extendOnCPU,
+    const int stage_num = 2;
+    int stage_cnt = 0;
+    std::queue<boost::shared_ptr<boost::thread> > stage_workers;
+
+    int task_num[stage_num] = {0};
+
+    // Batch of SWTasks
+    ExtParam** task_batch[stage_num];
+
+    for (int i = 0; i < stage_num; i++) {
+      task_num[i] = 0;
+      task_batch[i] = new ExtParam*[chunk_size];
+    }
+
+    // Batch of SWReads
+    std::list<SWRead*> read_batch;
+
+    // Table to keep track of each record
+    std::unordered_map<uint64_t, int> tasks_remain;
+    std::unordered_map<uint64_t, ChainsRecord> input_buf;
+    std::unordered_map<uint64_t, RegionsRecord> output_buf;
+
+    // For statistics
+    uint64_t swFPGA_time = 0;
+    uint64_t extCPU_time = 0;
+    int      swFPGA_num  = 0;
+    int      extCPU_num  = 0;
+
+    uint64_t wait_time = 0;
+
+    bool flag_need_reads = false;
+    bool flag_more_reads = true;
+
+    uint64_t last_batch_ts = getUs();
+    while (flag_more_reads || !read_batch.empty()) { 
+
+      if (read_batch.empty()) {
+        // get initial input batch
+        if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
+          flag_more_reads = false;
+        }
+      }
+      else {
+        std::list<SWRead*>::iterator iter = read_batch.begin();
+
+        while (iter != read_batch.end()) {
+
+          uint64_t start_ts;
+          uint64_t start_idx;
+
+          ExtParam* param_task;
+          SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+
+          int curr_size = 0;
+
+          switch (status) {
+
+            case SWRead::TaskStatus::Successful:
+
+              task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
+              task_num[stage_cnt]++;
+              if (task_num[stage_cnt] >= chunk_size) {
+                start_ts = getUs();
+#ifdef USE_FPGA
+                uint64_t pd_ts = getUs();
+                packData(stage_cnt,
                     task_batch[stage_cnt],
                     task_num[stage_cnt],
-                    aux->opt));
-              //extendOnCPU(task_batch, task_num, aux->opt);
+                    aux->opt);
+
+                if (!stage_workers.empty()) {
+                  VLOG(2) << "packData takes " << getUs() - pd_ts << " us";
+                  stage_workers.front()->join();
+                  stage_workers.pop();
+                  VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
+                }
+                boost::shared_ptr<boost::thread> worker(new 
+                    boost::thread(&SwFPGA,
+                      stage_cnt,
+                      task_batch[stage_cnt],
+                      task_num[stage_cnt],
+                      aux->opt));
+                //SwFPGA(task_batch, task_num, aux->opt);
+#else
+                if (!stage_workers.empty()) {
+                  stage_workers.front()->join();
+                  stage_workers.pop();
+                  VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
+                }
+
+                boost::shared_ptr<boost::thread> worker(new 
+                    boost::thread(&extendOnCPU,
+                      task_batch[stage_cnt],
+                      task_num[stage_cnt],
+                      aux->opt));
+                //extendOnCPU(task_batch, task_num, aux->opt);
 #endif
-              last_batch_ts = getUs();
-              stage_workers.push(worker);
-
-              task_num[stage_cnt] = 0;
-              stage_cnt = (stage_cnt + 1) % stage_num;
-
-              swFPGA_time += getUs() - start_ts;
-              swFPGA_num ++;
-            }
-            iter ++;
-            break;
-
-          case SWRead::TaskStatus::Pending:
-            if (flag_more_reads) {
-              // Try to get a new batch
-              curr_size = read_batch.size(); 
-
-              start_ts = getUs();
-              if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
-                iter = read_batch.begin();
-                std::advance(iter, curr_size);
-              }
-              else {
-                flag_more_reads = false;
-              }
-              wait_time += getUs() - start_ts;
-            }
-            else {
-              // No more new tasks, must do extend before proceeding
-              if (!stage_workers.empty()) {
-                stage_workers.front()->join();
-                stage_workers.pop();
-              }
-              else {
-                start_ts = getUs();
-
-                extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
-
-                extCPU_time += getUs() - start_ts;
-                extCPU_num ++;
+                last_batch_ts = getUs();
+                stage_workers.push(worker);
 
                 task_num[stage_cnt] = 0;
-                iter++;
+                stage_cnt = (stage_cnt + 1) % stage_num;
+
+                swFPGA_time += getUs() - start_ts;
+                swFPGA_num ++;
               }
-            }
-            break;
+              iter ++;
+              break;
 
-          case SWRead::TaskStatus::Finished:
-            // Read is finished, remove from batch
-            start_idx = (*iter)->start_idx();
-            tasks_remain[start_idx]--;
+            case SWRead::TaskStatus::Pending:
+              if (flag_more_reads) {
+                // Try to get a new batch
+                curr_size = read_batch.size(); 
 
-            delete *iter;
+                start_ts = getUs();
+                if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
+                  iter = read_batch.begin();
+                  std::advance(iter, curr_size);
+                }
+                else {
+                  flag_more_reads = false;
+                }
+                wait_time += getUs() - start_ts;
+              }
+              else {
+                // No more new tasks, must do extend before proceeding
+                if (!stage_workers.empty()) {
+                  stage_workers.front()->join();
+                  stage_workers.pop();
+                }
+                else {
+                  start_ts = getUs();
 
-            iter = read_batch.erase(iter);
+                  extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
 
-            // Check if corresponding batch is finished
-            if (tasks_remain[start_idx] == 0) {
-              pushOutput(output_buf[start_idx]);
+                  extCPU_time += getUs() - start_ts;
+                  extCPU_num ++;
 
-              // Free data in the input record
-              freeChains(input_buf[start_idx].chains, 
-                  input_buf[start_idx].batch_num);
+                  task_num[stage_cnt] = 0;
+                  iter++;
+                }
+              }
+              break;
 
-              tasks_remain.erase(start_idx);
-              input_buf.erase(start_idx);
-              output_buf.erase(start_idx);
+            case SWRead::TaskStatus::Finished:
+              // Read is finished, remove from batch
+              start_idx = (*iter)->start_idx();
+              tasks_remain[start_idx]--;
 
-              VLOG(1) << "Pushing output " << start_idx
-                         << ", currently there are " << tasks_remain.size()
-                         << " active batches.";
-            }
-            break;
+              delete *iter;
 
-          default: ;
+              iter = read_batch.erase(iter);
+
+              // Check if corresponding batch is finished
+              if (tasks_remain[start_idx] == 0) {
+                pushOutput(output_buf[start_idx]);
+
+                // Free data in the input record
+                freeChains(input_buf[start_idx].chains, 
+                    input_buf[start_idx].batch_num);
+
+                tasks_remain.erase(start_idx);
+                input_buf.erase(start_idx);
+                output_buf.erase(start_idx);
+
+                VLOG(1) << "Pushing output " << start_idx
+                  << ", currently there are " << tasks_remain.size()
+                  << " active batches.";
+              }
+              break;
+
+            default: ;
+          }
         }
       }
     }
-  }
-  VLOG(1) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
-  VLOG(1) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
-  VLOG(1) << "Waiting for input takes " << wait_time << "us";
+    VLOG(1) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
+    VLOG(1) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
+    VLOG(1) << "Waiting for input takes " << wait_time << "us";
 
-  for (int i = 0; i < stage_num; i++) {
-    delete [] task_batch[i];
-  }
-#else
-  while (true) { 
-    ChainsRecord record;
-    bool ready = this->getInput(record);
-
-    while (!this->isFinal() && !ready) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      ready = this->getInput(record);
+    for (int i = 0; i < stage_num; i++) {
+      delete [] task_batch[i];
     }
-    if (!ready) { 
-      // this means isFinal() is true and input queue is empty
-      break; 
-    }
+  }
+  else {
+    VLOG(1) << "Worker " << wid << " is working on CPU";
+    while (true) { 
+      ChainsRecord record;
+      bool ready = this->getInput(record);
 
-    bseq1_t* seqs       = record.seqs;
-    mem_chain_v* chains = record.chains;
-    int batch_num       = record.batch_num;
-
-    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
-
-    for (int i = 0; i < batch_num; i++) {
-      kv_init(alnreg[i]);
-      for (int j = 0; j < chains[i].n; j++) {
-        mem_chain2aln(
-            aux->opt, 
-            aux->idx->bns, 
-            aux->idx->pac,
-            seqs[i].l_seq,
-            (uint8_t*)seqs[i].seq,
-            &chains[i].a[j],
-            alnreg+i);
+      while (!this->isFinal() && !ready) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+        ready = this->getInput(record);
       }
-    }
-    freeChains(chains, batch_num);
+      if (!ready) { 
+        // this means isFinal() is true and input queue is empty
+        break; 
+      }
 
-    RegionsRecord output;
-    output.start_idx = record.start_idx;
-    output.batch_num = batch_num;
-    output.seqs = seqs;
-    output.alnreg = alnreg;
+      bseq1_t* seqs       = record.seqs;
+      mem_chain_v* chains = record.chains;
+      int batch_num       = record.batch_num;
 
-    pushOutput(output);
-  }
+#ifdef OFFLOAD
+      // Free all read batches
+      std::list<SWRead*>* read_batch = record.read_batch;
+      for (std::list<SWRead*>::iterator iter = read_batch->begin();
+          iter != read_batch->end();
+          iter ++)
+      {
+        delete *iter;
+      }
+      delete read_batch;
 #endif
+
+      mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
+
+      for (int i = 0; i < batch_num; i++) {
+        kv_init(alnreg[i]);
+        for (int j = 0; j < chains[i].n; j++) {
+          mem_chain2aln(
+              aux->opt, 
+              aux->idx->bns, 
+              aux->idx->pac,
+              seqs[i].l_seq,
+              (uint8_t*)seqs[i].seq,
+              &chains[i].a[j],
+              alnreg+i);
+        }
+      }
+      freeChains(chains, batch_num);
+
+      RegionsRecord output;
+      output.start_idx = record.start_idx;
+      output.batch_num = batch_num;
+      output.seqs = seqs;
+      output.alnreg = alnreg;
+
+      pushOutput(output);
+    }
+  }
 }
 
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {

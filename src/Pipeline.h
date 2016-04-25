@@ -56,7 +56,6 @@ class SeqsToChains
   ktp_aux_t* aux;
 };
 
-// TODO: this in the future may not be a map stage anymore
 class ChainsToRegions
 : public kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>
 {
@@ -64,7 +63,7 @@ class ChainsToRegions
   ChainsToRegions(int n=1): 
       kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>(n) {;}
 
-  void compute();
+  void compute(int wid);
  private:
   inline bool addBatch(
       std::list<SWRead*> &read_batch,
