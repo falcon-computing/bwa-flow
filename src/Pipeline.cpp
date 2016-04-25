@@ -26,7 +26,7 @@ void SeqsProducer::compute() {
 
     if (!seqs) break;
 
-    LOG(INFO) << "Read " << batch_num << " seqs...";
+    VLOG(1) << "Read " << batch_num << " seqs...";
 
     // Construct output record
     SeqsRecord record;
@@ -79,6 +79,8 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.read_batch = read_batch;
 #endif
 
+  VLOG(1) << "Produced one batch of chains";
+
   return ret;
 }
 
@@ -122,7 +124,7 @@ inline bool ChainsToRegions::addBatch(
 
   // copy all new reads to current read_batch
   read_batch.insert(read_batch.end(), new_reads->begin(), new_reads->end());
-  DLOG(INFO) << "Add " << new_reads->size() << " new reads to process";
+  VLOG(1) << "Add " << new_reads->size() << " new reads to process";
 
   delete new_reads;
 
@@ -209,10 +211,10 @@ void ChainsToRegions::compute() {
                   aux->opt);
 
               if (!stage_workers.empty()) {
+                VLOG(2) << "packData takes " << getUs() - pd_ts << " us";
                 stage_workers.front()->join();
                 stage_workers.pop();
-                DLOG(INFO) << "Batch takes " << getUs() - last_batch_ts << " us";
-                DLOG(INFO) << "packData takes " << getUs() - pd_ts << " us";
+                VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
               }
               boost::shared_ptr<boost::thread> worker(new 
                   boost::thread(&SwFPGA,
@@ -225,7 +227,7 @@ void ChainsToRegions::compute() {
               if (!stage_workers.empty()) {
                 stage_workers.front()->join();
                 stage_workers.pop();
-                DLOG(INFO) << "Batch takes " << getUs() - last_batch_ts << " us";
+                VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
               }
 
               boost::shared_ptr<boost::thread> worker(new 
@@ -303,7 +305,7 @@ void ChainsToRegions::compute() {
               input_buf.erase(start_idx);
               output_buf.erase(start_idx);
 
-              DLOG(INFO) << "Pushing output " << start_idx
+              VLOG(1) << "Pushing output " << start_idx
                          << ", currently there are " << tasks_remain.size()
                          << " active batches.";
             }
@@ -314,9 +316,9 @@ void ChainsToRegions::compute() {
       }
     }
   }
-  DLOG(INFO) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
-  DLOG(INFO) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
-  DLOG(INFO) << "Waiting for input takes " << wait_time << "us";
+  VLOG(1) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
+  VLOG(1) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
+  VLOG(1) << "Waiting for input takes " << wait_time << "us";
 
   for (int i = 0; i < stage_num; i++) {
     delete [] task_batch[i];

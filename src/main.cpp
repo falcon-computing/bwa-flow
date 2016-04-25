@@ -32,6 +32,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize Google Log
   FLAGS_logtostderr = 1;
+  FLAGS_v = 1;
   google::InitGoogleLogging(argv[0]);
 
 	double t_real = realtime();
