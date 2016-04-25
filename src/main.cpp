@@ -6,13 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <zlib.h>
-<<<<<<< HEAD
-#include <string>
-#include <glog/logging.h>
-=======
 #include <glog/logging.h>
 #include <string>
->>>>>>> hw_test
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -25,12 +20,9 @@
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
 #include "util.h"
-<<<<<<< HEAD
-=======
 #include "FPGAAgent.h"
 
 FPGAAgent* agent;
->>>>>>> hw_test
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;

@@ -203,7 +203,7 @@ void ChainsToRegions::compute() {
               start_ts = getUs();
 #ifdef USE_FPGA
               uint64_t pd_ts = getUs();
-              fpga_task[stage_cnt] = packData(stage_cnt,
+              packData(stage_cnt,
                   task_batch[stage_cnt],
                   task_num[stage_cnt],
                   aux->opt);
