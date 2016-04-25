@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <zlib.h>
+#include <glog/logging.h>
+#include <string>
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -16,13 +18,9 @@
 
 #include "bwa_wrapper.h"
 #include "util.h"
-#include <glog/logging.h>
-#include <string>
+#include "FPGAAgent.h"
 
-
-#define FPGA_RET_PARAM_NUM 5
-
-blaze::AccAgent* agent;
+FPGAAgent* agent;
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
@@ -44,14 +42,14 @@ int main(int argc, char *argv[]) {
   memset(&aux, 0, sizeof(ktp_aux_t));
 
   // get the index and the options
-  uint64_t start_ts = blaze::getUs();
+  uint64_t start_ts = getUs();
   pre_process(argc-1, argv+1, &aux);
-  fprintf(stderr, "Preprocessing time is %dus\n", blaze::getUs()-start_ts);
+  fprintf(stderr, "Preprocessing time is %dus\n", getUs()-start_ts);
 
   int batch_num = 0;
-  bseq1_t *seqs = bseq_read(15000000, &batch_num, aux.ks, aux.ks2);
+  bseq1_t *seqs = bseq_read(1500000, &batch_num, aux.ks, aux.ks2);
 
-  agent = new blaze::AccAgent("../fpga/blaze-task/conf");
+  agent = new FPGAAgent("/curr/diwu/prog/acc_lib/bwa-sm/sm-80pe.xclbin", 2000);
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
@@ -62,7 +60,7 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(&aux, &seqs[i]);
 
-    uint64_t start_ts = blaze::getUs();
+    uint64_t start_ts = getUs();
     kv_init(alnreg[i]);
 
     for (int j = 0; j < chains[i].n; j++) {
@@ -74,13 +72,13 @@ int main(int argc, char *argv[]) {
           (uint8_t*)seqs[i].seq,
           p, alnreg+i);
     }
-    cost_sw += blaze::getUs() - start_ts;
+    cost_sw += getUs() - start_ts;
   }
   fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
 
-  start_ts = blaze::getUs();
+  start_ts = getUs();
   mem_chain2aln_hw(&aux, seqs, chains, alnreg_hw, batch_num);
-  uint64_t cost_hw = blaze::getUs() - start_ts;
+  uint64_t cost_hw = getUs() - start_ts;
 
   fprintf(stderr, "FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
 
@@ -109,7 +107,7 @@ int main(int argc, char *argv[]) {
   delete [] alnreg;
   delete [] alnreg_hw;
 
-  //delete agent;
+  delete agent;
 
   free(aux.opt);
   bwa_idx_destroy(aux.idx);
