@@ -137,7 +137,7 @@ void ChainsToRegions::compute() {
   var = this->getConst("chunk_size");
   int chunk_size = boost::any_cast<int>(var);
 
-  const int stage_num = 3;
+  const int stage_num = 2;
   int stage_cnt = 0;
   std::queue<boost::shared_ptr<boost::thread> > stage_workers;
 
@@ -170,15 +170,14 @@ void ChainsToRegions::compute() {
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
+  uint64_t last_batch_ts = blaze::getUs();
   while (flag_more_reads || !read_batch.empty()) { 
 
     if (read_batch.empty()) {
       // get initial input batch
-      uint64_t start_ts = blaze::getUs();
       if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
         flag_more_reads = false;
       }
-      wait_time += blaze::getUs() - start_ts;
     }
     else {
       std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -202,9 +201,11 @@ void ChainsToRegions::compute() {
             if (task_num[stage_cnt] >= chunk_size) {
               start_ts = blaze::getUs();
 
-              if (stage_workers.size() >= stage_num - 1) {
+              if (!stage_workers.empty()) {
+              //if (stage_workers.size() >= stage_num - 1) {
                 stage_workers.front()->join();
                 stage_workers.pop();
+                DLOG(INFO) << "Batch takes " << blaze::getUs() - last_batch_ts << "us";
               }
 #ifdef USE_FPGA
               boost::shared_ptr<boost::thread> worker(new 
@@ -221,6 +222,7 @@ void ChainsToRegions::compute() {
                     aux->opt));
               //extendOnCPU(task_batch, task_num, aux->opt);
 #endif
+              last_batch_ts = blaze::getUs();
               stage_workers.push(worker);
 
               task_num[stage_cnt] = 0;
