@@ -3,8 +3,6 @@
 
 #include "SWTask.h"
 
-#define MAX_BAND_TRY  2
-
 void packData(int stage_cnt,
       ExtParam** &tasks,
       int batch_num,

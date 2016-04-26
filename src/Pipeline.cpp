@@ -4,12 +4,10 @@
 #include <queue>
 
 #include "bwa/utils.h"
+#include "config.h"
 #include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
-
-#define OFFLOAD
-#define USE_FPGA
 
 void SeqsProducer::compute() {
 
@@ -19,6 +17,8 @@ void SeqsProducer::compute() {
   int num_seqs_produced = 0;
   while (true) {
 
+    uint64_t start_ts = getUs();
+
     // Read from file input, get mem_chains
     int batch_num = 0;
     bseq1_t *seqs = bseq_read(aux->actual_chunk_size, 
@@ -26,7 +26,8 @@ void SeqsProducer::compute() {
 
     if (!seqs) break;
 
-    VLOG(1) << "Read " << batch_num << " seqs...";
+    VLOG(1) << "Read " << batch_num << " seqs in "
+            << getUs() - start_ts << " us";
 
     // Construct output record
     SeqsRecord record;
@@ -40,6 +41,8 @@ void SeqsProducer::compute() {
 }
 
 ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
+
+  uint64_t start_ts = getUs();
 
   if (!aux) {
     boost::any var = this->getConst("aux");
@@ -79,7 +82,8 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.read_batch = read_batch;
 #endif
 
-  VLOG(1) << "Produced one batch of chains";
+  VLOG(1) << "Produced a chain batch in "
+          << getUs() - start_ts << " us";
 
   return ret;
 }
@@ -93,10 +97,12 @@ inline bool ChainsToRegions::addBatch(
   ChainsRecord record;
   bool ready = this->getInput(record);
 
+  uint64_t start_ts = getUs();
   while (!this->isFinal() && !ready) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(100));
     ready = this->getInput(record);
   }
+  VLOG(2) << "Wait for input takes " << getUs() - start_ts << " us";
   if (!ready) { 
     // this means isFinal() is true and input queue is empty
     return false; 
@@ -124,7 +130,7 @@ inline bool ChainsToRegions::addBatch(
 
   // copy all new reads to current read_batch
   read_batch.insert(read_batch.end(), new_reads->begin(), new_reads->end());
-  VLOG(1) << "Add " << new_reads->size() << " new reads to process";
+  VLOG(2) << "Add " << new_reads->size() << " new reads to process";
 
   delete new_reads;
 
@@ -174,11 +180,21 @@ void ChainsToRegions::compute(int wid) {
     int      extCPU_num  = 0;
 
     uint64_t wait_time = 0;
+    uint64_t nextTask_time = 0;
+    uint64_t nextTask_num = 0;
+
+    uint64_t last_batch_ts;
+    uint64_t last_output_ts;
+    uint64_t last_chain_ts;
+
+    uint64_t batch_time  = 0;
+    uint64_t output_time = 0;
+    int      batch_num   = 0;
+    int      chain_num   = 0;
 
     bool flag_need_reads = false;
     bool flag_more_reads = true;
 
-    uint64_t last_batch_ts = getUs();
     while (flag_more_reads || !read_batch.empty()) { 
 
       if (read_batch.empty()) {
@@ -186,6 +202,10 @@ void ChainsToRegions::compute(int wid) {
         if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
           flag_more_reads = false;
         }
+
+        last_batch_ts  = getUs();
+        last_output_ts = last_batch_ts;
+        last_chain_ts  = last_batch_ts;
       }
       else {
         std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -196,7 +216,10 @@ void ChainsToRegions::compute(int wid) {
           uint64_t start_idx;
 
           ExtParam* param_task;
+          start_ts = getUs();
           SWRead::TaskStatus status = (*iter)->nextTask(param_task);
+          nextTask_time += getUs() - start_ts; 
+          nextTask_num ++;
 
           int curr_size = 0;
 
@@ -207,20 +230,36 @@ void ChainsToRegions::compute(int wid) {
               task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
               task_num[stage_cnt]++;
               if (task_num[stage_cnt] >= chunk_size) {
+                VLOG(3) << "nextTask takes " << nextTask_time << " us in " 
+                        << nextTask_num << " calls";
+
+                nextTask_time = 0;
+                nextTask_num = 0;
+
                 start_ts = getUs();
 #ifdef USE_FPGA
-                uint64_t pd_ts = getUs();
                 packData(stage_cnt,
                     task_batch[stage_cnt],
                     task_num[stage_cnt],
                     aux->opt);
-
+#endif
                 if (!stage_workers.empty()) {
-                  VLOG(2) << "packData takes " << getUs() - pd_ts << " us";
                   stage_workers.front()->join();
                   stage_workers.pop();
-                  VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
                 }
+                VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
+                if (batch_num < 500) {
+                  batch_num ++;
+                  batch_time += getUs() - last_batch_ts;
+                }
+                else {
+                  VLOG(2) << "Extension task throughput is "
+                    << (double)batch_time / batch_num / chunk_size
+                    << " us/task";
+                  batch_num = 0;
+                  batch_time = 0;
+                }
+#ifdef USE_FPGA
                 boost::shared_ptr<boost::thread> worker(new 
                     boost::thread(&SwFPGA,
                       stage_cnt,
@@ -229,12 +268,7 @@ void ChainsToRegions::compute(int wid) {
                       aux->opt));
                 //SwFPGA(task_batch, task_num, aux->opt);
 #else
-                if (!stage_workers.empty()) {
-                  stage_workers.front()->join();
-                  stage_workers.pop();
-                  VLOG(2) << "Batch takes " << getUs() - last_batch_ts << " us";
-                }
-
+                start_ts = getUs();
                 boost::shared_ptr<boost::thread> worker(new 
                     boost::thread(&extendOnCPU,
                       task_batch[stage_cnt],
@@ -298,6 +332,18 @@ void ChainsToRegions::compute(int wid) {
 
               iter = read_batch.erase(iter);
 
+              // Collecting throughput for chains
+              if (chain_num < 10000) {
+                chain_num ++;
+              }
+              else {
+                VLOG(2) << "Finished read throughput is "
+                  << (double)(getUs() - last_chain_ts)/10000
+                  << " us/read";
+                chain_num = 0;
+                last_chain_ts = getUs();
+              }
+
               // Check if corresponding batch is finished
               if (tasks_remain[start_idx] == 0) {
                 pushOutput(output_buf[start_idx]);
@@ -310,9 +356,12 @@ void ChainsToRegions::compute(int wid) {
                 input_buf.erase(start_idx);
                 output_buf.erase(start_idx);
 
-                VLOG(1) << "Pushing output " << start_idx
-                  << ", currently there are " << tasks_remain.size()
-                  << " active batches.";
+                VLOG(1) << "Produced a region batch in "
+                  << getUs() - last_output_ts << " us";
+                VLOG(1) << "Currently there are " << tasks_remain.size()
+                  << " active batches";
+
+                last_output_ts = getUs();
               }
               break;
 
@@ -321,9 +370,6 @@ void ChainsToRegions::compute(int wid) {
         }
       }
     }
-    VLOG(1) << swFPGA_num << " batched tasks takes " << swFPGA_time << "us";
-    VLOG(1) << extCPU_num << " normal tasks takes " << extCPU_time << "us";
-    VLOG(1) << "Waiting for input takes " << wait_time << "us";
 
     for (int i = 0; i < stage_num; i++) {
       delete [] task_batch[i];
@@ -331,10 +377,15 @@ void ChainsToRegions::compute(int wid) {
   }
   else {
     VLOG(1) << "Worker " << wid << " is working on CPU";
+
+    uint64_t last_output_ts;
+    uint64_t last_read_ts;
+
     while (true) { 
       ChainsRecord record;
       bool ready = this->getInput(record);
 
+      uint64_t start_ts = getUs();
       while (!this->isFinal() && !ready) {
         boost::this_thread::sleep_for(boost::chrono::microseconds(100));
         ready = this->getInput(record);
@@ -343,6 +394,10 @@ void ChainsToRegions::compute(int wid) {
         // this means isFinal() is true and input queue is empty
         break; 
       }
+      VLOG(2) << "Wait for input takes " << getUs() - start_ts << " us";
+
+      last_output_ts = getUs();
+      last_read_ts = getUs();
 
       bseq1_t* seqs       = record.seqs;
       mem_chain_v* chains = record.chains;
@@ -373,8 +428,12 @@ void ChainsToRegions::compute(int wid) {
               (uint8_t*)seqs[i].seq,
               &chains[i].a[j],
               alnreg+i);
+         
         }
       }
+      VLOG(2) << "Finished read throughput is "
+        << (double)(getUs() - last_read_ts)/batch_num << " us/read";
+
       freeChains(chains, batch_num);
 
       RegionsRecord output;
@@ -383,6 +442,9 @@ void ChainsToRegions::compute(int wid) {
       output.seqs = seqs;
       output.alnreg = alnreg;
 
+      VLOG(1) << "Produced a region batch in "
+        << getUs() - last_output_ts << " us";
+
       pushOutput(output);
     }
   }
@@ -390,6 +452,7 @@ void ChainsToRegions::compute(int wid) {
 
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
+  uint64_t start_ts = getUs();
   if (!aux) {
     boost::any var = this->getConst("aux");
     aux = boost::any_cast<ktp_aux_t*>(var);
@@ -435,6 +498,9 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   output.batch_num = batch_num;
   output.seqs = seqs;
 
+  VLOG(1) << "Produced a sam batch in "
+    << getUs() - start_ts << " us";
+
   return output;
 }
 
@@ -463,9 +529,10 @@ void PrintSam::compute() {
     // Add the current input to buffer first
     record_buf[input.start_idx] = input;
 
-    start_ts = kestrelFlow::getUs();
     // Find the next batch in the buffer
     while (record_buf.count(n_processed)) {
+      start_ts = getUs();
+      
       SeqsRecord record = record_buf[n_processed];
 
       int      batch_num = record.batch_num;
@@ -481,6 +548,9 @@ void PrintSam::compute() {
       record_buf.erase(n_processed);
 
       n_processed += batch_num;
+
+      VLOG(1) << "Written " << batch_num << " seqs to file in "
+        << getUs() - start_ts << " us";
     }
   }
 }

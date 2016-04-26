@@ -1,3 +1,4 @@
+#include "config.h"
 #include "SWRead.h"
 
 SWRead::SWRead(int start_idx, int idx,

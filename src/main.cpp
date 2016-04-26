@@ -18,9 +18,10 @@
 #include "kflow/Pipeline.h"
 
 #include "bwa_wrapper.h"
+#include "config.h"
+#include "FPGAAgent.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "FPGAAgent.h"
 
 FPGAAgent* agent;
 
@@ -32,7 +33,6 @@ int main(int argc, char *argv[]) {
 
   // Initialize Google Log
   FLAGS_logtostderr = 1;
-  FLAGS_v = 1;
   google::InitGoogleLogging(argv[0]);
 
 	double t_real = realtime();
@@ -51,12 +51,10 @@ int main(int argc, char *argv[]) {
   }
   bwa_pg = pg.s;
 
-  int chunk_size = 2000;
+  int chunk_size = CHUNK_SIZE;
 
   // Start FPGA agent
-  agent = new FPGAAgent(
-      "/curr/diwu/prog/acc_lib/bwa-sm/sm-80pe.xclbin",
-      chunk_size);
+  agent = new FPGAAgent(FPGA_PATH, chunk_size);
 
   // Get the index and the options
   pre_process(argc-1, argv+1, &aux);
@@ -64,9 +62,9 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline bwa_flow(5);
 
   SeqsProducer    input_stage;
-  SeqsToChains    seq2chain_stage(8);
-  ChainsToRegions chain2reg_stage(3);
-  RegionsToSam    reg2sam_stage(1);
+  SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
+  ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
+  RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
   PrintSam        output_stage;
 
   bwa_flow.addConst("aux", &aux);
@@ -79,7 +77,7 @@ int main(int argc, char *argv[]) {
   bwa_flow.addStage(4, &output_stage);
   bwa_flow.start();
   bwa_flow.wait();
-  bwa_flow.printPerf();
+  //bwa_flow.printPerf();
   
   // Free all global variables
   delete agent;

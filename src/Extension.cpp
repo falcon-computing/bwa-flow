@@ -11,15 +11,14 @@
 #include <boost/thread/thread.hpp>
 
 #include "bwa_wrapper.h"
+#include "config.h"
 #include "Extension.h"
 #include "FPGAAgent.h"
 #include "SWTask.h"
 #include "SWRead.h"
 #include "util.h"
 
-#define FPGA_RET_PARAM_NUM 5
-#define USE_FPGA
-//#define SMITHWATERMAN_SIM
+#define MAX_BAND_TRY  2
 
 #ifdef SMITHWATERMAN_SIM
 // hw data structures
@@ -36,6 +35,8 @@ void packData(
     int batch_num,
     mem_opt_t *opt)
 {
+  uint64_t start_ts = getUs();
+
   int Buf1Len = 32 + 32*batch_num;
   int data_size = Buf1Len >> 2;
   for (int i = 0; i <batch_num ; i++){
@@ -155,6 +156,8 @@ void packData(
   agent->writeInput(buf1, data_size*sizeof(int), stage_cnt);
 
   delete [] buf1;
+  VLOG(3) << "packData " << stage_cnt << " takes " 
+    << getUs() - start_ts << " us";
 }
 
 void SwFPGA(
@@ -169,7 +172,8 @@ void SwFPGA(
   agent->start(batch_num, stage_cnt);
   agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
 
-  DLOG(INFO) << "FPGA kernel used " << getUs() - start_ts << " us";
+  VLOG(3) << "SmithWaterman kernel on FPGA " << stage_cnt << " used " 
+    << getUs() - start_ts << " us";
 
   start_ts = getUs();
   for (int i = 0; i < batch_num; i++) {  
@@ -202,9 +206,9 @@ void SwFPGA(
     tasks[task_idx]->read_obj->finish();
     delete tasks[task_idx];
   }
- 
-  DLOG(INFO) << "FPGA output used " << getUs() - start_ts << " us";
   delete [] output_ptr;
+  VLOG(3) << "FPGA output " << stage_cnt << " used " 
+    << getUs() - start_ts << " us";
 }
 
 void extendOnCPU(
@@ -212,6 +216,7 @@ void extendOnCPU(
     int numoftask,
     mem_opt_t *opt)
 {
+  uint64_t start_ts = getUs();
   int aw[2];
   int max_off[2];
   aw[0] = opt->w;
@@ -322,5 +327,7 @@ void extendOnCPU(
     delete [] tasks[i]->leftRs;
     delete tasks[i];
   }
+  VLOG(3) << "SmithWaterman kernel on CPU used " 
+    << getUs() - start_ts << " us";
 }
 
