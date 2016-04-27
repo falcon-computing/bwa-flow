@@ -129,7 +129,8 @@ inline bool ChainsToRegions::addBatch(
   tasks_remain[start_idx] = batch_num;
 
   // copy all new reads to current read_batch
-  read_batch.insert(read_batch.end(), new_reads->begin(), new_reads->end());
+  //read_batch.insert(read_batch.end(), new_reads->begin(), new_reads->end());
+  read_batch.splice(read_batch.end(), *new_reads);
   VLOG(2) << "Add " << new_reads->size() << " new reads to process";
 
   delete new_reads;
@@ -185,12 +186,12 @@ void ChainsToRegions::compute(int wid) {
 
     uint64_t last_batch_ts;
     uint64_t last_output_ts;
-    uint64_t last_chain_ts;
+    uint64_t last_read_ts;
 
     uint64_t batch_time  = 0;
     uint64_t output_time = 0;
     int      batch_num   = 0;
-    int      chain_num   = 0;
+    int      read_num    = 0;
 
     bool flag_need_reads = false;
     bool flag_more_reads = true;
@@ -205,7 +206,7 @@ void ChainsToRegions::compute(int wid) {
 
         last_batch_ts  = getUs();
         last_output_ts = last_batch_ts;
-        last_chain_ts  = last_batch_ts;
+        last_read_ts  = last_batch_ts;
       }
       else {
         std::list<SWRead*>::iterator iter = read_batch.begin();
@@ -253,9 +254,9 @@ void ChainsToRegions::compute(int wid) {
                   batch_time += getUs() - last_batch_ts;
                 }
                 else {
-                  VLOG(2) << "Extension task throughput is "
-                    << (double)batch_time / batch_num / chunk_size
-                    << " us/task";
+                  VLOG(2) << "Extension task time is "
+                    << (double)batch_time / batch_num
+                    << " us/chunk";
                   batch_num = 0;
                   batch_time = 0;
                 }
@@ -332,16 +333,16 @@ void ChainsToRegions::compute(int wid) {
 
               iter = read_batch.erase(iter);
 
-              // Collecting throughput for chains
-              if (chain_num < 10000) {
-                chain_num ++;
+              // Collecting throughput for reads
+              if (read_num < 10000) {
+                read_num ++;
               }
               else {
                 VLOG(2) << "Finished read throughput is "
-                  << (double)(getUs() - last_chain_ts)/10000
+                  << (double)(getUs() - last_read_ts)/read_num
                   << " us/read";
-                chain_num = 0;
-                last_chain_ts = getUs();
+                read_num = 0;
+                last_read_ts = getUs();
               }
 
               // Check if corresponding batch is finished
