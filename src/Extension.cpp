@@ -192,17 +192,6 @@ void SwFPGA(
     newreg->truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
     newreg->w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
 
-    // compute the seed cov
-    newreg->seedcov=0;  // TODO:add the seedcov compute function
-    for (int j = 0; j < tasks[task_idx]->chain->n; ++j){
-      const mem_seed_t *t = &tasks[task_idx]->chain->seeds[j];
-      if (t->qbeg >= newreg->qb && 
-          t->qbeg + t->len <= newreg->qe && 
-          t->rbeg >= newreg->rb && 
-          t->rbeg + t->len <= newreg->re){
-        newreg->seedcov += t->len; 
-      }
-    }
     tasks[task_idx]->read_obj->finish();
     delete tasks[task_idx];
   }
@@ -307,18 +296,7 @@ void extendOnCPU(
       newreg->re = tasks[i]->rBeg + tasks[i]->seedLength;
     }
     newreg->w = aw[0] > aw[1]? aw[0] : aw[1];
-    // compute the seed cov
-    newreg->seedcov=0;  // TODO:add the seedcov compute function
 
-    for (int j = 0; j < tasks[i]->chain->n; ++j){
-      const mem_seed_t *t = &tasks[i]->chain->seeds[j];
-      if (t->qbeg >= newreg->qb && 
-          t->qbeg + t->len <= newreg->qe && 
-          t->rbeg >= newreg->rb && 
-          t->rbeg + t->len <= newreg->re){
-        newreg->seedcov += t->len; 
-      }
-    }
     // Notify the read that the current task is finished
     tasks[i]->read_obj->finish();
 

@@ -5,12 +5,14 @@ SWRead::SWRead(int start_idx, int idx,
     ktp_aux_t* aux,
     const bseq1_t* seq, 
     const mem_chain_v* chains,
-    mem_alnreg_v* alnregs):
+    mem_alnreg_v* alnregs,
+    std::vector<int>* chain_idxes):
   is_pend_(false), 
   start_idx_(start_idx),
   read_idx_(idx), chain_idx_(0),
   aux_(aux), seq_(seq), chains_(chains),
-  ref_(NULL), alnregs_(alnregs)
+  ref_(NULL), alnregs_(alnregs),
+  chain_idxes_(chain_idxes)
 {
   if (chains && chains->n > 0) {
     seed_idx_ = chains->a[0].n - 1;
@@ -73,6 +75,9 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
       mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, *alnregs_);
       memset(newreg, 0, sizeof(mem_alnreg_t));
 
+      // Push chain_idx to added newreg
+      chain_idxes_->push_back(chain_idx_);
+
       newreg->score  = seed_array->len * aux_->opt->a;
       newreg->truesc = seed_array->len * aux_->opt->a;
       newreg->qb = 0;
@@ -114,19 +119,6 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
         }
 
         return TaskStatus::Successful;
-      }
-      else {
-        // no need to extend, just push to alnreg_v 
-        newreg->seedcov=0;
-        for (int j = 0; j < chains_->a[chain_idx_].n; j++) {
-          const mem_seed_t *t = &chains_->a[chain_idx_].seeds[j];
-          if (t->qbeg >= newreg->qb && 
-              t->qbeg + t->len <= newreg->qe && 
-              t->rbeg >= newreg->rb && 
-              t->rbeg + t->len <= newreg->re) {
-            newreg->seedcov += t->len; 
-          }
-        }
       }
     }
   }

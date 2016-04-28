@@ -57,6 +57,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
 #ifdef OFFLOAD
+  std::vector<int>* chains_idxes = new std::vector<int>[batch_num];
   std::list<SWRead*>* read_batch = new std::list<SWRead*>;
 #endif
 
@@ -66,7 +67,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
 
 #ifdef OFFLOAD
     SWRead *read_ptr = new SWRead(start_idx, i, aux, 
-        seqs+i, chains+i, alnreg+i);
+        seqs+i, chains+i, alnreg+i, chains_idxes+i);
 
     read_batch->push_back(read_ptr); 
 #endif
@@ -79,6 +80,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.chains = chains;
   ret.alnreg = alnreg;
 #ifdef OFFLOAD
+  ret.chains_idxes = chains_idxes;
   ret.read_batch = read_batch;
 #endif
 
@@ -114,7 +116,8 @@ inline bool ChainsToRegions::addBatch(
   bseq1_t* seqs        = record.seqs;
   mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
-  std::list<SWRead*>* new_reads = record.read_batch;
+  std::vector<int>* chains_idxes = record.chains_idxes;
+  std::list<SWRead*>* new_reads  = record.read_batch;
 
   input_buf[start_idx] = record;
 
@@ -123,7 +126,9 @@ inline bool ChainsToRegions::addBatch(
   output.start_idx = start_idx;
   output.batch_num = batch_num;
   output.seqs = seqs;
+  output.chains = chains;
   output.alnreg = alnreg;
+  output.chains_idxes = chains_idxes;
 
   output_buf[start_idx] = output;
   tasks_remain[start_idx] = batch_num;
@@ -348,8 +353,8 @@ void ChainsToRegions::compute(int wid) {
                 pushOutput(output_buf[start_idx]);
 
                 // Free data in the input record
-                freeChains(input_buf[start_idx].chains, 
-                    input_buf[start_idx].batch_num);
+                //freeChains(input_buf[start_idx].chains, 
+                //    input_buf[start_idx].batch_num);
 
                 tasks_remain.erase(start_idx);
                 input_buf.erase(start_idx);
@@ -434,13 +439,15 @@ void ChainsToRegions::compute(int wid) {
       VLOG(2) << "Finished read throughput is "
         << (double)(getUs() - last_read_ts)/batch_num << " us/read";
 
-      freeChains(chains, batch_num);
-
       RegionsRecord output;
       output.start_idx = record.start_idx;
       output.batch_num = batch_num;
       output.seqs = seqs;
       output.alnreg = alnreg;
+      output.chains = NULL;
+      output.chains_idxes = NULL;
+
+      freeChains(chains, batch_num);
 
       VLOG(1) << "Produced a region batch in "
         << getUs() - last_output_ts << " us";
@@ -453,18 +460,46 @@ void ChainsToRegions::compute(int wid) {
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   uint64_t start_ts = getUs();
+  uint64_t seedcov_time = 0;
+
   if (!aux) {
     boost::any var = this->getConst("aux");
     aux = boost::any_cast<ktp_aux_t*>(var);
   }
 
-  int start_idx = record.start_idx;
-  int batch_num = record.batch_num;
+  int start_idx        = record.start_idx;
+  int batch_num        = record.batch_num;
+  mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
-  bseq1_t* seqs = record.seqs;
+  bseq1_t* seqs        = record.seqs;
+  std::vector<int>* chains_idxes = record.chains_idxes;
 
-  // Post-process each chain before output
   for (int i = 0; i < batch_num; i++) {
+#ifdef OFFLOAD
+    uint64_t start_ts = getUs();
+    if (chains_idxes) {
+      // Calculate seed coverage
+      for (int j = 0; j < alnreg[i].n; j++) {
+        mem_alnreg_t *newreg = &alnreg[i].a[j];
+        int chain_idx = chains_idxes[i][j];
+
+        int seedcov = 0;
+        for (int k = 0; k < chains[i].a[chain_idx].n; k++) {
+          const mem_seed_t *seed = &chains[i].a[chain_idx].seeds[k];
+          if (seed->qbeg >= newreg->qb && 
+              seed->qbeg + seed->len <= newreg->qe && 
+              seed->rbeg >= newreg->rb && 
+              seed->rbeg + seed->len <= newreg->re){
+            seedcov += seed->len; 
+          }
+        }
+        newreg->seedcov = seedcov;  
+      }
+    }
+    seedcov_time += getUs() - start_ts;
+#endif
+    
+    // Post-process each chain before output
     alnreg[i].n = mem_sort_dedup_patch(
         aux->opt, 
         aux->idx->bns, 
@@ -479,6 +514,14 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
         p->is_alt = 1;
     }
   }
+#ifdef OFFLOAD
+  if (chains_idxes) {
+    delete [] chains_idxes;
+    freeChains(chains, batch_num);
+  }
+#endif
+  VLOG(2) << "Seed coverage time is " << seedcov_time << " us";
+
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
   for (int i = 0; i < batch_num/2; i++) {

@@ -1,6 +1,8 @@
 #ifndef SWREAD_H
 #define SWREAD_H
 
+#include <vector>
+
 #include "bwa_wrapper.h"
 #include "SWTask.h"
 
@@ -11,7 +13,8 @@ class SWRead {
       ktp_aux_t* aux,
       const bseq1_t* seq, 
       const mem_chain_v* chains,
-      mem_alnreg_v* alnregs);
+      mem_alnreg_v* alnregs,
+      std::vector<int>* chain_idxes);
 
   ~SWRead();
 
@@ -81,6 +84,7 @@ class SWRead {
   const mem_chain_v* chains_;
   mem_chainref_t*    ref_;
   mem_alnreg_v*      alnregs_;
+  std::vector<int>*  chain_idxes_;
 };
 
 #endif

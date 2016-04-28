@@ -28,6 +28,7 @@ struct ChainsRecord {
   bseq1_t* seqs;
   mem_chain_v* chains;
   mem_alnreg_v* alnreg;
+  std::vector<int>* chains_idxes;
   std::list<SWRead*>* read_batch;
 };
 
@@ -35,7 +36,9 @@ struct RegionsRecord {
   int start_idx;
   int batch_num;
   bseq1_t* seqs;
+  mem_chain_v* chains;
   mem_alnreg_v* alnreg;
+  std::vector<int>* chains_idxes;
 };
 
 class SeqsProducer : public kestrelFlow::SourceStage<SeqsRecord, 4> {
