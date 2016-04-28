@@ -175,23 +175,20 @@ void ChainsToRegions::compute(int wid) {
     std::unordered_map<uint64_t, RegionsRecord> output_buf;
 
     // For statistics
-    uint64_t swFPGA_time = 0;
-    uint64_t extCPU_time = 0;
-    int      swFPGA_num  = 0;
-    int      extCPU_num  = 0;
-
-    uint64_t wait_time = 0;
-    uint64_t nextTask_time = 0;
-    uint64_t nextTask_num = 0;
-
     uint64_t last_batch_ts;
     uint64_t last_output_ts;
     uint64_t last_read_ts;
 
-    uint64_t batch_time  = 0;
-    uint64_t output_time = 0;
-    int      batch_num   = 0;
-    int      read_num    = 0;
+    uint64_t process_time  = 0;
+    uint64_t pending_time  = 0;
+    uint64_t finish_time   = 0;
+    uint64_t nextTask_time = 0;
+    uint64_t batch_time    = 0;
+    uint64_t output_time   = 0;
+
+    uint64_t nextTask_num = 0;
+    int      batch_num    = 0;
+    int      read_num     = 0;
 
     bool flag_need_reads = false;
     bool flag_more_reads = true;
@@ -228,6 +225,7 @@ void ChainsToRegions::compute(int wid) {
 
             case SWRead::TaskStatus::Successful:
 
+              start_ts = getUs();
               task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
               task_num[stage_cnt]++;
               if (task_num[stage_cnt] >= chunk_size) {
@@ -237,7 +235,6 @@ void ChainsToRegions::compute(int wid) {
                 nextTask_time = 0;
                 nextTask_num = 0;
 
-                start_ts = getUs();
 #ifdef USE_FPGA
                 packData(stage_cnt,
                     task_batch[stage_cnt],
@@ -248,7 +245,15 @@ void ChainsToRegions::compute(int wid) {
                   stage_workers.front()->join();
                   stage_workers.pop();
                 }
+                VLOG(3) << "Process SWRead::Successful takes " << process_time << " us";
+                VLOG(3) << "Process SWRead::Pending takes " << pending_time << " us";
+                VLOG(3) << "Process SWRead::Finish takes " << finish_time << " us";
                 VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
+
+                process_time = 0;
+                pending_time = 0;
+                finish_time  = 0;
+
                 if (batch_num < 500) {
                   batch_num ++;
                   batch_time += getUs() - last_batch_ts;
@@ -269,7 +274,6 @@ void ChainsToRegions::compute(int wid) {
                       aux->opt));
                 //SwFPGA(task_batch, task_num, aux->opt);
 #else
-                start_ts = getUs();
                 boost::shared_ptr<boost::thread> worker(new 
                     boost::thread(&extendOnCPU,
                       task_batch[stage_cnt],
@@ -282,19 +286,17 @@ void ChainsToRegions::compute(int wid) {
 
                 task_num[stage_cnt] = 0;
                 stage_cnt = (stage_cnt + 1) % stage_num;
-
-                swFPGA_time += getUs() - start_ts;
-                swFPGA_num ++;
               }
               iter ++;
+              process_time += getUs() - start_ts;
               break;
 
             case SWRead::TaskStatus::Pending:
+              start_ts = getUs();
               if (flag_more_reads) {
                 // Try to get a new batch
                 curr_size = read_batch.size(); 
 
-                start_ts = getUs();
                 if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
                   iter = read_batch.begin();
                   std::advance(iter, curr_size);
@@ -302,7 +304,6 @@ void ChainsToRegions::compute(int wid) {
                 else {
                   flag_more_reads = false;
                 }
-                wait_time += getUs() - start_ts;
               }
               else {
                 // No more new tasks, must do extend before proceeding
@@ -311,20 +312,17 @@ void ChainsToRegions::compute(int wid) {
                   stage_workers.pop();
                 }
                 else {
-                  start_ts = getUs();
-
                   extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
-
-                  extCPU_time += getUs() - start_ts;
-                  extCPU_num ++;
 
                   task_num[stage_cnt] = 0;
                   iter++;
                 }
               }
+              pending_time += getUs() - start_ts;
               break;
 
             case SWRead::TaskStatus::Finished:
+              start_ts = getUs();
               // Read is finished, remove from batch
               start_idx = (*iter)->start_idx();
               tasks_remain[start_idx]--;
@@ -364,6 +362,7 @@ void ChainsToRegions::compute(int wid) {
 
                 last_output_ts = getUs();
               }
+              finish_time += getUs() - start_ts;
               break;
 
             default: ;
