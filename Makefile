@@ -8,12 +8,9 @@ CC	:= gcc
 PP	:= g++
 
 CFLAGS 	:= -g -std=c++0x -fPIC -O3
-OBJS	:= $(SRC_DIR)/wrappered_mem.o \
-	   $(SRC_DIR)/preprocess.o \
-           $(SRC_DIR)/chain2alnhw.o \
-           $(SRC_DIR)/FPGAAgent.o \
+OBJS	:= $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/main.o \
-	   $(SRC_DIR)/SWRead.o \
+           $(SRC_DIR)/memcollect.o \
 	   $(SRC_DIR)/util.o
 
 PROG	:= ./bin/bwa

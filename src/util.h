@@ -21,6 +21,12 @@ void regionsCompare(
     mem_alnreg_v *alnreg_test,
     int num_seqs);
 
+void smemCompare(
+    smem_aux_t **smem_base,
+    smem_aux_t **smem_test,
+    int num
+);
+
 inline uint64_t getUs() {
   struct timespec tr;
   clock_gettime(CLOCK_REALTIME, &tr);

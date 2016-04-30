@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <sstream>
 #include "bwa/bwamem.h"
-
+#include "bwa_wrapper.h"
 #include "util.h"
 
 template <typename T>
@@ -53,3 +53,31 @@ void regionsCompare(
     fprintf(stderr, "Wrong alignment results: %s\n", e.what());
   }
 }
+
+void smemCompare(
+    smem_aux_t **smem_base,
+    smem_aux_t **smem_test,
+    int num 
+)
+{
+  try {
+     for (int i=0; i<num; i++){
+     bwtintv_v *intv_base = &smem_base[i]->mem;
+     bwtintv_v *intv_test = &smem_test[i]->mem;
+     assertEQ (i,  -1,"n",intv_base->n,intv_test->n);
+      for (int j =0;j < intv_base->n; j++){
+        bwtintv_t intv_t_base = intv_base->a[j];
+        bwtintv_t intv_t_test = intv_test->a[j];
+        assertEQ(i,j, "x[0]",intv_t_base.x[0],intv_t_test.x[0]);
+        assertEQ(i,j, "x[1]",intv_t_base.x[1],intv_t_test.x[1]);
+        assertEQ(i,j, "x[2]",intv_t_base.x[2],intv_t_test.x[2]);
+        assertEQ(i,j, "info",intv_t_base.info,intv_t_test.info);
+      }
+    } 
+  fprintf(stderr,"Correct smem results\n");
+ }
+ catch (resultsError &e){
+  fprintf(stderr,"wrong smem results\n");
+ }
+}
+

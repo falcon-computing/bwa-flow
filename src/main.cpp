@@ -18,20 +18,11 @@
 
 #include "bwa_wrapper.h"
 #include "util.h"
-#include "FPGAAgent.h"
-
-FPGAAgent* agent;
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 
-void mem_chain2aln_hw(
-    ktp_aux_t *aux,
-    const bseq1_t *seqs,
-    const mem_chain_v* chains,
-    mem_alnreg_v *av,
-    int batch_num);
 
 int main(int argc, char *argv[]) {
   extern char *bwa_pg;
@@ -47,56 +38,33 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "Preprocessing time is %dus\n", getUs()-start_ts);
 
   int batch_num = 0;
-  bseq1_t *seqs = bseq_read(1500000, &batch_num, aux.ks, aux.ks2);
+  bseq1_t *seqs = bseq_read(150000, &batch_num, aux.ks, aux.ks2);
 
-  agent = new FPGAAgent("/curr/diwu/prog/acc_lib/bwa-sm/sm-80pe.xclbin", 2000);
-
-  mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
-  mem_alnreg_v* alnreg_hw = new mem_alnreg_v[batch_num];
-
-  mem_chain_v* chains = new mem_chain_v[batch_num];
-
+  smem_aux_t** smems = new smem_aux_t*[batch_num];
+  smem_aux_t** smems_new = new smem_aux_t*[batch_num];
   uint64_t cost_sw = 0;
-  for (int i = 0; i < batch_num; i++) {
-    chains[i] = seq2chain(&aux, &seqs[i]);
-
-    uint64_t start_ts = getUs();
-    kv_init(alnreg[i]);
-
-    for (int j = 0; j < chains[i].n; j++) {
-      mem_chain_t *p = &chains[i].a[j];
-
-      // call mem_chain2aln to compute baseline
-      mem_chain2aln(aux.opt, aux.idx->bns, aux.idx->pac,
-          seqs[i].l_seq,
-          (uint8_t*)seqs[i].seq,
-          p, alnreg+i);
-    }
-    cost_sw += getUs() - start_ts;
+  // convert to 2-bit encoding 
+  for (int i = 0; i < batch_num ; i++){
+     for (int j =0 ; j < seqs[i].l_seq ;j++){
+        seqs[i].seq[j] = seqs[i].seq[j] < 4? seqs[i].seq[j]: nst_nt4_table[(int)seqs[i].seq[j]];
+     }
   }
-  fprintf(stderr, "Software compute time for %d reads is %dus\n", batch_num, cost_sw);
-
-  start_ts = getUs();
-  mem_chain2aln_hw(&aux, seqs, chains, alnreg_hw, batch_num);
-  uint64_t cost_hw = getUs() - start_ts;
-
-  fprintf(stderr, "FPGA compute time for %d reads is %dus\n", batch_num, cost_hw);
-
-  regionsCompare(alnreg, alnreg_hw, batch_num);
-
-  // Free the chains
-  for (int i = 0; i < batch_num; i++) {
-    for (int j = 0; j < chains[i].n; j++) {
-      free(chains[i].a[j].seeds);
-    }
-    free(chains[i].a);
+  // the original mem_collect_intv
+  for (int i = 0; i < batch_num ; i++){
+    smems[i] = smem_aux_init();
+    mem_collect_intv (aux.opt, aux.idx->bwt, seqs[i].l_seq,(uint8_t*)seqs[i].seq,smems[i]);
   }
-  delete [] chains;
+  // the revised mem_collect_intv
+  for (int i = 0; i < batch_num; i ++){
+    smems_new[i] = smem_aux_init();
+    mem_collect_intv_new (aux.opt, aux.idx->bwt, seqs[i].l_seq,(uint8_t*)seqs[i].seq,smems_new[i]);
+  }
+ 
+  smemCompare(smems,smems_new,batch_num);
+  //regionsCompare(alnreg, alnreg_hw, batch_num);
 
   // Free aligned regions
   for (int i = 0; i < batch_num; i++) {
-    free(alnreg[i].a);
-    free(alnreg_hw[i].a);
     free(seqs[i].name); 
     free(seqs[i].comment);
     free(seqs[i].seq); 
@@ -104,11 +72,6 @@ int main(int argc, char *argv[]) {
     free(seqs[i].sam);
   }
   free(seqs);
-  delete [] alnreg;
-  delete [] alnreg_hw;
-
-  delete agent;
-
   free(aux.opt);
   bwa_idx_destroy(aux.idx);
   kseq_destroy(aux.ks);

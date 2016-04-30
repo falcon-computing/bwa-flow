@@ -40,7 +40,6 @@ public:
 
 class smem_aux_t {
  public:
-    int id_read;
 	bwtintv_v mem, mem1, *tmpv[2];
 } ;
 
@@ -134,8 +133,12 @@ void chain2reg(ktp_aux_t *aux,bseq1_t *seqs,MemChainVector chn,mem_alnreg_v *aln
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
 
+void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a) ;
+
 smem_aux_t *smem_aux_init();
 void smem_aux_destroy(smem_aux_t *a);
 int usage();
+
+
 
 #endif // STRUCTURESNEW_H_INCLUDED
