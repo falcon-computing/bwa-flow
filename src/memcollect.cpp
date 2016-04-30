@@ -6,8 +6,6 @@ smem_aux_t *smem_aux_init()
 {
 	smem_aux_t *a;
 	a = (smem_aux_t *)calloc(1, sizeof(smem_aux_t));
-        a->mem.a = new bwtintv_t;
-        a->mem1.a = new bwtintv_t;
 	a->tmpv[0] = (bwtintv_v*)calloc(1, sizeof(bwtintv_v));
 	a->tmpv[1] = (bwtintv_v*)calloc(1, sizeof(bwtintv_v));
 	return a;
