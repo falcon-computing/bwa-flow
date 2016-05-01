@@ -1,7 +1,7 @@
 #include <boost/asio.hpp>
 #include <boost/function_types/result_type.hpp>
-#include <boost/smart_ptr.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/smart_ptr.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread.hpp>
