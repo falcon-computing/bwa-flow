@@ -1,5 +1,5 @@
-#ifndef SOURCESTAGE_H
-#define SOURCESTAGE_H
+#ifndef KFLOW_SOURCESTAGE_H
+#define KFLOW_SOURCESTAGE_H
 
 #include "Stage.h"
 

@@ -1,5 +1,5 @@
-#ifndef PIPELINE_H
-#define PIPELINE_H
+#ifndef KFLOW_PIPELINE_H
+#define KFLOW_PIPELINE_H
 
 #include <boost/any.hpp>
 

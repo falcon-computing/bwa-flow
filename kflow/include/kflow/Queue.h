@@ -1,5 +1,5 @@
-#ifndef QUEUE_H
-#define QUEUE_H
+#ifndef KFLOW_QUEUE_H
+#define KFLOW_QUEUE_H
 
 #include <boost/lockfree/queue.hpp>
 #include "Common.h"

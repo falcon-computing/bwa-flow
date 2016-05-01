@@ -1,0 +1,20 @@
+verbose : 1
+platform : {
+  id : "xlnx_opencl"
+  path : "/curr/diwu/prog/blaze/platforms/xlnx_opencl/xlnx_opencl.so"
+  cache_loc: "Xilinx OpenCL"
+  cache_limit: 3200
+  scratch_limit: 800
+	acc : {
+		id : "SmithWaterman"
+		path : "/curr/diwu/prog/bwa-flow/fpga/blaze-task/SmithWaterman.so"
+    param : {
+      key : "program_path"
+      value : "/curr/diwu/prog/acc_lib/bwa-sm/sm-40pe.xclbin"
+    }
+    param : {
+      key : "kernel_name"
+      value : "sw_top"
+    }
+	}
+}

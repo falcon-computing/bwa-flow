@@ -124,7 +124,7 @@ void _err_fatal_simple_core(const char *func, const char *msg)
 size_t err_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
 	size_t ret = fwrite(ptr, size, nmemb, stream);
-	if (ret != nmemb) 
+	if (ret != nmemb)
 		_err_fatal_simple("fwrite", strerror(errno));
 	return ret;
 }
@@ -173,7 +173,7 @@ long err_ftell(FILE *stream)
 	return ret;
 }
 
-int err_printf(const char *format, ...) 
+int err_printf(const char *format, ...)
 {
 	va_list arg;
 	int done;
@@ -185,7 +185,7 @@ int err_printf(const char *format, ...)
 	return done;
 }
 
-int err_fprintf(FILE *stream, const char *format, ...) 
+int err_fprintf(FILE *stream, const char *format, ...)
 {
 	va_list arg;
 	int done;
@@ -230,7 +230,7 @@ int err_puts(const char *s)
 	return ret;
 }
 
-int err_fflush(FILE *stream) 
+int err_fflush(FILE *stream)
 {
     int ret = fflush(stream);
     if (ret != 0) _err_fatal_simple("fflush", strerror(errno));
@@ -246,7 +246,7 @@ int err_fflush(FILE *stream)
 		struct stat sbuf;
 		if (0 != fstat(fileno(stream), &sbuf))
 			_err_fatal_simple("fstat", strerror(errno));
-		
+
 		if (S_ISREG(sbuf.st_mode))
 		{
 			if (0 != fsync(fileno(stream)))
@@ -257,7 +257,7 @@ int err_fflush(FILE *stream)
     return ret;
 }
 
-int err_fclose(FILE *stream) 
+int err_fclose(FILE *stream)
 {
 	int ret = fclose(stream);
 	if (ret != 0) _err_fatal_simple("fclose", strerror(errno));
