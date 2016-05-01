@@ -1,5 +1,10 @@
+#include <boost/asio.hpp>
+#include <boost/function_types/result_type.hpp>
 #include <boost/smart_ptr.hpp>
+#include <boost/make_shared.hpp>
+#include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
+#include <boost/thread.hpp>
 #include <list>
 #include <queue>
 
@@ -159,15 +164,24 @@ void ChainsToRegions::compute(int wid) {
 
     const int stage_num = 2;
     int stage_cnt = 0;
-    std::queue<boost::shared_ptr<boost::thread> > stage_workers;
 
-    int task_num[stage_num] = {0};
+    // Create io_service to post work to the group
+    boost::asio::io_service ios;
+    boost::asio::io_service::work ios_work(ios);
+
+    // Create a thread group
+    boost::thread_group stage_workers;
+    stage_workers.create_thread(
+        boost::bind(&boost::asio::io_service::run, &ios));
+    
+    boost::unique_future<void> extension_event;
+
+    int task_num = 0;
 
     // Batch of SWTasks
     ExtParam** task_batch[stage_num];
 
     for (int i = 0; i < stage_num; i++) {
-      task_num[i] = 0;
       task_batch[i] = new ExtParam*[chunk_size];
     }
 
@@ -216,6 +230,7 @@ void ChainsToRegions::compute(int wid) {
         while (iter != read_batch.end()) {
 
           uint64_t start_ts;
+          uint64_t wait_ts;
           uint64_t start_idx;
 
           ExtParam* param_task;
@@ -230,10 +245,9 @@ void ChainsToRegions::compute(int wid) {
 
             case SWRead::TaskStatus::Successful:
 
-              start_ts = getUs();
-              task_batch[stage_cnt][task_num[stage_cnt]] = param_task;
-              task_num[stage_cnt]++;
-              if (task_num[stage_cnt] >= chunk_size) {
+              task_batch[stage_cnt][task_num] = param_task;
+              task_num++;
+              if (task_num >= chunk_size) {
                 VLOG(3) << "nextTask takes " << nextTask_time << " us in " 
                         << nextTask_num << " calls";
 
@@ -243,23 +257,25 @@ void ChainsToRegions::compute(int wid) {
 #ifdef USE_FPGA
                 packData(stage_cnt,
                     task_batch[stage_cnt],
-                    task_num[stage_cnt],
+                    task_num,
                     aux->opt);
 #endif
-                if (!stage_workers.empty()) {
-                  stage_workers.front()->join();
-                  stage_workers.pop();
+                if (extension_event.valid()) {
+                  uint64_t start_ts = getUs();
+                  extension_event.wait();
+
+                  VLOG(3) << "Waiting for last batch to finish takes "
+                    << getUs() - start_ts << " us";
                 }
-                VLOG(3) << "Process SWRead::Successful takes " << process_time << " us";
+
                 VLOG(3) << "Process SWRead::Pending takes " << pending_time << " us";
                 VLOG(3) << "Process SWRead::Finish takes " << finish_time << " us";
                 VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
 
-                process_time = 0;
                 pending_time = 0;
                 finish_time  = 0;
 
-                if (batch_num < 500) {
+                if (batch_num < 100) {
                   batch_num ++;
                   batch_time += getUs() - last_batch_ts;
                 }
@@ -270,30 +286,33 @@ void ChainsToRegions::compute(int wid) {
                   batch_num = 0;
                   batch_time = 0;
                 }
+
+                typedef boost::packaged_task<void> task_t;
 #ifdef USE_FPGA
-                boost::shared_ptr<boost::thread> worker(new 
-                    boost::thread(&SwFPGA,
-                      stage_cnt,
-                      task_batch[stage_cnt],
-                      task_num[stage_cnt],
-                      aux->opt));
+                boost::shared_ptr<task_t> extension_task =
+                    boost::make_shared<task_t>(boost::bind(&SwFPGA,
+                        stage_cnt,
+                        task_batch[stage_cnt],
+                        task_num,
+                        aux->opt));
                 //SwFPGA(task_batch, task_num, aux->opt);
 #else
-                boost::shared_ptr<boost::thread> worker(new 
-                    boost::thread(&extendOnCPU,
-                      task_batch[stage_cnt],
-                      task_num[stage_cnt],
-                      aux->opt));
+                boost::shared_ptr<task_t> extension_task =
+                    boost::make_shared<task_t>(boost::bind(&extendOnCPU,
+                        task_batch[stage_cnt],
+                        task_num,
+                        aux->opt));
                 //extendOnCPU(task_batch, task_num, aux->opt);
 #endif
-                last_batch_ts = getUs();
-                stage_workers.push(worker);
+                extension_event = extension_task->get_future();
+                ios.post(boost::bind(&task_t::operator(), extension_task));
 
-                task_num[stage_cnt] = 0;
+                last_batch_ts = getUs();
+
+                task_num = 0;
                 stage_cnt = (stage_cnt + 1) % stage_num;
               }
               iter ++;
-              process_time += getUs() - start_ts;
               break;
 
             case SWRead::TaskStatus::Pending:
@@ -312,14 +331,16 @@ void ChainsToRegions::compute(int wid) {
               }
               else {
                 // No more new tasks, must do extend before proceeding
-                if (!stage_workers.empty()) {
-                  stage_workers.front()->join();
-                  stage_workers.pop();
+                if (extension_event.valid() && !extension_event.is_ready()) {
+                  uint64_t start_ts = getUs();
+                  extension_event.wait();
+                  VLOG(3) << "Waiting for pending tasks to finish takes "
+                    << getUs() - start_ts << " us";
                 }
                 else {
-                  extendOnCPU(task_batch[stage_cnt], task_num[stage_cnt], aux->opt);
+                  extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
 
-                  task_num[stage_cnt] = 0;
+                  task_num = 0;
                   iter++;
                 }
               }
@@ -337,7 +358,7 @@ void ChainsToRegions::compute(int wid) {
               iter = read_batch.erase(iter);
 
               // Collecting throughput for reads
-              if (read_num < 10000) {
+              if (read_num < 1000) {
                 read_num ++;
               }
               else {

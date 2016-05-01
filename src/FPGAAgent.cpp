@@ -42,12 +42,13 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
 
   cl_command_queue cmd = env_.getCmdQueue();
   cl_int err = clEnqueueWriteBuffer(cmd, 
-      input_buf_[cnt], CL_TRUE, 0, size, 
+      input_buf_[cnt], CL_FALSE, 0, size, 
       host_ptr, 0, NULL, NULL);
 
   if (err != CL_SUCCESS) {
     throw std::runtime_error("Failed to write to input buffer");
   }
+  host_buf_[cnt] = host_ptr;
 }
 
 void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
@@ -63,6 +64,9 @@ void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
   if (err != CL_SUCCESS) {
     throw std::runtime_error("Cannot read output buffer\n");
   }
+
+  // delete input buffer from host
+  free(host_buf_[cnt]);
 }
 
 void FPGAAgent::start(int task_num, int cnt) {

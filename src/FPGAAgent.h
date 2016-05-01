@@ -28,6 +28,7 @@ class FPGAAgent
   const int      chunk_size_;
   cl_mem         input_buf_[2];
   cl_mem         output_buf_[2];
+  void*          host_buf_[2];
 };
 
 #endif

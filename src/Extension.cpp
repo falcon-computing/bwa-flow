@@ -7,7 +7,9 @@
 #include <vector>
 #include <queue>
 #include <list>
+#include <boost/asio.hpp>
 #include <boost/smart_ptr.hpp>
+#include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 
 #include "bwa_wrapper.h"
@@ -27,8 +29,6 @@ void sw_top (int *a, int *output_a, int __inc);
 }
 #endif
 
-extern FPGAAgent* agent;
-
 void packData(
     int stage_cnt,
     ExtParam** &tasks,
@@ -46,7 +46,8 @@ void packData(
                     tasks[i]->rightRlen) + 1) / 
                 2)+3)/4; 
   } 
-  char* buf1= new char[data_size << 2];
+  char* buf1 = (char*)malloc(data_size << 2);
+
   //------------------ store the public options at the beginning-----------------
   buf1[0] = (char)opt->o_del;
   buf1[1] = (char)opt->e_del;
@@ -153,10 +154,14 @@ void packData(
     delete [] tasks[i]->leftRs;
     i = i + 1;
   }
+  VLOG(3) << "packData takes " 
+    << getUs() - start_ts << " us";
+
+  start_ts = getUs();
   agent->writeInput(buf1, data_size*sizeof(int), stage_cnt);
 
-  delete [] buf1;
-  VLOG(3) << "packData " << stage_cnt << " takes " 
+  //delete [] buf1;
+  VLOG(3) << "FPGA input takes " 
     << getUs() - start_ts << " us";
 }
 
@@ -171,11 +176,11 @@ void SwFPGA(
 
   agent->start(batch_num, stage_cnt);
   agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
-
   VLOG(3) << "SmithWaterman kernel on FPGA " << stage_cnt << " used " 
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
+
   for (int i = 0; i < batch_num; i++) {  
     
     int task_idx = ((int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
