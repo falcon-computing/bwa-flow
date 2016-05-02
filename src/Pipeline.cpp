@@ -14,12 +14,48 @@
 #include "Pipeline.h"  
 #include "util.h"
 
+// Helper functions in obj serialization/deserialization
+
+template <typename T>
+static inline void putT(std::stringstream &ss, T value) {
+  ss.write(reinterpret_cast<char*>(&value), sizeof(value));
+}
+
+static inline void putStr(std::stringstream &ss, const char* str) {
+  if (str) {
+    size_t length = strlen(str);
+    putT(ss, length);
+    ss.write(str, length);
+  }
+  else {
+    size_t length = 0;
+    putT(ss, length);
+  }
+}
+
+template <typename T>
+static inline void getT(std::stringstream &ss, T &value) {
+  ss.read(reinterpret_cast<char*>(&value), sizeof(value));
+}
+
+static inline void getStr(std::stringstream &ss, char* &dst) {
+
+  size_t length = 0;
+  getT(ss, length);
+
+  if (length > 0) {
+    dst = (char*)malloc(length+1);
+    ss.read(dst, length);
+    dst[length] = '\0';
+  }
+}
+
 void SeqsProducer::compute() {
 
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
-  int num_seqs_produced = 0;
+  uint64_t num_seqs_produced = 0;
   while (true) {
 
     uint64_t start_ts = getUs();
@@ -43,6 +79,61 @@ void SeqsProducer::compute() {
     pushOutput(record);
     num_seqs_produced += batch_num;
   }
+}
+
+std::string SeqsProducer::serialize(SeqsRecord* data) {
+
+  uint64_t start_idx = data->start_idx;
+  int      batch_num = data->batch_num;
+  
+  std::stringstream ss;
+
+  putT(ss, start_idx);
+  putT(ss, batch_num);
+
+  for (int i = 0; i < batch_num; i++) {
+    bseq1_t* seq = &data->seqs[i];
+
+    putStr(ss, seq->name);
+    putStr(ss, seq->comment);
+    putStr(ss, seq->seq);
+    putStr(ss, seq->qual);
+  }
+
+  return ss.str();
+}
+
+SeqsRecord SeqsProducer::deserialize(const char* data, size_t length) {
+
+  uint64_t start_idx = 0;
+  int      batch_num = 0;
+
+  std::stringstream ss;
+  ss.write(data, length);
+  
+  getT(ss, start_idx);
+  getT(ss, batch_num);
+
+  bseq1_t* seqs = (bseq1_t*)malloc(batch_num*sizeof(bseq1_t));
+
+  for (int i = 0; i < batch_num; i++) {
+    bseq1_t* seq = &seqs[i];
+    memset(seq, 0, sizeof(bseq1_t));
+    
+    getStr(ss, seq->name);
+    getStr(ss, seq->comment);
+    getStr(ss, seq->seq);
+    getStr(ss, seq->qual);
+
+    seq->l_seq = strlen(seq->seq);
+  }
+
+  SeqsRecord output;
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
+
+  return output;
 }
 
 ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
@@ -619,3 +710,49 @@ void PrintSam::compute() {
   }
 }
 
+std::string PrintSam::serialize(SeqsRecord* data) {
+
+  uint64_t start_idx = data->start_idx;
+  int      batch_num = data->batch_num;
+  
+  std::stringstream ss;
+
+  putT(ss, start_idx);
+  putT(ss, batch_num);
+
+  for (int i = 0; i < batch_num; i++) {
+    bseq1_t* seq = &data->seqs[i];
+
+    putStr(ss, seq->sam);
+  }
+
+  return ss.str();
+}
+
+SeqsRecord PrintSam::deserialize(const char* data, size_t length) {
+
+  uint64_t start_idx = 0;
+  int      batch_num = 0;
+
+  std::stringstream ss;
+  ss.write(data, length);
+  
+  getT(ss, start_idx);
+  getT(ss, batch_num);
+
+  bseq1_t* seqs = (bseq1_t*)malloc(batch_num*sizeof(bseq1_t));
+
+  for (int i = 0; i < batch_num; i++) {
+    bseq1_t* seq = &seqs[i];
+    memset(seq, 0, sizeof(bseq1_t));
+    
+    getStr(ss, seq->sam);
+  }
+
+  SeqsRecord output;
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
+
+  return output;
+}

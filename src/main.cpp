@@ -53,11 +53,11 @@ int main(int argc, char *argv[]) {
 
   int chunk_size = CHUNK_SIZE;
 
-  // Start FPGA agent
-  agent = new FPGAAgent(FPGA_PATH, chunk_size);
-
   // Get the index and the options
   pre_process(argc-1, argv+1, &aux);
+
+  // Start FPGA agent
+  agent = new FPGAAgent(FPGA_PATH, chunk_size);
 
   kestrelFlow::Pipeline bwa_flow(5);
 

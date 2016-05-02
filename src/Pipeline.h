@@ -17,13 +17,13 @@
 
 // Common data structures
 struct SeqsRecord {
-  int start_idx;
+  uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
 };
 
 struct ChainsRecord {
-  int start_idx;
+  uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
@@ -33,7 +33,7 @@ struct ChainsRecord {
 };
 
 struct RegionsRecord {
-  int start_idx;
+  uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
@@ -45,6 +45,8 @@ class SeqsProducer : public kestrelFlow::SourceStage<SeqsRecord, 4> {
  public:
   SeqsProducer(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
   void compute();
+  std::string serialize(SeqsRecord* data);
+  SeqsRecord deserialize(const char* data, size_t length);
 };
 
 class SeqsToChains 
@@ -93,6 +95,8 @@ class PrintSam : public kestrelFlow::SinkStage<SeqsRecord, 4> {
  public:
   PrintSam(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
   void compute();
+  std::string serialize(SeqsRecord* data);
+  SeqsRecord deserialize(const char* data, size_t length);
 };
 
 #endif
