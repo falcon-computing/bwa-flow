@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "Preprocessing time is %dus\n", getUs()-start_ts);
 
   int batch_num = 0;
-  bseq1_t *seqs = bseq_read(150000, &batch_num, aux.ks, aux.ks2);
+  bseq1_t *seqs = bseq_read(1500000, &batch_num, aux.ks, aux.ks2);
 
   smem_aux_t** smems = new smem_aux_t*[batch_num];
   smem_aux_t** smems_new = new smem_aux_t*[batch_num];
@@ -50,20 +50,22 @@ int main(int argc, char *argv[]) {
      }
   }
   // the original mem_collect_intv
+  uint64_t orig_ts = getUs();
   for (int i = 0; i < batch_num ; i++){
     smems[i] = smem_aux_init();
     mem_collect_intv (aux.opt, aux.idx->bwt, seqs[i].l_seq,(uint8_t*)seqs[i].seq,smems[i]);
   }
+  fprintf(stderr, "original smem time is %dus\n", getUs()-orig_ts);
+  
   // the revised mem_collect_intv
+  uint64_t new_ts = getUs();
   for (int i = 0; i < batch_num; i ++){
     smems_new[i] = smem_aux_init();
     mem_collect_intv_new (aux.opt, aux.idx->bwt, seqs[i].l_seq,(uint8_t*)seqs[i].seq,smems_new[i]);
   }
- 
+  fprintf(stderr, "new smem time is %dus\n", getUs()-new_ts);
   smemCompare(smems,smems_new,batch_num);
-  //regionsCompare(alnreg, alnreg_hw, batch_num);
 
-  // Free aligned regions
   for (int i = 0; i < batch_num; i++) {
     free(seqs[i].name); 
     free(seqs[i].comment);

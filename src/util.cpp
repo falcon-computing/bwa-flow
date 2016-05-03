@@ -77,7 +77,7 @@ void smemCompare(
   fprintf(stderr,"Correct smem results\n");
  }
  catch (resultsError &e){
-  fprintf(stderr,"wrong smem results\n");
+  fprintf(stderr,"wrong smem results: %s\n",e.what());
  }
 }
 
