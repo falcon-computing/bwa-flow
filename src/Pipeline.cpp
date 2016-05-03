@@ -8,6 +8,8 @@
 #include <list>
 #include <queue>
 
+#include "mpi.h"
+
 #include "bwa/utils.h"
 #include "config.h"
 #include "Extension.h"
@@ -50,13 +52,32 @@ static inline void getStr(std::stringstream &ss, char* &dst) {
   }
 }
 
-void SeqsProducer::compute() {
+static inline bool queryStatus(MPI::Request &req) {
+  boost::mutex::scoped_lock lock(mpi_mutex);
+  return req.Test();
+}
+
+static inline void waitRequest(MPI::Request &req) {
+  while (!queryStatus(req)) {
+    boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
+  }
+}
+
+void SeqsDispatcher::compute() {
 
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
+  var = this->getConst("mpi_rank");
+  int rank = boost::any_cast<int>(var);
+
+  var = this->getConst("mpi_nprocs");
+  int nprocs = boost::any_cast<int>(var);
+
   uint64_t num_seqs_produced = 0;
-  while (true) {
+  bool finished = false;
+
+  while (!finished) {
 
     uint64_t start_ts = getUs();
 
@@ -65,23 +86,83 @@ void SeqsProducer::compute() {
     bseq1_t *seqs = bseq_read(aux->actual_chunk_size, 
         &batch_num, aux->ks, aux->ks2);
 
-    if (!seqs) break;
+    if (seqs) {
+      VLOG(1) << "Read " << batch_num << " seqs in "
+        << getUs() - start_ts << " us";
 
-    VLOG(1) << "Read " << batch_num << " seqs in "
-            << getUs() - start_ts << " us";
+      // Construct output record
+      SeqsRecord record;
+      record.start_idx = num_seqs_produced;
+      record.batch_num = batch_num;
+      record.seqs = seqs;
 
-    // Construct output record
-    SeqsRecord record;
-    record.start_idx = num_seqs_produced;
-    record.batch_num = batch_num;
-    record.seqs = seqs;
+      start_ts = getUs();
 
-    pushOutput(record);
-    num_seqs_produced += batch_num;
+      // Serialize output record
+      std::string ser_data = serialize(&record);
+
+      int length = ser_data.length();
+
+      if (length <= 0) {
+        throw std::runtime_error("Possible overflow of msg length");
+      }
+
+      // First query a process to send data to
+      int proc_id = -1;
+      MPI::Request query_req;
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        query_req = MPI::COMM_WORLD.Irecv(&proc_id, 1,
+            MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
+      }
+      waitRequest(query_req);
+      
+      DLOG(INFO) << "Start to send batch " << num_seqs_produced
+        << " to proc_" << proc_id;
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Send(&length, 1,
+            MPI::INT, proc_id, SEQ_DP_LENGTH);
+      }
+
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Send(ser_data.c_str(), length,
+            MPI::CHAR, proc_id, SEQ_DP_DATA);
+      }
+
+      VLOG(1) << "Sending batch " << num_seqs_produced
+        << " takes " << getUs() - start_ts << " us";
+
+      num_seqs_produced += batch_num;
+    }
+    else {
+      VLOG(1) << "Finish reading seqs, start send finish signals";
+
+      for (int p = 1; p < nprocs; p++) {
+        int proc_id = 0;
+        int length = 0;
+        MPI::Request query_req;
+        {
+          boost::mutex::scoped_lock lock(mpi_mutex);
+          query_req = MPI::COMM_WORLD.Irecv(&proc_id, 1,
+              MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
+        }
+        waitRequest(query_req);
+        {
+          boost::mutex::scoped_lock lock(mpi_mutex);
+          // Send finish signal to child-process
+          DLOG(INFO) << "Sending sam finish signal to " << proc_id;
+          MPI::COMM_WORLD.Send(&length, 1,
+              MPI::INT, p, SEQ_DP_LENGTH);
+        }
+      }
+      finished = true;
+    }
   }
 }
 
-std::string SeqsProducer::serialize(SeqsRecord* data) {
+std::string SeqsDispatcher::serialize(SeqsRecord* data) {
 
   uint64_t start_idx = data->start_idx;
   int      batch_num = data->batch_num;
@@ -103,7 +184,61 @@ std::string SeqsProducer::serialize(SeqsRecord* data) {
   return ss.str();
 }
 
-SeqsRecord SeqsProducer::deserialize(const char* data, size_t length) {
+void SeqsReceiver::compute() {
+
+  boost::any var = this->getConst("mpi_rank");
+  int rank = boost::any_cast<int>(var);
+
+  var = this->getConst("mpi_nprocs");
+  int nprocs = boost::any_cast<int>(var);
+
+  bool finished = false;
+  while (!finished) {
+    uint64_t start_ts = getUs();
+
+    // Request new data from master
+    MPI::Request query_req;
+    {
+      boost::mutex::scoped_lock lock(mpi_mutex);
+      query_req = MPI::COMM_WORLD.Isend(&rank, 1,
+          MPI::INT, MASTER_RANK, SEQ_DP_QUERY);
+    }
+    waitRequest(query_req);
+    
+    DLOG(INFO) << "Requested one batch from master";
+
+    int length = 0;
+    {
+      boost::mutex::scoped_lock lock(mpi_mutex);
+      MPI::COMM_WORLD.Recv(&length, 1,
+          MPI::INT, MASTER_RANK, SEQ_DP_LENGTH);
+    }
+
+    if (length > 0) {
+      char* ser_data = (char*) malloc(length);
+
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Recv(ser_data, length,
+            MPI::CHAR, MASTER_RANK, SEQ_DP_DATA);
+      }
+
+      SeqsRecord output = deserialize(ser_data, length);
+      free(ser_data);
+
+      VLOG(1) << "Produce one read batch in "
+        << getUs() - start_ts << " us";
+
+      pushOutput(output);
+    }
+    else {
+      // Means master has no more batch
+      finished = true;
+    }
+  }
+}
+
+SeqsRecord SeqsReceiver::deserialize(const char* data, size_t length) {
 
   uint64_t start_idx = 0;
   int      batch_num = 0;
@@ -658,17 +793,16 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   return output;
 }
+void SendSam::compute() {
 
-void PrintSam::compute() {
-  
-  boost::any var = this->getConst("aux");
-  ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
+  boost::any var = this->getConst("mpi_rank");
+  int rank = boost::any_cast<int>(var);
 
-  uint64_t n_processed = 0;
+  var = this->getConst("mpi_nprocs");
+  int nprocs = boost::any_cast<int>(var);
 
-  std::unordered_map<uint64_t, SeqsRecord> record_buf;
-  // NOTE: input may be out-of-order
-  while (true) {
+  bool finished = false;
+  while (!finished) {
     SeqsRecord input;
     bool ready = this->getInput(input);
 
@@ -676,41 +810,76 @@ void PrintSam::compute() {
       boost::this_thread::sleep_for(boost::chrono::microseconds(100));
       ready = this->getInput(input);
     }
+
     if (!ready) { 
-      // this means isFinal() is true and input queue is empty
-      break; 
-    }
+      // This means isFinal() is true and input queue is empty
+      int length = 0;
 
-    // Add the current input to buffer first
-    record_buf[input.start_idx] = input;
+      // Send proc_id to master to let master receive following msg
+      MPI::Request query_req;
+      while (true) {
+        boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
 
-    // Find the next batch in the buffer
-    while (record_buf.count(n_processed)) {
-      start_ts = getUs();
-      
-      SeqsRecord record = record_buf[n_processed];
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        query_req = MPI::COMM_WORLD.Isend(&rank, 1,
+            MPI::INT, MASTER_RANK, SAM_RV_QUERY);
 
-      int      batch_num = record.batch_num;
-      bseq1_t* seqs      = record.seqs;
-
-      //reg2sam(aux, curr_seqs, curr_batch_num, n_processed, curr_alnreg);
-      for (int i = 0; i < batch_num; ++i) {
-        if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+        if (query_req.Test()) {
+          break;
+        }
       }
-      freeSeqs(seqs, batch_num);
+      // Send a zero-length to master indicating current process is finished
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Send(&length, 1,
+            MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
+      }
 
-      // Remove the record from buffer
-      record_buf.erase(n_processed);
+      finished = true;
+    }
+    else {
+      // Serialize data and send to master
+      
+      std::string ser_data = serialize(&input);
 
-      n_processed += batch_num;
+      int length = ser_data.length();
 
-      VLOG(1) << "Written " << batch_num << " seqs to file in "
-        << getUs() - start_ts << " us";
+      if (length <= 0) {
+        throw std::runtime_error("Possible overflow of msg length");
+      }
+      uint64_t start_ts = getUs();
+
+      // Send proc_id to master to let master receive following msg
+      MPI::Request query_req;
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        DLOG(INFO) << "Start requesting seq record from master";
+        query_req = MPI::COMM_WORLD.Isend(&rank, 1,
+            MPI::INT, MASTER_RANK, SAM_RV_QUERY);
+      }
+      waitRequest(query_req);
+      
+      DLOG(INFO) << "Start sending sam record to master";
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Send(&length, 1,
+            MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
+      }
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Send(ser_data.c_str(), length,
+            MPI::CHAR, MASTER_RANK, SAM_RV_DATA);
+      }
+
+      VLOG(1) << "Sending batch " << input.start_idx
+        << " to master takes " << getUs() - start_ts << " us";
+
+      freeSeqs(input.seqs, input.batch_num);
     }
   }
 }
 
-std::string PrintSam::serialize(SeqsRecord* data) {
+std::string SendSam::serialize(SeqsRecord* data) {
 
   uint64_t start_idx = data->start_idx;
   int      batch_num = data->batch_num;
@@ -727,6 +896,93 @@ std::string PrintSam::serialize(SeqsRecord* data) {
   }
 
   return ss.str();
+}
+
+void PrintSam::compute() {
+  
+  boost::any var = this->getConst("aux");
+  ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
+
+  var = this->getConst("mpi_nprocs");
+  int nprocs = boost::any_cast<int>(var);
+
+  uint64_t n_processed = 0;
+
+  // Recording finish status of each child process
+  std::unordered_map<int, bool> unfinished_proc;
+
+  // Reorder buffer for output sam batches
+  std::unordered_map<uint64_t, SeqsRecord> record_buf;
+
+  for (int p = 1; p < nprocs; p++) {
+    unfinished_proc[p] = true;
+  }
+
+  while (!unfinished_proc.empty()) {
+
+    int proc_id = -1;
+    int length = 0;
+
+    // non-blocking query for tasks
+    MPI::Request query_req;
+    {
+      boost::mutex::scoped_lock lock(mpi_mutex);
+      query_req = MPI::COMM_WORLD.Irecv(&proc_id, 1,
+          MPI::INT, MPI::ANY_SOURCE, SAM_RV_QUERY);
+    }
+    waitRequest(query_req);
+
+    {
+      boost::mutex::scoped_lock lock(mpi_mutex);
+      MPI::COMM_WORLD.Recv(&length, 1,
+          MPI::INT, proc_id, SAM_RV_LENGTH);
+    }
+
+    if (length == 0) {
+      // Process proc_id is already finished, remove from table
+      unfinished_proc.erase(proc_id);
+    }
+    else {
+      // Allocate buffer for serialized obj
+      char* ser_data = (char*) malloc(length);
+
+      {
+        boost::mutex::scoped_lock lock(mpi_mutex);
+        MPI::COMM_WORLD.Recv(ser_data, length,
+            MPI::CHAR, proc_id, SAM_RV_DATA);
+      }
+
+      SeqsRecord input = deserialize(ser_data, length);
+      free(ser_data);
+
+      // Add the current input to buffer first
+      record_buf[input.start_idx] = input;
+
+      // Find the next batch in the buffer
+      while (record_buf.count(n_processed)) {
+        start_ts = getUs();
+
+        SeqsRecord record = record_buf[n_processed];
+
+        int      batch_num = record.batch_num;
+        bseq1_t* seqs      = record.seqs;
+
+        //reg2sam(aux, curr_seqs, curr_batch_num, n_processed, curr_alnreg);
+        for (int i = 0; i < batch_num; ++i) {
+          if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+        }
+        freeSeqs(seqs, batch_num);
+
+        // Remove the record from buffer
+        record_buf.erase(n_processed);
+
+        n_processed += batch_num;
+
+        VLOG(1) << "Written " << batch_num << " seqs to file in "
+          << getUs() - start_ts << " us";
+      }
+    }
+  }
 }
 
 SeqsRecord PrintSam::deserialize(const char* data, size_t length) {

@@ -1,6 +1,7 @@
 #ifndef BWA_FLOW_PIPELINE_H
 #define BWA_FLOW_PIPELINE_H
 
+#include <boost/thread/mutex.hpp>
 #include <list>
 #include <unordered_map>
 
@@ -14,6 +15,19 @@
 
 #include "bwa_wrapper.h"
 #include "SWRead.h"
+
+#define MASTER_RANK   0
+
+// Tags for messages between master and child processes
+#define SEQ_DP_QUERY  0
+#define SEQ_DP_LENGTH 1
+#define SEQ_DP_DATA   2
+#define SAM_RV_QUERY  3
+#define SAM_RV_LENGTH 4
+#define SAM_RV_DATA   5
+
+// mutex for serializing MPI calls
+extern boost::mutex mpi_mutex;
 
 // Common data structures
 struct SeqsRecord {
@@ -41,11 +55,17 @@ struct RegionsRecord {
   std::vector<int>* chains_idxes;
 };
 
-class SeqsProducer : public kestrelFlow::SourceStage<SeqsRecord, 4> {
+class SeqsDispatcher : public kestrelFlow::SourceStage<SeqsRecord, 4> {
  public:
-  SeqsProducer(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
+  SeqsDispatcher(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
   void compute();
   std::string serialize(SeqsRecord* data);
+};
+
+class SeqsReceiver : public kestrelFlow::SourceStage<SeqsRecord, 4> {
+ public:
+  SeqsReceiver(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
+  void compute();
   SeqsRecord deserialize(const char* data, size_t length);
 };
 
@@ -91,11 +111,17 @@ class RegionsToSam
   ktp_aux_t* aux;
 };
 
+class SendSam : public kestrelFlow::SinkStage<SeqsRecord, 4> {
+ public:
+  SendSam(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
+  void compute();
+  std::string serialize(SeqsRecord* data);
+};
+
 class PrintSam : public kestrelFlow::SinkStage<SeqsRecord, 4> {
  public:
   PrintSam(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
   void compute();
-  std::string serialize(SeqsRecord* data);
   SeqsRecord deserialize(const char* data, size_t length);
 };
 
