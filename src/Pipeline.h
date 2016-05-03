@@ -26,9 +26,6 @@
 #define SAM_RV_LENGTH 4
 #define SAM_RV_DATA   5
 
-// mutex for serializing MPI calls
-extern boost::mutex mpi_mutex;
-
 // Common data structures
 struct SeqsRecord {
   uint64_t start_idx;
