@@ -26,6 +26,9 @@
 #define SAM_RV_LENGTH 4
 #define SAM_RV_DATA   5
 
+// mutex for serializing MPI calls
+extern boost::mutex mpi_mutex;
+
 // Common data structures
 struct SeqsRecord {
   uint64_t start_idx;
@@ -52,32 +55,32 @@ struct RegionsRecord {
   std::vector<int>* chains_idxes;
 };
 
-class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, 8> {
+class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, 4> {
  public:
-  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, 8>() {;}
+  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
   void compute();
 };
 
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, 8> {
+class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, 4> {
  public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, 8>() {;}
+  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
   void compute();
   std::string serialize(SeqsRecord* data);
 };
 
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, 8> {
+class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, 2> {
  public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, 8>() {;}
+  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, 2>() {;}
   void compute();
   SeqsRecord deserialize(const char* data, size_t length);
 };
 
 // One stage for the entire BWA-MEM computation
 class SeqsToSams
-: public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 8, 8> {
+: public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 2, 8> {
  public:
   SeqsToSams(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 8, 8>(n),
+      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 2, 8>(n),
       aux(NULL) {;}
   SeqsRecord compute(SeqsRecord const & record);
  private:
@@ -85,10 +88,10 @@ class SeqsToSams
 };
 
 class SeqsToChains 
-: public kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 8, 16> {
+: public kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16> {
  public:
   SeqsToChains(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 8, 16>(n),
+      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16>(n),
       aux(NULL) {;}
   ChainsRecord compute(SeqsRecord const & record);
  private:

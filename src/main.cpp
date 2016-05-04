@@ -26,6 +26,8 @@
 
 FPGAAgent* agent;
 
+boost::mutex mpi_mutex;
+
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
@@ -77,7 +79,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for bwa computation
   SeqsReceive     recv_stage;
-  SeqsToSams      seq2sam_stage(12);
+  SeqsToSams      seq2sam_stage(6);
   //SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
   //ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
   //RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
