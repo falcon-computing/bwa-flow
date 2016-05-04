@@ -161,6 +161,50 @@ static void smem_aux_destroy(smem_aux_t *a)
 	ks_introsort(mem_intv, a->mem.n, a->mem.a);
 }
 
+ void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a)
+{
+	int i, k, x = 0, old_n;
+	int start_width = 1;
+	int split_len = (int)(opt->min_seed_len * opt->split_factor + .499);
+	a->mem.n = 0;
+	// first pass: find all SMEMs
+	while (x < len) {
+		if (seq[x] < 4) {
+			x = bwt_smem1a_new(bwt, len, seq, x, start_width,0, &a->mem, a->tmpv, opt->min_seed_len);
+		} else ++x;
+	}
+	// second pass: find MEMs inside a long SMEM
+	old_n = a->mem.n;
+	for (k = 0; k < old_n; ++k) {
+		bwtintv_t *p = &a->mem.a[k];
+		int start = p->info>>32, end = (int32_t)p->info;
+		if (end - start < split_len || p->x[2] > opt->split_width) continue;
+		bwt_smem1a_new(bwt, len, seq, (start + end)>>1, p->x[2]+1,0, &a->mem, a->tmpv, opt->min_seed_len);
+	}
+	// third pass: LAST-like
+	if (opt->max_mem_intv > 0) {
+		x = 0;
+		while (x < len) {
+			if (seq[x] < 4) {
+				if (1) {
+					bwtintv_t m;
+					x = bwt_seed_strategy1(bwt, len, seq, x, opt->min_seed_len, opt->max_mem_intv, &m);
+					if (m.x[2] > 0) kv_push(bwtintv_t, a->mem, m);
+				} else { // for now, we never come to this block which is slower
+					x = bwt_smem1a(bwt, len, seq, x, start_width, opt->max_mem_intv, &a->mem1, a->tmpv);
+					for (i = 0; i < a->mem1.n; ++i)
+						kv_push(bwtintv_t, a->mem, a->mem1.a[i]);
+				}
+			} else ++x;
+		}
+	}
+	// sort
+	ks_introsort(mem_intv, a->mem.n, a->mem.a);
+
+
+}
+
+
 /************
  * Chaining *
  ************/
@@ -261,7 +305,9 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	tree = kb_init(chn, KB_DEFAULT_SIZE);
 
 	aux = buf? (smem_aux_t*)buf : smem_aux_init();
-	mem_collect_intv(opt, bwt, len, seq, aux);
+	//mem_collect_intv(opt, bwt, len, seq, aux);
+	//use the new method
+	mem_collect_intv_new(opt, bwt, len, seq, aux);
 	for (i = 0, b = e = l_rep = 0; i < aux->mem.n; ++i) { // compute frac_rep
 		bwtintv_t *p = &aux->mem.a[i];
 		int sb = (p->info>>32), se = (uint32_t)p->info;
