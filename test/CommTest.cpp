@@ -14,13 +14,14 @@ TEST_F(CommTests, InputSerializationTest) {
   record.batch_num = batch_num;
   record.seqs = seqs;
 
-  SeqsProducer stage;
+  SeqsDispatch send_stage;
+  SeqsReceive  recv_stage;
 
-  std::string ser_data = stage.serialize(&record);
+  std::string ser_data = send_stage.serialize(&record);
 
   ASSERT_GT(ser_data.size(), 0);
 
-  SeqsRecord record_test = stage.deserialize(
+  SeqsRecord record_test = recv_stage.deserialize(
       ser_data.c_str(), ser_data.length());
 
   ASSERT_EQ(record.start_idx, record_test.start_idx);

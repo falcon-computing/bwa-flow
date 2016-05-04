@@ -4,6 +4,8 @@ SRC_DIR   := ../src
 
 include /curr/diwu/prog/blaze/Makefile.config
 
+OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
+
 CC	:= gcc
 PP	:= g++
 
@@ -14,6 +16,7 @@ INCLUDES := -I.. -I../src \
 	    -I$(BOOST_DIR)/include \
 	    -I$(GLOG_DIR)/include \
 	    -I$(GTEST_DIR)/include \
+			-I$(OPENMPI_DIR)/include \
 	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2
 
 COMPILE := $(CFLAGS) $(INCLUDES)
@@ -29,6 +32,7 @@ LINK    := -L$(BWA_DIR) -lbwa \
 	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GTEST_DIR)/build -lgtest \
+	   -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi \
 	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
 	   -lpthread -lm -ldl
 
@@ -51,10 +55,11 @@ all: $(DST)
 test: 
 	GLOG_v=3 \
 	GLOG_logtostderr=1 \
+	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	./$(DST) mem \
 		/space/scratch/genome/ref/human_g1k_v37.fasta \
 		/space/scratch/genome/fastq/gcat_set_041_1.fastq \
-		/space/scratch/genome/fastq/gcat_set_041_2.fastq
+		/space/scratch/genome/fastq/gcat_set_041_2.fastq 
 
 
 $(DST): $(OBJS)

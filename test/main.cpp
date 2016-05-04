@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
   memset(&aux, 0, sizeof(ktp_aux_t));
 
   // Get the index and the options
-  pre_process(argc-1, argv+1, &aux);
+  pre_process(argc-1, argv+1, &aux, true);
 
   int ret = RUN_ALL_TESTS();
 

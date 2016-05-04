@@ -32,6 +32,7 @@ void *ko_read1 = 0, *ko_read2 = 0;
 
 int main(int argc, char *argv[]) {
 
+#ifdef SCALE_OUT
   // Initialize MPI
   int init_ret = MPI::Init_thread(MPI_THREAD_MULTIPLE);
 
@@ -41,6 +42,9 @@ int main(int argc, char *argv[]) {
   }
   int rank   = MPI::COMM_WORLD.Get_rank();
   int nprocs = MPI::COMM_WORLD.Get_size();
+#else
+  const int rank = 0;
+#endif
 
   // Initialize Google Log
   FLAGS_logtostderr = 1;
@@ -60,59 +64,80 @@ int main(int argc, char *argv[]) {
   // Get the index and the options
   pre_process(argc-1, argv+1, &aux, rank==0);
 
-  kestrelFlow::Pipeline bwa_io(2);
-  kestrelFlow::Pipeline bwa_flow(5);
+  kestrelFlow::Pipeline scatter_flow(2);
+  kestrelFlow::Pipeline gather_flow(2);
+  //kestrelFlow::Pipeline compute_flow(5);
+  kestrelFlow::Pipeline compute_flow(3);
 
-  // stages for bwa file in/out
-  SeqsDispatcher input_stage;
-  PrintSam       output_stage;
+  // Stages for bwa file in/out
+  SeqsRead     input_stage;
+  SamsPrint    output_stage;
+  SeqsDispatch scatter_stage;
+  SamsReceive  gather_stage;
 
-  // stages for bwa computation
-  SeqsReceiver    recv_stage;
-  SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
-  ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
-  RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
-  SendSam         send_stage;
+  // Stages for bwa computation
+  SeqsReceive     recv_stage;
+  SeqsToSams      seq2sam_stage(12);
+  //SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
+  //ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
+  //RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
+  SamsSend        send_stage;
 
+  // Bind global vars to each pipeline
+  compute_flow.addConst("aux", &aux);
+  compute_flow.addConst("chunk_size", chunk_size);
+
+#ifdef SCALE_OUT
+  compute_flow.addConst("mpi_rank", rank);
+  compute_flow.addConst("mpi_nprocs", nprocs);
+
+  scatter_flow.addConst("aux", &aux);
+  scatter_flow.addConst("mpi_rank", rank);
+  scatter_flow.addConst("mpi_nprocs", nprocs);
+
+  gather_flow.addConst("aux", &aux);
+  gather_flow.addConst("mpi_rank", rank);
+  gather_flow.addConst("mpi_nprocs", nprocs);
+
+  scatter_flow.addStage(0, &input_stage);
+  scatter_flow.addStage(1, &scatter_stage);
+
+  gather_flow.addStage(0, &gather_stage);
+  gather_flow.addStage(1, &output_stage);
+
+  compute_flow.addStage(0, &recv_stage);
+  compute_flow.addStage(1, &seq2sam_stage);
+  compute_flow.addStage(2, &send_stage);
+  //compute_flow.addStage(1, &seq2chain_stage);
+  //compute_flow.addStage(2, &chain2reg_stage);
+  //compute_flow.addStage(3, &reg2sam_stage);
+  //compute_flow.addStage(4, &send_stage);
+  
   if (rank == 0) { 
-    // Master process start a separate pipeline just to
-    // distribute the input seqs and gather output sam
-    bwa_io.addConst("aux", &aux);
-    bwa_io.addConst("mpi_rank", rank);
-    bwa_io.addConst("mpi_nprocs", nprocs);
-
-    bwa_io.addStage(0, &input_stage);
-    bwa_io.addStage(1, &output_stage);
-
-    bwa_io.start();
+    scatter_flow.start();
+    gather_flow.start();
   }
+#else
+  compute_flow.addStage(0, &input_stage);
+  compute_flow.addStage(1, &seq2sam_stage);
+  compute_flow.addStage(2, &output_stage);
+#endif
+
   // Start FPGA agent
   //agent = new FPGAAgent(FPGA_PATH, chunk_size);
 
-  bwa_flow.addConst("aux", &aux);
-  bwa_flow.addConst("chunk_size", chunk_size);
-  bwa_flow.addConst("mpi_rank", rank);
-  bwa_flow.addConst("mpi_nprocs", nprocs);
-
-  bwa_flow.addStage(0, &recv_stage);
-  bwa_flow.addStage(1, &seq2chain_stage);
-  bwa_flow.addStage(2, &chain2reg_stage);
-  bwa_flow.addStage(3, &reg2sam_stage);
-  bwa_flow.addStage(4, &send_stage);
-  bwa_flow.start();
-  bwa_flow.wait();
+  compute_flow.start();
+  compute_flow.wait();
 
   // Free all global variables
   //delete agent;
 
   if (rank == 0) {
-    bwa_io.wait();
-  }
+#ifdef SCALE_OUT
+    scatter_flow.wait();
+    gather_flow.wait();
+#endif
 
-  free(aux.opt);
-  bwa_idx_destroy(aux.idx);
-
-  if (rank == 0) { // master process
     kseq_destroy(aux.ks);
     err_gzclose(fp_idx); 
     kclose(ko_read1);
@@ -142,7 +167,12 @@ int main(int argc, char *argv[]) {
     free(bwa_pg);
   }
 
+  free(aux.opt);
+  bwa_idx_destroy(aux.idx);
+
+#ifdef SCALE_OUT
   MPI_Finalize();
+#endif
 
   return 0;
 }

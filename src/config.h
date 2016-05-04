@@ -7,6 +7,8 @@
 //#define OFFLOAD
 //#define USE_FPGA
 
+#define SCALE_OUT
+
 #define STAGE_1_WORKER_NUM 4
 #define STAGE_2_WORKER_NUM 2
 #define STAGE_3_WORKER_NUM 1
