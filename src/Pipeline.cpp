@@ -169,7 +169,7 @@ void SeqsReceive::compute() {
       SeqsRecord output = deserialize(ser_data, length);
       free(ser_data);
 
-      VLOG(1) << "Produce one read batch in "
+      VLOG(1) << "Receive one read batch in "
         << getUs() - start_ts << " us";
 
       pushOutput(output);
@@ -907,7 +907,10 @@ void SamsSend::compute() {
       VLOG(2) << "Sending batch " << input.start_idx
         << " to master takes " << getUs() - start_ts << " us";
 
-      freeSeqs(input.seqs, input.batch_num);
+      //freeSeqs(input.seqs, input.batch_num);
+      for (int i = 0; i < input.batch_num; i++) {
+        free(input.seqs[i].sam);
+      }
     }
   }
 }
