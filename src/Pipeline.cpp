@@ -123,6 +123,20 @@ void SeqsDispatch::compute() {
         throw std::runtime_error("Possible overflow of msg length");
       }
 
+      for (int i = 0; i < record.batch_num; i++) {
+        free(record.seqs[i].name);
+        free(record.seqs[i].comment);
+        free(record.seqs[i].seq);
+        free(record.seqs[i].qual);
+      }
+      free(record.seqs);
+
+      VLOG(2) << "Serializing seq batch of "
+        << length / 1024  << "kb"
+        << " in " << getUs() - start_ts << " us";
+
+      start_ts = getUs();
+
       // First query a process to send data to
       int proc_id = -1;
       bwaMPIRecv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
@@ -131,7 +145,7 @@ void SeqsDispatch::compute() {
 
       bwaMPISend(ser_data.c_str(), length, MPI::CHAR, proc_id, SEQ_DP_DATA);
 
-      VLOG(2) << "Sending seqs batch " << record.start_idx
+      VLOG(1) << "Sending seqs batch " << record.start_idx
         << " to proc_" << proc_id
         << " takes " << getUs() - start_ts << " us";
     }
@@ -925,6 +939,12 @@ void SamsSend::compute() {
       if (length <= 0) {
         throw std::runtime_error("Possible overflow of msg length");
       }
+      VLOG(2) << "Serializing sam batch of "
+        << length / 1024  << "kb"
+        << " in " << getUs() - start_ts << " us";
+
+      start_ts = getUs();
+
       // Send proc_id to master to let master receive following msg
       bwaMPISend(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
 
@@ -933,7 +953,7 @@ void SamsSend::compute() {
       bwaMPISend(ser_data.c_str(), length,
           MPI::CHAR, MASTER_RANK, SAM_RV_DATA);
 
-      VLOG(2) << "Sending sam batch " << input.start_idx
+      VLOG(1) << "Sending sam batch " << input.start_idx
         << " to master takes " << getUs() - start_ts << " us";
 
       //freeSeqs(input.seqs, input.batch_num);

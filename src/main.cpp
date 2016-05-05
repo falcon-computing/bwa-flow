@@ -36,9 +36,9 @@ int main(int argc, char *argv[]) {
 
 #ifdef SCALE_OUT
   // Initialize MPI
-  int init_ret = MPI::Init_thread(MPI_THREAD_MULTIPLE);
+  int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
 
-  if (init_ret != MPI_THREAD_MULTIPLE) {
+  if (init_ret != MPI_THREAD_SERIALIZED) {
     LOG(ERROR) << "Available thread level is " << init_ret;
     throw std::runtime_error("Cannot initialize MPI with threads");
   }
