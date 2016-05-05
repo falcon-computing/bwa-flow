@@ -16,17 +16,19 @@
 #include "Pipeline.h"  
 #include "util.h"
 
-// Helper functions in obj serialization/deserialization
+// Encode a scalar value to serialized data
 template <typename T>
 static inline void putT(std::stringstream &ss, T value) {
   ss.write(reinterpret_cast<char*>(&value), sizeof(value));
 }
 
+// Decode a scalar value from serialized data
 template <typename T>
 static inline void getT(std::stringstream &ss, T &value) {
   ss.read(reinterpret_cast<char*>(&value), sizeof(value));
 }
 
+// Store a string with its length to serialized data
 static inline void putStr(std::stringstream &ss, const char* str) {
   if (str) {
     size_t length = strlen(str);
@@ -39,6 +41,7 @@ static inline void putStr(std::stringstream &ss, const char* str) {
   }
 }
 
+// Retrieve a string from serialized data
 static inline void getStr(std::stringstream &ss, char* &dst) {
   size_t length = 0;
   getT(ss, length);
@@ -50,6 +53,7 @@ static inline void getStr(std::stringstream &ss, char* &dst) {
   }
 }
 
+// Check MPI::Request status with mutex lock
 static inline bool queryStatus(MPI::Request &req) {
   boost::mutex::scoped_lock lock(mpi_mutex);
   return req.Test();
@@ -127,7 +131,7 @@ void SeqsDispatch::compute() {
 
       bwaMPISend(ser_data.c_str(), length, MPI::CHAR, proc_id, SEQ_DP_DATA);
 
-      VLOG(2) << "Sending batch " << record.start_idx
+      VLOG(2) << "Sending seqs batch " << record.start_idx
         << " to proc_" << proc_id
         << " takes " << getUs() - start_ts << " us";
     }
@@ -911,8 +915,9 @@ void SamsSend::compute() {
       finished = true;
     }
     else {
+      uint64_t start_ts = getUs();
+
       // Serialize data and send to master
-      
       std::string ser_data = serialize(&input);
 
       int length = ser_data.length();
@@ -923,13 +928,12 @@ void SamsSend::compute() {
       // Send proc_id to master to let master receive following msg
       bwaMPISend(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
 
-      uint64_t start_ts = getUs();
       bwaMPISend(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
 
       bwaMPISend(ser_data.c_str(), length,
           MPI::CHAR, MASTER_RANK, SAM_RV_DATA);
 
-      VLOG(2) << "Sending batch " << input.start_idx
+      VLOG(2) << "Sending sam batch " << input.start_idx
         << " to master takes " << getUs() - start_ts << " us";
 
       //freeSeqs(input.seqs, input.batch_num);
@@ -1011,6 +1015,7 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
   std::stringstream ss;
   ss.write(data, length);
   
+  // Parse integers from serialized data
   getT(ss, start_idx);
   getT(ss, batch_num);
 
@@ -1020,6 +1025,7 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
     bseq1_t* seq = &seqs[i];
     memset(seq, 0, sizeof(bseq1_t));
     
+    // Parse one string from serialized data
     getStr(ss, seq->sam);
   }
 
@@ -1069,7 +1075,6 @@ void SamsPrint::compute() {
       int      batch_num = record.batch_num;
       bseq1_t* seqs      = record.seqs;
 
-      //reg2sam(aux, curr_seqs, curr_batch_num, n_processed, curr_alnreg);
       for (int i = 0; i < batch_num; ++i) {
         if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
         free(seqs[i].sam);
