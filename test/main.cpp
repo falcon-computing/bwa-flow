@@ -10,6 +10,8 @@ ktp_aux_t aux;
 
 FPGAAgent* agent;
 
+boost::mutex mpi_mutex;
+
 int main(int argc, char *argv[]) {
 
   google::InitGoogleLogging(argv[0]);

@@ -936,6 +936,7 @@ void SamsSend::compute() {
       for (int i = 0; i < input.batch_num; i++) {
         free(input.seqs[i].sam);
       }
+      free(input.seqs);
     }
   }
 }
@@ -1035,10 +1036,13 @@ void SamsPrint::compute() {
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
+#ifdef IN_ORDER_OUTPUT
   uint64_t n_processed = 0;
-
   std::unordered_map<uint64_t, SeqsRecord> record_buf;
-  // NOTE: input may be out-of-order
+#endif
+
+  // NOTE: input may be out-of-order, use a reorder buffer if
+  // the output needs to be in-order
   while (true) {
     SeqsRecord input;
     bool ready = this->getInput(input);
@@ -1052,12 +1056,13 @@ void SamsPrint::compute() {
       break; 
     }
 
+#ifdef IN_ORDER_OUTPUT
     // Add the current input to buffer first
     record_buf[input.start_idx] = input;
 
     // Find the next batch in the buffer
     while (record_buf.count(n_processed)) {
-      start_ts = getUs();
+      uint64_t start_ts = getUs();
       
       SeqsRecord record = record_buf[n_processed];
 
@@ -1069,7 +1074,6 @@ void SamsPrint::compute() {
         if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
         free(seqs[i].sam);
       }
-      //freeSeqs(seqs, batch_num);
       free(seqs);
 
       // Remove the record from buffer
@@ -1077,8 +1081,22 @@ void SamsPrint::compute() {
 
       n_processed += batch_num;
 
-      VLOG(1) << "Written " << batch_num << " seqs to file in "
+      VLOG(1) << "Written batch " << input.start_idx << " to file in "
         << getUs() - start_ts << " us";
     }
+#else
+    uint64_t start_ts = getUs();
+    int batch_num = input.batch_num;
+    bseq1_t* seqs = input.seqs;
+
+    for (int i = 0; i < batch_num; ++i) {
+      if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+      free(seqs[i].sam);
+    }
+    free(seqs);
+
+    VLOG(1) << "Written batch " << input.start_idx << " to file in "
+      << getUs() - start_ts << " us";
+#endif
   }
 }

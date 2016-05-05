@@ -8,6 +8,7 @@
 //#define USE_FPGA
 
 #define SCALE_OUT
+//#define IN_ORDER_OUTPUT
 
 #define STAGE_1_WORKER_NUM 4
 #define STAGE_2_WORKER_NUM 2
