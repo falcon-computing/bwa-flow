@@ -1062,10 +1062,36 @@ void SamsPrint::compute() {
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
+  var = this->getConst("sam_dir");
+  std::string out_dir = boost::any_cast<std::string>(var);
+
+  // Parameters for Sam output
+  const int num_batch_per_batch = 8;
+  int file_counter = 0;
+  int file_id = 0;
+  // If out_dir is not defined, output to stdout
+  bool use_file = !out_dir.empty();
+
 #ifdef IN_ORDER_OUTPUT
   uint64_t n_processed = 0;
   std::unordered_map<uint64_t, SeqsRecord> record_buf;
 #endif
+
+  // Open first file if output is file
+  FILE* fout;
+  if (use_file) {
+    std::stringstream ss;
+    ss << out_dir << "/part-"
+       << std::setw(6) << std::setfill('0') << file_id;
+    fout = fopen(ss.str().c_str(), "w+");
+    if (!fout) {
+      throw std::runtime_error("Cannot open sam output file");
+    }
+    DLOG(INFO) << "Start writing output to " << ss.str();
+  }
+  else {
+    fout = stdout;
+  }
 
   // NOTE: input may be out-of-order, use a reorder buffer if
   // the output needs to be in-order
@@ -1089,17 +1115,34 @@ void SamsPrint::compute() {
     // Find the next batch in the buffer
     while (record_buf.count(n_processed)) {
       uint64_t start_ts = getUs();
-      
+
+      if (use_file) {
+        if (file_counter < num_batch_per_batch) {
+          file_counter++;
+        }
+        else {
+          file_id++;
+          file_counter = 0;
+
+          // Open a new file
+          std::stringstream ss;
+          ss << out_dir << "/part-"
+            << std::setw(6) << std::setfill('0') << file_id;
+
+          fclose(fout);
+          fout = fopen(ss.str().c_str(), "w+");
+          DLOG(INFO) << "Start writing output to " << ss.str();
+        }
+      }     
       SeqsRecord record = record_buf[n_processed];
 
       int      batch_num = record.batch_num;
       bseq1_t* seqs      = record.seqs;
 
       for (int i = 0; i < batch_num; ++i) {
-        if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+        if (seqs[i].sam) fputs(seqs[i].sam, fout);
         free(seqs[i].sam);
       }
-      free(seqs);
 
       // Remove the record from buffer
       record_buf.erase(n_processed);
@@ -1114,8 +1157,28 @@ void SamsPrint::compute() {
     int batch_num = input.batch_num;
     bseq1_t* seqs = input.seqs;
 
+    if (use_file) {
+      if (file_counter < num_batch_per_batch) {
+        file_counter++;
+      }
+      else {
+        file_id++;
+        file_counter = 0;
+
+        // Open a new file
+        std::stringstream ss;
+        ss << out_dir << "/part-"
+          << std::setw(6) << std::setfill('0') << file_id;
+
+        fclose(fout);
+        fout = fopen(ss.str().c_str(), "w+");
+        DLOG(INFO) << "Start writing output to " << ss.str();
+      }
+    }
+
     for (int i = 0; i < batch_num; ++i) {
-      if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
+      if (seqs[i].sam) fputs(seqs[i].sam, fout);
+      //err_fputs(seqs[i].sam, stdout);
       free(seqs[i].sam);
     }
     free(seqs);
@@ -1123,5 +1186,8 @@ void SamsPrint::compute() {
     VLOG(1) << "Written batch " << input.start_idx << " to file in "
       << getUs() - start_ts << " us";
 #endif
+  }
+  if (use_file) {
+    fclose(fout);
   }
 }

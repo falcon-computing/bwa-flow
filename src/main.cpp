@@ -1,13 +1,15 @@
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
 #include <ctype.h>
+#include <glog/logging.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <unistd.h>
 #include <zlib.h>
-#include <glog/logging.h>
-#include <string>
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -31,6 +33,7 @@ boost::mutex mpi_mutex;
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
+std::string output_dir;
 
 int main(int argc, char *argv[]) {
 
@@ -66,8 +69,22 @@ int main(int argc, char *argv[]) {
   // Get the index and the options
   pre_process(argc-1, argv+1, &aux, rank==0);
 
+  // Get output file folder
+  std::string sam_dir = output_dir;
+  if (!sam_dir.empty()) {
+#ifdef SCALE_OUT
+    sam_dir += "/" + boost::asio::ip::host_name()+
+      "-" + std::to_string((long long)getpid());
+#endif
+    // Create output folder if it does not exist
+    boost::filesystem::create_directories(sam_dir);
+    DLOG(INFO) << "Putting sam output to " << sam_dir;
+  }
+  else {
+    DLOG(INFO) << "Putting sam output to stdout";
+  }
+
   kestrelFlow::Pipeline scatter_flow(2);
-  kestrelFlow::Pipeline gather_flow(2);
   //kestrelFlow::Pipeline compute_flow(5);
   kestrelFlow::Pipeline compute_flow(3);
 
@@ -75,7 +92,7 @@ int main(int argc, char *argv[]) {
   SeqsRead     input_stage;
   SamsPrint    output_stage;
   SeqsDispatch scatter_stage;
-  SamsReceive  gather_stage;
+  //SamsReceive  gather_stage;
 
   // Stages for bwa computation
   SeqsReceive     recv_stage;
@@ -88,6 +105,7 @@ int main(int argc, char *argv[]) {
   // Bind global vars to each pipeline
   compute_flow.addConst("aux", &aux);
   compute_flow.addConst("chunk_size", chunk_size);
+  compute_flow.addConst("sam_dir", sam_dir);
 
 #ifdef SCALE_OUT
   compute_flow.addConst("mpi_rank", rank);
@@ -97,32 +115,24 @@ int main(int argc, char *argv[]) {
   scatter_flow.addConst("mpi_rank", rank);
   scatter_flow.addConst("mpi_nprocs", nprocs);
 
-  gather_flow.addConst("aux", &aux);
-  gather_flow.addConst("mpi_rank", rank);
-  gather_flow.addConst("mpi_nprocs", nprocs);
-
   scatter_flow.addStage(0, &input_stage);
   scatter_flow.addStage(1, &scatter_stage);
 
-  gather_flow.addStage(0, &gather_stage);
-  gather_flow.addStage(1, &output_stage);
-
   compute_flow.addStage(0, &recv_stage);
   compute_flow.addStage(1, &seq2sam_stage);
-  compute_flow.addStage(2, &send_stage);
-  //compute_flow.addStage(1, &seq2chain_stage);
-  //compute_flow.addStage(2, &chain2reg_stage);
-  //compute_flow.addStage(3, &reg2sam_stage);
-  //compute_flow.addStage(4, &send_stage);
+  compute_flow.addStage(2, &output_stage);
   
   if (rank == 0) { 
     scatter_flow.start();
-    gather_flow.start();
   }
 #else
   compute_flow.addStage(0, &input_stage);
   compute_flow.addStage(1, &seq2sam_stage);
   compute_flow.addStage(2, &output_stage);
+  //compute_flow.addStage(1, &seq2chain_stage);
+  //compute_flow.addStage(2, &chain2reg_stage);
+  //compute_flow.addStage(3, &reg2sam_stage);
+  //compute_flow.addStage(4, &output_stage);
 #endif
 
   // Start FPGA agent
@@ -137,7 +147,6 @@ int main(int argc, char *argv[]) {
   if (rank == 0) {
 #ifdef SCALE_OUT
     scatter_flow.wait();
-    gather_flow.wait();
 #endif
 
     kseq_destroy(aux.ks);
