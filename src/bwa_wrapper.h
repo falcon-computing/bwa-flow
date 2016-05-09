@@ -96,7 +96,7 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 int kclose(void *a);
 }
 
-int pre_process(int argc, char *argv[],ktp_aux_t *aux );
+int pre_process(int argc, char *argv[], ktp_aux_t *aux, bool is_master);
 
 mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 

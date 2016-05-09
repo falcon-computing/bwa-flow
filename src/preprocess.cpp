@@ -14,16 +14,14 @@
 #include "kseq.h"
 #include "bwa_wrapper.h"
 
-
 extern unsigned char nst_nt4_table[256];
 
-    extern gzFile fp_idx, fp2_read2 ;
-    extern void *ko_read1 , *ko_read2 ;
+extern gzFile fp_idx, fp2_read2 ;
+extern void *ko_read1 , *ko_read2 ;
 
+extern std::string output_dir;
 
-
-int usage()
-{
+int usage() {
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Program: bwa (alignment via Burrows-Wheeler transformation)\n");
 	fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
@@ -45,18 +43,14 @@ int usage()
 	fprintf(stderr, "         bwtupdate     update .bwt to the new format\n");
 	fprintf(stderr, "         bwt2sa        generate SA from BWT and Occ\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr,
-"Note: To use BWA, you need to first index the genome with `bwa index'.\n"
-"      There are three alignment algorithms in BWA: `mem', `bwasw', and\n"
-"      `aln/samse/sampe'. If you are not sure which to use, try `bwa mem'\n"
-"      first. Please `man ./bwa.1' for the manual.\n\n");
+	fprintf(stderr, "Note: To use BWA, you need to first index the genome with `bwa index'.\n"
+                  "      There are three alignment algorithms in BWA: `mem', `bwasw', and\n"
+                  "      `aln/samse/sampe'. If you are not sure which to use, try `bwa mem'\n"
+                  "      first. Please `man ./bwa.1' for the manual.\n\n");
 	return 1;
 }
 
-
-
-static void update_a(mem_opt_t *opt, const mem_opt_t *opt0)
-{
+static void update_a(mem_opt_t *opt, const mem_opt_t *opt0) {
 	if (opt0->a) { // matching score is changed
 		if (!opt0->b) opt->b *= opt->a;
 		if (!opt0->T) opt->T *= opt->a;
@@ -71,10 +65,11 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0)
 	}
 }
 
-
-int pre_process(int argc, char *argv[],ktp_aux_t* aux)
-//int pre_process(int argc, char *argv[])
-{
+int pre_process(int argc,
+    char *argv[],
+    ktp_aux_t* aux,
+    bool is_master
+) {
 	mem_opt_t *opt, opt0;
 	int fd, fd2, i, c, ignore_alt = 0, no_mt_io = 0;
 	int fixed_chunk_size = -1;
@@ -86,7 +81,7 @@ int pre_process(int argc, char *argv[],ktp_aux_t* aux)
 
 	aux->opt = opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
-	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
+	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:o:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
 		else if (c == '1') no_mt_io = 1;
 		else if (c == 'x') mode = optarg;
@@ -178,7 +173,9 @@ int pre_process(int argc, char *argv[],ktp_aux_t* aux)
 			if (bwa_verbose >= 3)
 				fprintf(stderr, "[M::%s] mean insert size: %.3f, stddev: %.3f, max: %d, min: %d\n",
 						__func__, pes[1].avg, pes[1].std, pes[1].high, pes[1].low);
-		}
+		} else if (c == 'o') {
+      output_dir = optarg;
+    }
 		else return 1;
 	}
 
@@ -282,30 +279,32 @@ int pre_process(int argc, char *argv[],ktp_aux_t* aux)
 		for (i = 0; i < aux->idx->bns->n_seqs; ++i)
 			aux->idx->bns->anns[i].is_alt = 0;
 
-	ko_read1 = kopen(argv[optind + 1], &fd);
-	if (ko_read1 == 0) {
-		if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
-		return 1;
-	}
-	fp_idx = gzdopen(fd, "r");
-	aux->ks = kseq_init(fp_idx);
-	if (optind + 2 < argc) {
-		if (opt->flag&MEM_F_PE) {
-			if (bwa_verbose >= 2)
-				fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
-		} else {
-			ko_read2 = kopen(argv[optind + 2], &fd2);
-			if (ko_read2 == 0) {
-				if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 2]);
-				return 1;
-			}
-			fp2_read2 = gzdopen(fd2, "r");
-			aux->ks2 = kseq_init(fp2_read2);
-			opt->flag |= MEM_F_PE;
-		}
-	}
-	bwa_print_sam_hdr(aux->idx->bns, hdr_line);
-	aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+  if (is_master) {
+    ko_read1 = kopen(argv[optind + 1], &fd);
+    if (ko_read1 == 0) {
+      if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
+      return 1;
+    }
+    fp_idx = gzdopen(fd, "r");
+    aux->ks = kseq_init(fp_idx);
+    if (optind + 2 < argc) {
+      if (opt->flag&MEM_F_PE) {
+        if (bwa_verbose >= 2)
+          fprintf(stderr, "[W::%s] when '-p' is in use, the second query file is ignored.\n", __func__);
+      } else {
+        ko_read2 = kopen(argv[optind + 2], &fd2);
+        if (ko_read2 == 0) {
+          if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 2]);
+          return 1;
+        }
+        fp2_read2 = gzdopen(fd2, "r");
+        aux->ks2 = kseq_init(fp2_read2);
+        opt->flag |= MEM_F_PE;
+      }
+    }
+    bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+    aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+  }
 	return 0;
 }
 
