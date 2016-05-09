@@ -55,8 +55,6 @@ int main(int argc, char *argv[]) {
   FLAGS_logtostderr = 1;
   google::InitGoogleLogging(argv[0]);
 
-	double t_real = realtime();
-
   // Preprocessing
   extern char *bwa_pg;
   extern gzFile fp_idx, fp2_read2;
@@ -84,8 +82,9 @@ int main(int argc, char *argv[]) {
     DLOG(INFO) << "Putting sam output to stdout";
   }
 
+	double t_real = realtime();
+
   kestrelFlow::Pipeline scatter_flow(2);
-  //kestrelFlow::Pipeline compute_flow(5);
   kestrelFlow::Pipeline compute_flow(3);
 
   // Stages for bwa file in/out
@@ -96,7 +95,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for bwa computation
   SeqsReceive     recv_stage;
-  SeqsToSams      seq2sam_stage(6);
+  SeqsToSams      seq2sam_stage(12);
   //SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
   //ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
   //RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
@@ -140,6 +139,8 @@ int main(int argc, char *argv[]) {
 
   compute_flow.start();
   compute_flow.wait();
+
+  MPI::COMM_WORLD.Barrier();
 
   // Free all global variables
   //delete agent;
