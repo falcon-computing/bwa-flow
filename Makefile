@@ -1,16 +1,8 @@
-include /curr/diwu/prog/blaze/Makefile.config
+include config.mk
 
 BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
-MANAGER_DIR 	:= /curr/diwu/prog/blaze/manager
-GFLAGS_DIR	:= /curr/diwu/tools/gflags/build
-OPENMPI_DIR	:= /curr/diwu/tools/openmpi-1.10.2/build/install
-
-MAKE	:= make
-CC	:= gcc
-PP	:= g++
-MPIPP 	:= $(OPENMPI_DIR)/bin/mpic++
 
 CFLAGS 	:= -g -std=c++0x -fPIC -O3
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
@@ -26,7 +18,6 @@ INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(KFLOW_DIR)/include \
 	   -I$(BOOST_DIR)/include \
 	   -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 \
-	   -I$(PROTOBUF_DIR)/include \
 	   -I$(GLOG_DIR)/include \
 	   -I$(GFLAGS_DIR)/include
 	
@@ -38,7 +29,6 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_iostreams \
 		-lboost_filesystem \
 		-lboost_regex \
-	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
@@ -76,3 +66,5 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 clean:
 	rm -f $(OBJS)
 	rm -f $(PROG)  
+
+.PHONY: all scaleout clean
