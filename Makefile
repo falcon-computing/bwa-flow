@@ -1,15 +1,16 @@
-BWA_DIR   := ./bwa
-KFLOW_DIR := ./kflow
-SRC_DIR   := ./src
 include /curr/diwu/prog/blaze/Makefile.config
 
-MANAGER_DIR=/curr/diwu/prog/blaze/manager
-GFLAGS_DIR=/curr/diwu/tools/gflags/build
-OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
+BWA_DIR   	:= ./bwa
+KFLOW_DIR 	:= ./kflow
+SRC_DIR   	:= ./src
+MANAGER_DIR 	:= /curr/diwu/prog/blaze/manager
+GFLAGS_DIR	:= /curr/diwu/tools/gflags/build
+OPENMPI_DIR	:= /curr/diwu/tools/openmpi-1.10.2/build/install
 
+MAKE	:= make
 CC	:= gcc
 PP	:= g++
-MPIPP := $(OPENMPI_DIR)/bin/mpic++
+MPIPP 	:= $(OPENMPI_DIR)/bin/mpic++
 
 CFLAGS 	:= -g -std=c++0x -fPIC -O3
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
@@ -21,16 +22,13 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/util.o
 
-PROG	:= ./bin/bwa
 INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(KFLOW_DIR)/include \
 	   -I$(BOOST_DIR)/include \
 	   -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 \
 	   -I$(PROTOBUF_DIR)/include \
 	   -I$(GLOG_DIR)/include \
-	   -I$(GFLAGS_DIR)/include \
-	   -I$(JAVA_HOME)/include \
-	   -I$(JAVA_HOME)/include/linux 
+	   -I$(GFLAGS_DIR)/include
 	
 LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(KFLOW_DIR)/lib -lkflow \
@@ -47,16 +45,21 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -lpthread -lm -ldl -lz -lrt
 
 ifneq ($(NDEBUG),)
-CFLAGS   	:= $(CFLAGS) -DNDEBUG
+CFLAGS   := $(CFLAGS) -DNDEBUG
 endif
 
 ifneq ($(SCALEOUT),)
-CFLAGS   	:= $(CFLAGS) -DSCALE_OUT
-INCLUDES	:= $(INCLUDES) -I$(OPENMPI_DIR)/include
-LIBS			:= $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
+CFLAGS   := $(CFLAGS) -DSCALE_OUT
+INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
+LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 endif
 
-all:$(PROG)
+PROG	 := ./bin/bwa
+
+all:	$(PROG)
+
+scaleout:
+	$(MAKE) SCALEOUT=1 all
 
 ./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) 
 	$(PP) $(OBJS) -o $@ $(LIBS)
