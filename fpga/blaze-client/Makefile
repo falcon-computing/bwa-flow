@@ -1,6 +1,7 @@
 include /curr/diwu/prog/blaze/Makefile.config
 
 MANAGER_DIR=/curr/diwu/prog/blaze/manager
+GFLAGS_DIR=/curr/diwu/tools/gflags/build
 
 PP	:= g++
 
@@ -21,6 +22,7 @@ LINK	:= -L$(MANAGER_DIR)/lib -lblaze \
 		-lboost_regex \
 	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
+	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -lpthread -lm -ldl
 
 all: app

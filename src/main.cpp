@@ -1,6 +1,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
+#include <boost/thread.hpp>
 #include <ctype.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <limits.h>
 #include <math.h>
@@ -17,8 +19,11 @@
 #include "bwa/kseq.h"
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
-#include "mpi.h"
 #include "kflow/Pipeline.h"
+
+#ifdef SCALE_OUT
+#include "mpi.h"
+#endif
 
 #include "bwa_wrapper.h"
 #include "config.h"
@@ -35,7 +40,47 @@ gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 std::string output_dir;
 
+// Parameters
+DEFINE_bool(offload, false,
+    "Use three compute pipeline stages to enable offloading"
+    "workload to accelerators. "
+    "If disabled, --use_fpga, --fpga_path will be discard");
+
+DEFINE_bool(use_fpga, false,
+    "Enable FPGA accelerator for SmithWaterman computation");
+
+DEFINE_string(fpga_path, "",
+    "File path of the SmithWaterman FPGA bitstream");
+
+DEFINE_int32(chunk_size, 2000,
+    "Size of each batch send to the FPGA accelerator");
+
+DEFINE_bool(inorder_output, false, 
+    "Whether keep the sequential ordering of the sam file");
+
+DEFINE_string(output_dir, "",
+    "If not empty the output will be redirect to --output_dir");
+
+DEFINE_int32(nt, boost::thread::hardware_concurrency(),
+    "Total number of parallel threads to use for the entire program");
+
+DEFINE_int32(stage_1_nt, 1,
+    "Total number of parallel threads to use for stage 1");
+
+DEFINE_int32(stage_2_nt, 1,
+    "Total number of parallel threads to use for stage 2");
+
+DEFINE_int32(stage_3_nt, 1,
+    "Total number of parallel threads to use for stage 3");
+
 int main(int argc, char *argv[]) {
+
+  // Initialize Google Flags
+  gflags::SetUsageMessage(argv[0]);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Initialize Google Log
+  google::InitGoogleLogging(argv[0]);
 
 #ifdef SCALE_OUT
   // Initialize MPI
@@ -51,10 +96,6 @@ int main(int argc, char *argv[]) {
   const int rank = 0;
 #endif
 
-  // Initialize Google Log
-  FLAGS_logtostderr = 1;
-  google::InitGoogleLogging(argv[0]);
-
   // Preprocessing
   extern char *bwa_pg;
   extern gzFile fp_idx, fp2_read2;
@@ -62,48 +103,101 @@ int main(int argc, char *argv[]) {
   ktp_aux_t aux;
   memset(&aux, 0, sizeof(ktp_aux_t));
 
-  int chunk_size = CHUNK_SIZE;
+  // Check sanity of input parameters
+  int chunk_size = FLAGS_chunk_size;
 
-  // Get the index and the options
-  pre_process(argc-1, argv+1, &aux, rank==0);
+  if (FLAGS_offload && FLAGS_use_fpga) {
+    VLOG(1) << "Use FPGA in BWA-FLOW";
+    boost::filesystem::wpath file_path(FLAGS_fpga_path);
+    if (!boost::filesystem::exists(file_path)) {
+      LOG(ERROR) << "Cannot find FPGA bitstream at " 
+        << FLAGS_fpga_path;
+      return 1;
+    }
+  }
 
   // Get output file folder
-  std::string sam_dir = output_dir;
+  std::string sam_dir = FLAGS_output_dir;
   if (!sam_dir.empty()) {
 #ifdef SCALE_OUT
     sam_dir += "/" + boost::asio::ip::host_name()+
       "-" + std::to_string((long long)getpid());
 #endif
     // Create output folder if it does not exist
-    boost::filesystem::create_directories(sam_dir);
-    DLOG(INFO) << "Putting sam output to " << sam_dir;
+    if (boost::filesystem::create_directories(sam_dir)) {
+      VLOG(1) << "Putting sam output to " << sam_dir;
+    }
+    else {
+      LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+      return 1;
+    }
   }
   else {
-    DLOG(INFO) << "Putting sam output to stdout";
+    VLOG(1) << "Putting sam output to stdout";
+  }
+
+  // If output_dir is set then redirect sam_header to a file
+  int stdout_fd;
+  if (rank==0 && !sam_dir.empty()) {
+    stdout_fd = dup(STDOUT_FILENO);
+    std::string fname = sam_dir + "/header";
+    freopen(fname.c_str(), "w+", stdout);
+  }
+  // Get the index and the options
+  pre_process(argc-1, argv+1, &aux, rank==0);
+
+  // Restore stdout if stdout is redirected
+  if (rank==0 && !sam_dir.empty()) {
+    fclose(stdout);
+    dup2(stdout_fd, STDOUT_FILENO);
+    stdout = fdopen(STDOUT_FILENO, "w");
+    close(stdout_fd);
   }
 
 	double t_real = realtime();
 
+  int num_compute_stages = 3;
+  if (FLAGS_offload) {
+    num_compute_stages = 5;
+  }
+
+#ifdef SCALE_OUT
   kestrelFlow::Pipeline scatter_flow(2);
-  kestrelFlow::Pipeline compute_flow(3);
+  kestrelFlow::Pipeline gather_flow(2);
+#endif
+  kestrelFlow::Pipeline compute_flow(num_compute_stages);
 
   // Stages for bwa file in/out
-  SeqsRead     input_stage;
-  SamsPrint    output_stage;
-  SeqsDispatch scatter_stage;
-  //SamsReceive  gather_stage;
-
+  SeqsRead        read_stage;
+  SamsPrint       print_stage;
+#ifdef SCALE_OUT
+  SeqsDispatch    seq_send_stage;
+  SeqsReceive     seq_recv_stage;
+  SamsSend        sam_send_stage;
+  SamsReceive     sam_recv_stage;
+#endif
   // Stages for bwa computation
-  SeqsReceive     recv_stage;
-  SeqsToSams      seq2sam_stage(12);
-  //SeqsToChains    seq2chain_stage(STAGE_1_WORKER_NUM);
-  //ChainsToRegions chain2reg_stage(STAGE_2_WORKER_NUM);
-  //RegionsToSam    reg2sam_stage(STAGE_3_WORKER_NUM);
-  SamsSend        send_stage;
+  SeqsToSams      seq2sam_stage(FLAGS_nt);
+  SeqsToChains    seq2chain_stage(FLAGS_stage_1_nt);
+  ChainsToRegions chain2reg_stage(FLAGS_stage_2_nt);
+  RegionsToSam    reg2sam_stage(FLAGS_stage_3_nt);
+
+#ifdef SCALE_OUT
+  SeqsReceive* input_stage = &seq_recv_stage;
+  kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>* output_stage;
+  if (FLAGS_inorder_output) {
+    output_stage = &sam_send_stage;
+  }
+  else {
+    output_stage = &print_stage;
+  }
+#else
+  SeqsRead*  input_stage  = &read_stage;
+  SamsPrint* output_stage = &print_stage;
+#endif
 
   // Bind global vars to each pipeline
   compute_flow.addConst("aux", &aux);
-  compute_flow.addConst("chunk_size", chunk_size);
   compute_flow.addConst("sam_dir", sam_dir);
 
 #ifdef SCALE_OUT
@@ -114,40 +208,65 @@ int main(int argc, char *argv[]) {
   scatter_flow.addConst("mpi_rank", rank);
   scatter_flow.addConst("mpi_nprocs", nprocs);
 
-  scatter_flow.addStage(0, &input_stage);
-  scatter_flow.addStage(1, &scatter_stage);
+  gather_flow.addConst("aux", &aux);
+  gather_flow.addConst("mpi_rank", rank);
+  gather_flow.addConst("mpi_nprocs", nprocs);
+  gather_flow.addConst("sam_dir", sam_dir);
 
-  compute_flow.addStage(0, &recv_stage);
-  compute_flow.addStage(1, &seq2sam_stage);
-  compute_flow.addStage(2, &output_stage);
-  
+  scatter_flow.addStage(0, &read_stage);
+  scatter_flow.addStage(1, &seq_send_stage);
+
   if (rank == 0) { 
     scatter_flow.start();
+    if (FLAGS_inorder_output) {
+      gather_flow.addStage(0, &sam_recv_stage);
+      gather_flow.addStage(1, &print_stage);
+      gather_flow.start();
+    }
   }
-#else
-  compute_flow.addStage(0, &input_stage);
-  compute_flow.addStage(1, &seq2sam_stage);
-  compute_flow.addStage(2, &output_stage);
-  //compute_flow.addStage(1, &seq2chain_stage);
-  //compute_flow.addStage(2, &chain2reg_stage);
-  //compute_flow.addStage(3, &reg2sam_stage);
-  //compute_flow.addStage(4, &output_stage);
 #endif
+  
+  compute_flow.addStage(0, input_stage);
 
+  if (FLAGS_offload) {
+    compute_flow.addStage(1, &seq2chain_stage);
+    compute_flow.addStage(2, &chain2reg_stage);
+    compute_flow.addStage(3, &reg2sam_stage);
+    compute_flow.addStage(4, output_stage);
+  }
+  else {
+    compute_flow.addStage(1, &seq2sam_stage);
+    compute_flow.addStage(2, output_stage);
+  }
+  
   // Start FPGA agent
-  //agent = new FPGAAgent(FPGA_PATH, chunk_size);
-
+  if (FLAGS_use_fpga) {
+    try {
+      agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+      VLOG(1) << "Configured FPGA bitstream from " << FLAGS_fpga_path;
+    }
+    catch (std::runtime_error &e) {
+      LOG(ERROR) << "Cannot configured FPGA bitstream from " << FLAGS_fpga_path
+        << " because: " << e.what();
+      return 1;
+    }
+  }
   compute_flow.start();
   compute_flow.wait();
 
-  MPI::COMM_WORLD.Barrier();
+  if (FLAGS_use_fpga) {
+    delete agent;
+  }
 
-  // Free all global variables
-  //delete agent;
-
-  if (rank == 0) {
 #ifdef SCALE_OUT
+  MPI::COMM_WORLD.Barrier();
+  if (rank == 0) {
     scatter_flow.wait();
+    if (FLAGS_inorder_output) {
+      gather_flow.wait();
+    }
+#else
+  if (rank == 0) {
 #endif
 
     kseq_destroy(aux.ks);

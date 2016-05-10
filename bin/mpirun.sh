@@ -6,6 +6,10 @@ num_proc=2
 host_list=falcon2,falcon2
 #host_list=falcon2,falcon3,falcon4,falcon5,falcon2,falcon3,falcon4,falcon5
 
+option="--logtostderr=1 \
+        --v=2 \
+        --inorder_output"
+
 $MPI_DIR/bin/mpirun \
     -np $num_proc \
     --map-by NUMA:PE=6 \
@@ -16,6 +20,7 @@ $MPI_DIR/bin/mpirun \
     --mca btl_tcp_rcvbuf 1232896 \
     --mca btl_tcp_links 4 \
     ./bwa mem \
+    $option \
     /space/scratch/genome/ref/human_g1k_v37.fasta \
     $@
 

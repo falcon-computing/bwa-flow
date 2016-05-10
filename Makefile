@@ -4,13 +4,14 @@ SRC_DIR   := ./src
 include /curr/diwu/prog/blaze/Makefile.config
 
 MANAGER_DIR=/curr/diwu/prog/blaze/manager
+GFLAGS_DIR=/curr/diwu/tools/gflags/build
 OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
 
 CC	:= gcc
 PP	:= g++
 MPIPP := $(OPENMPI_DIR)/bin/mpic++
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3 -D NDEBUG
+CFLAGS 	:= -g -std=c++0x -fPIC -O3
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
@@ -27,7 +28,7 @@ INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 \
 	   -I$(PROTOBUF_DIR)/include \
 	   -I$(GLOG_DIR)/include \
-	   -I$(OPENMPI_DIR)/include \
+	   -I$(GFLAGS_DIR)/include \
 	   -I$(JAVA_HOME)/include \
 	   -I$(JAVA_HOME)/include/linux 
 	
@@ -41,9 +42,19 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
-	   -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi \
+	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
 	   -lpthread -lm -ldl -lz -lrt
+
+ifneq ($(NDEBUG),)
+CFLAGS   	:= $(CFLAGS) -DNDEBUG
+endif
+
+ifneq ($(SCALEOUT),)
+CFLAGS   	:= $(CFLAGS) -DSCALE_OUT
+INCLUDES	:= $(INCLUDES) -I$(OPENMPI_DIR)/include
+LIBS			:= $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
+endif
 
 all:$(PROG)
 
@@ -52,6 +63,7 @@ all:$(PROG)
 
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
+
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
