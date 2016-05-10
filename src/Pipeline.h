@@ -16,6 +16,9 @@
 #include "bwa_wrapper.h"
 #include "SWRead.h"
 
+#define INPUT_DEPTH   4
+#define OUTPUT_DEPTH  8
+
 #define MASTER_RANK   0
 
 // Tags for messages between master and child processes
@@ -55,12 +58,7 @@ struct RegionsRecord {
   std::vector<int>* chains_idxes;
 };
 
-class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, 4> {
- public:
-  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
-  void compute();
-};
-
+#ifdef SCALE_OUT
 class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, 4> {
  public:
   SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
@@ -68,19 +66,40 @@ class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, 4> {
   std::string serialize(SeqsRecord* data);
 };
 
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, 2> {
+class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, 4> {
  public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, 2>() {;}
+  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
   void compute();
   SeqsRecord deserialize(const char* data, size_t length);
 };
 
+class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, 8> {
+ public:
+  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, 8>() {;}
+  void compute();
+  std::string serialize(SeqsRecord* data);
+};
+
+class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, 8> {
+ public:
+  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, 8>() {;}
+  SeqsRecord deserialize(const char* data, size_t length);
+  void compute();
+};
+#endif
+
+class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, 4> {
+ public:
+  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
+  void compute();
+};
+
 // One stage for the entire BWA-MEM computation
 class SeqsToSams
-: public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 2, 8> {
+: public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8> {
  public:
   SeqsToSams(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 2, 8>(n),
+      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8>(n),
       aux(NULL) {;}
   SeqsRecord compute(SeqsRecord const & record);
  private:
@@ -126,20 +145,6 @@ class RegionsToSam
   SeqsRecord compute(RegionsRecord const & record);
  private:
   ktp_aux_t* aux;
-};
-
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, 8> {
- public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, 8>() {;}
-  void compute();
-  std::string serialize(SeqsRecord* data);
-};
-
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, 8> {
- public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, 8>() {;}
-  SeqsRecord deserialize(const char* data, size_t length);
-  void compute();
 };
 
 class SamsPrint : public kestrelFlow::SinkStage<SeqsRecord, 8> {
