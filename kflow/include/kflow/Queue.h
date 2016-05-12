@@ -1,52 +1,62 @@
 #ifndef KFLOW_QUEUE_H
 #define KFLOW_QUEUE_H
 
+#include <boost/atomic.hpp>
 #include <boost/lockfree/queue.hpp>
 #include "Common.h"
 
 namespace kestrelFlow 
 {
 class QueueBase {
-  public:
-    virtual bool empty() = 0;
+ public:
+   virtual bool empty() = 0;
 };
 
 template <typename U, int DEPTH = 64>
 class Queue : public QueueBase {
-  public:
-    bool empty() {
-      return data_queue.empty();
-    }
+ public:
+  Queue<U, DEPTH>(): num_elements_(0) {}
 
-    void pop(U &item) {
-      while (!data_queue.pop(item)) {
-        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      }
-    }
+  bool empty() {
+    return (num_elements_.load() == 0);
+  }
 
-    void push(U item) {
-      while (!data_queue.push(item)) {
-        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      }
+  void pop(U &item) {
+    while (!data_queue_.pop(item)) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
     }
+    num_elements_.fetch_sub(1);
+  }
 
-    bool async_pop(U &item) {
-      return data_queue.pop(item);
+  void push(U item) {
+    while (!data_queue_.push(item)) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
     }
+    num_elements_.fetch_add(1);
+  }
 
-    bool async_push(U item) {
-      return data_queue.push(item);
-    }
+  bool async_pop(U &item) {
+    bool done = data_queue_.pop(item);
+    if (done) num_elements_.fetch_sub(1);
+    return done;
+  }
 
-  private:
-    boost::lockfree::queue<U, boost::lockfree::capacity<DEPTH> 
-      > data_queue;
+  bool async_push(U item) {
+    bool done = data_queue_.push(item);
+    if (done) num_elements_.fetch_add(1);
+    return done;
+  }
+
+ private:
+  mutable boost::atomic<int> num_elements_;
+  boost::lockfree::queue<U, boost::lockfree::capacity<DEPTH> 
+    > data_queue_;
 };
 
 template <>
 class Queue<void, 0> : public QueueBase {
-  public:
-    bool empty() { return true;}
+ public:
+   bool empty() { return true;}
 };
 
 const boost::shared_ptr<QueueBase> NULL_QUEUE_PTR;

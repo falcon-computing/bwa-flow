@@ -1,6 +1,7 @@
 #ifndef KFLOW_COMMON_H
 #define KFLOW_COMMON_H
 
+#include <boost/atomic.hpp>
 #include <boost/asio.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>

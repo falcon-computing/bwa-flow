@@ -136,6 +136,11 @@ void Pipeline::schedule() {
           boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
         }
       }
+      else {
+        // Sleep a little while to avoid contentions
+        // TODO: verify
+        boost::this_thread::sleep_for(boost::chrono::microseconds(10));
+      }
     }
     DLOG(INFO) << "Scheduler is finished";
   }
