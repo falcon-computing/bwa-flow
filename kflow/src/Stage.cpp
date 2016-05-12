@@ -16,11 +16,6 @@ StageBase::StageBase(int num_workers, bool is_dyn):
   if (num_workers<1) {
     throw paramError("Invalid parameters");
   }
-  // Force num_workers to be one if stage worker thread
-  // is dynamically scheduled
-  if (is_dyn) {
-    num_workers_ = 1;
-  }
 
   // Deprecated
   perf_meters_ = new uint64_t*[num_workers];
@@ -73,11 +68,15 @@ void StageBase::final() {
 }
 
 void StageBase::finalize() {
-  num_finalized_.fetch_add(1);
-  DLOG(INFO) << "Worker of stage is finalized";
-  if (next_stage_ && 
-      num_finalized_.load() == num_workers_) {
+  if (!next_stage_) return;
+  if (is_dynamic_) {
     next_stage_->final();
+  }
+  else {
+    num_finalized_.fetch_add(1);
+    if (num_finalized_.load() == num_workers_) {
+      next_stage_->final();
+    }
   }
 }
 
@@ -100,6 +99,10 @@ int StageBase::getNumThreads() {
   else {
     return num_workers_;
   }
+}
+
+int StageBase::getMaxNumThreads() {
+  return num_workers_;
 }
 
 /*

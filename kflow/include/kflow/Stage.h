@@ -45,6 +45,8 @@ class StageBase {
   // Get the number of current active worker threads
   int getNumThreads();
 
+  int getMaxNumThreads();
+
   // profiling counters for each worker:
   // <read_block_time, compute_time, write_block_time, total_time>
   uint64_t **perf_meters_;

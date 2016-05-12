@@ -19,7 +19,8 @@ template <
 >
 class MapStage : public Stage<U, V, IN_DEPTH, OUT_DEPTH> {
  public:
-  MapStage(bool is_dyn=true, int n_workers=1);
+  MapStage(int n_workers=1, bool is_dyn=true):
+    Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
 
   bool execute();
 
@@ -41,18 +42,11 @@ template <
   typename U, typename V, 
   int IN_DEPTH, int OUT_DEPTH
 >
-MapStage<U, V, IN_DEPTH, OUT_DEPTH>::MapStage(bool is_dyn, int n_workers):
-  Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn)
-{}
-
-template <
-  typename U, typename V, 
-  int IN_DEPTH, int OUT_DEPTH
->
 bool MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
-  if (!this->input_queue_ || !this->output_queue_) {
-    throw std::runtime_error("Empty input/output queue is not allowed");
+  // Return false if input queue is empty or max num_worker_threads reached
+  if (this->getNumThreads() >= this->getMaxNumThreads()) {
+    return false;
   }
 
   // Try to get one input from the input queue

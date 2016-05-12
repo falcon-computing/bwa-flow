@@ -20,7 +20,8 @@ class MapPartitionStage :
   public Stage<U, V, IN_DEPTH, OUT_DEPTH> 
 {
  public:
-  MapPartitionStage(bool is_dyn=true, int n_workers=1);
+  MapPartitionStage(int n_workers=1, bool is_dyn=true):
+      Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
 
   bool execute();
 
@@ -37,15 +38,6 @@ class MapPartitionStage :
   // Function body of execute function
   void execute_func();
 };
-
-template <
-  typename U, typename V, 
-  int IN_DEPTH, int OUT_DEPTH
->
-MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH
-    >::MapPartitionStage(bool is_dyn, int n): 
-  Stage<U, V, IN_DEPTH, OUT_DEPTH>(n, is_dyn)
-{}
 
 template <
   typename U, typename V, 
@@ -75,12 +67,9 @@ template <
 >
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
-  if (!this->input_queue_ || !this->output_queue_) {
-    throw std::runtime_error("Empty input/output queue is not allowed");
-  }
-
-  // return false if input queue is empty
-  if (this->input_queue_->empty()) {
+  // Return false if input queue is empty or max num_worker_threads reached
+  if (this->input_queue_->empty() || 
+      this->getNumThreads() >= this->getMaxNumThreads()) {
     return false;
   }
 
