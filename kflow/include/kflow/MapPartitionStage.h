@@ -100,12 +100,14 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func() {
   try {
     OccupancyCounter seat(this->pipeline_, this);
 
+    int n_workers = this->getNumThreads();
+
     DLOG(INFO) << "Post a work for MapPartitionStage, there are "
-      << this->getNumThreads()
+      << n_workers
       << " active threads in this stage";
 
     // call user-defined compute function
-    compute(this->getNumThreads()-1); 
+    compute(n_workers-1); 
   } 
   catch (boost::thread_interrupted &e) {
     VLOG(2) << "Worker thread is interrupted";
