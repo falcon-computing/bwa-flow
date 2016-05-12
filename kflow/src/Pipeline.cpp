@@ -125,14 +125,15 @@ void Pipeline::schedule() {
         }
       }
       if (!dispatched) {
-        if (pending_stages_.front()->isFinal()) {
-          pending_stages_.front()->finalize();
+        StageBase* stage = pending_stages_.front();
+        if (stage->isFinal() && stage->getNumThreads()==0) {
+          stage->finalize();
           pending_stages_.pop_front();
 
           DLOG(INFO) << "Front-of-queue stage is finished";
         }
         else {
-          boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
+          boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
         }
       }
     }
