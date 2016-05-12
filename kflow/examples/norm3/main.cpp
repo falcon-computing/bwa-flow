@@ -3,6 +3,7 @@
 #include <glog/logging.h>
 #include "kflow/Pipeline.h"
 #include "kflow/MapStage.h"
+#include "kflow/MapPartitionStage.h"
 
 using namespace kestrelFlow;
 
@@ -39,20 +40,61 @@ public:
 };
 
 class NormStage :
-  public MapStage<std::vector<double>*, double> 
+  public MapPartitionStage<std::vector<double>*, double> 
 {
 public:
-  NormStage(): MapStage<std::vector<double>*, double>() {;}
+  NormStage(bool is_dyn, int n):
+    MapPartitionStage<std::vector<double>*, double>(is_dyn, n) {;}
 
-  double compute(std::vector<double>* const & input) {
+  void compute(int wid) {
+    if (this->isDynamic()) {
+      std::vector<double>* input;
+      bool ready = this->getInput(input);
 
-    double norm = 0;
-    for (int i=0; i<input->size(); i++) {
-      double val = (*input)[i];
-      norm += val*val;
+      int counter = 0;
+      while (!this->isFinal() && !ready && counter < 20) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+        ready = this->getInput(input);
+        counter ++;
+      }
+      if (!ready) { 
+        // this means isFinal() is true or timeout
+        return; 
+      }
+
+      double norm = 0;
+      for (int i=0; i<input->size(); i++) {
+        double val = (*input)[i];
+        norm += val*val;
+      }
+      VLOG(1) << "Computed one vector";
+
+      this->pushOutput(norm);
     }
-    VLOG(1) << "Computed one vector";
-    return norm;
+    else {
+      while (true) {
+        std::vector<double>* input;
+        bool ready = this->getInput(input);
+
+        while (!this->isFinal() && !ready) {
+          boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+          ready = this->getInput(input);
+        }
+        if (!ready) { 
+          // this means isFinal() is true or timeout
+          return; 
+        }
+
+        double norm = 0;
+        for (int i=0; i<input->size(); i++) {
+          double val = (*input)[i];
+          norm += val*val;
+        }
+        VLOG(1) << "Computed one vector";
+
+        this->pushOutput(norm);
+      }
+    }
   }
 };
 
@@ -85,7 +127,7 @@ int main(int argc, char** argv) {
   norm_pipeline.addConst("length", length);
 
   RandGenStage stage1;
-  NormStage stage2;
+  NormStage stage2(false, 1);
 
   norm_pipeline.addStage(0, &stage1);
   norm_pipeline.addStage(1, &stage2);
@@ -97,11 +139,11 @@ int main(int argc, char** argv) {
   Queue<double>* output_queue = static_cast<Queue<double>*>(
                               norm_pipeline.getOutputQueue());
 
-  for (int i=0; i<n; i+=64) {
-    for (int k = i; k < 64 && k < n; k++) {
+  for (int i = 0; i < n; i++) {
+    for (int k = 0; k < 32; k++) {
       input_queue->push(0);
     }
-    for (int k = i; k < 64 && k < n; k++) {
+    for (int k = 0; k < 32; k++) {
       double out;
       output_queue->pop(out);
 
@@ -116,6 +158,7 @@ int main(int argc, char** argv) {
     }
   }
   norm_pipeline.finalize();
+  DLOG(INFO) << "Pipeline is finalized";
 
   // gracefully end the pipeline
   norm_pipeline.wait();

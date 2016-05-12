@@ -2,80 +2,107 @@
 #include "Pipeline.h"
 #include "Stage.h"
 
-namespace kestrelFlow 
+namespace kestrelFlow {
+
+StageBase::StageBase(int num_workers, bool is_dyn): 
+  is_dynamic_(is_dyn),
+  num_workers_(num_workers),
+  next_stage_(NULL),
+  pipeline_(NULL),
+  num_active_threads_(0),
+  num_finalized_(0),
+  is_final_(false)
 {
-StageBase::StageBase(int _num_workers): 
-  num_workers(_num_workers),
-  num_finalized(0),
-  is_final(false), 
-  next_stage(NULL) 
-{
-  if (_num_workers<1) {
+  if (num_workers<1) {
     throw paramError("Invalid parameters");
   }
-  perf_meters = new uint64_t*[_num_workers];
-  for (int i=0; i<_num_workers; i++) {
-    perf_meters[i] = new uint64_t[4]();
+  // Force num_workers to be one if stage worker thread
+  // is dynamically scheduled
+  if (is_dyn) {
+    num_workers_ = 1;
+  }
+
+  // Deprecated
+  perf_meters_ = new uint64_t*[num_workers];
+  for (int i = 0; i < num_workers; i++) {
+    perf_meters_[i] = new uint64_t[4]();
   }
 }
 
 StageBase::~StageBase() {
-  for (int i=0; i<num_workers; i++) {
-    delete [] perf_meters[i];
+  for (int i = 0; i < num_workers_; i++) {
+    delete [] perf_meters_[i];
   }
-  delete [] perf_meters;
+  delete [] perf_meters_;
 }
 
 void StageBase::start() {
-  if (worker_threads.size()) {
-    worker_threads.interrupt_all();
-    worker_threads.join_all();
+  if (is_dynamic_) return;
+
+  if (worker_threads_.size()) {
+    worker_threads_.interrupt_all();
+    worker_threads_.join_all();
   }
   // set the start timer 
-  start_ts = getUs();
+  start_ts_ = getUs();
 
-  for (int i=0; i<num_workers; i++) 
-  {
-    worker_threads.create_thread(
+  for (int i = 0; i < num_workers_; i++) {
+    worker_threads_.create_thread(
         boost::bind(&StageBase::worker_func, this, i));
   }
 }
 
 void StageBase::stop() {
-  if (worker_threads.size()) {
-    worker_threads.interrupt_all();
-    worker_threads.join_all();
+  if (is_dynamic_) return;
+  if (worker_threads_.size()) {
+    worker_threads_.interrupt_all();
+    worker_threads_.join_all();
   }
 }
 
 void StageBase::wait() {
-  if (worker_threads.size()) {
-    worker_threads.join_all();
+  if (is_dynamic_) return;
+  if (worker_threads_.size()) {
+    worker_threads_.join_all();
   }
 }
 
 void StageBase::final() {
-  is_final.store(true);   
+  is_final_.store(true);   
+  DLOG(INFO) << "Stage is finalized";
 }
 
 void StageBase::finalize() {
-  num_finalized.fetch_add(1);
-  if (next_stage && 
-      num_finalized.load() == num_workers) 
-  {
-    next_stage->final();
-    DLOG(INFO) << "Stage is finalized";
+  num_finalized_.fetch_add(1);
+  DLOG(INFO) << "Worker of stage is finalized";
+  if (next_stage_ && 
+      num_finalized_.load() == num_workers_) {
+    next_stage_->final();
   }
 }
 
+bool StageBase::isDynamic() {
+  return is_dynamic_;
+}
+
 bool StageBase::isFinal() {
-  return is_final.load();
+  return is_final_.load();
 }
 
 boost::any StageBase::getConst(std::string key) {
-  return pipeline->getConst(key);
+  return pipeline_->getConst(key);
 }
 
+int StageBase::getNumThreads() {
+  if (is_dynamic_) {
+    return num_active_threads_.load();
+  }
+  else {
+    return num_workers_;
+  }
+}
+
+/*
 std::string StageBase::printPerf() {
   using namespace std;
   stringstream ss;
@@ -93,5 +120,6 @@ std::string StageBase::printPerf() {
   ss << "===============================================================\n";
   return ss.str();
 }
+*/
 
 } // namepsace kestrelFlow

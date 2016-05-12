@@ -129,15 +129,13 @@ public:
       double* c = input->c;
 
       uint64_t start_ts = getUs();
-      /*
       cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
           m, n, k, alpha, 
 			    a, k, 
 			    b, n, beta,
 			    c, n);
-      */
-      mmul(a, b, c, m, k, n);
-      printf("kernel time: %fms\n", (double)(getUs()-start_ts)/1e3);
+      //mmul(a, b, c, m, k, n);
+      LOG(INFO) << "Compute time is " <<  getUs() - start_ts << " us";
     }
   }
 };
@@ -169,7 +167,7 @@ int main(int argc, char** argv) {
     n = atoi(argv[1]);
   }
 
-  Pipeline mmul(2);
+  Pipeline mmul(2, 0);
 
   mmul.addConst("m", m);
   mmul.addConst("k", k);
@@ -184,9 +182,7 @@ int main(int argc, char** argv) {
   mmul.start();
 
   mmul.wait();
-  mmul.printPerf();
+  //mmul.printPerf();
 
   return 0;
 }
-
-

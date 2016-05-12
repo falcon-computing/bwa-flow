@@ -16,24 +16,12 @@
 #include <string>
 #include <vector>
 
-namespace kestrelFlow 
-{
+namespace kestrelFlow {
 
 class Pipeline;
 class StageBase;
 class QueueBase;
-
-// base class of a data record
-class RecordBase {
-  public: 
-    RecordBase(int _id): id_(_id) {}
-
-    virtual ~RecordBase() {}
-
-  protected:
-    int id_;
-};
-
+class OccupancyCounter;
 
 // helper functions
 uint64_t getUs();
