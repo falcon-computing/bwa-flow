@@ -99,22 +99,20 @@ class SeqsToSams
 : public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8> {
  public:
   SeqsToSams(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8>(n),
-      aux(NULL) {;}
+      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8>(n)
+  {;}
+
   SeqsRecord compute(SeqsRecord const & record);
- private:
-  ktp_aux_t* aux;
 };
 
 class SeqsToChains 
 : public kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16> {
  public:
   SeqsToChains(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16>(n),
-      aux(NULL) {;}
+      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16>(n)
+  {;}
+
   ChainsRecord compute(SeqsRecord const & record);
- private:
-  ktp_aux_t* aux;
 };
 
 class ChainsToRegions
@@ -139,12 +137,10 @@ class RegionsToSam
 {
  public:
   RegionsToSam(int n=1): 
-      kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 8>(n),
-      aux(NULL) {;}
+      kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 8>(n)
+  {;}
 
   SeqsRecord compute(RegionsRecord const & record);
- private:
-  ktp_aux_t* aux;
 };
 
 class SamsPrint : public kestrelFlow::SinkStage<SeqsRecord, 8> {
