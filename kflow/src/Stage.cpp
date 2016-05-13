@@ -17,6 +17,13 @@ StageBase::StageBase(int num_workers, bool is_dyn):
     throw paramError("Invalid parameters");
   }
 
+  if (is_dynamic_) {
+    DLOG(INFO) << "Created stage of maximum " << num_workers << " workers";
+  }
+  else {
+    DLOG(INFO) << "Created stage of " << num_workers << " workers";
+  }
+
   // Deprecated
   perf_meters_ = new uint64_t*[num_workers];
   for (int i = 0; i < num_workers; i++) {

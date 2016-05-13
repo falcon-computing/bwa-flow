@@ -17,7 +17,8 @@
 #include "SWRead.h"
 
 #define INPUT_DEPTH   4
-#define OUTPUT_DEPTH  8
+#define OUTPUT_DEPTH  16
+#define COMPUTE_DEPTH 64
 
 #define MASTER_RANK   0
 
@@ -59,68 +60,73 @@ struct RegionsRecord {
 };
 
 #ifdef SCALE_OUT
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, 4> {
+class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
  public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, 4>() {;}
+  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute();
   std::string serialize(SeqsRecord* data);
 };
 
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, 4> {
+class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
+  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute();
   SeqsRecord deserialize(const char* data, size_t length);
 };
 
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, 8> {
+class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, 8>() {;}
+  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
   void compute();
   std::string serialize(SeqsRecord* data);
 };
 
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, 8> {
+class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, 8>() {;}
+  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() {;}
   SeqsRecord deserialize(const char* data, size_t length);
   void compute();
 };
 #endif
 
-class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, 4> {
+class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
-  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, 4>() {;}
+  SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute();
 };
 
 // One stage for the entire BWA-MEM computation
 class SeqsToSams
-: public kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8> {
+: public kestrelFlow::MapStage<
+    SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
  public:
   SeqsToSams(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, SeqsRecord, 4, 8>(n)
+      kestrelFlow::MapStage<
+          SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH>(n)
   {;}
 
   SeqsRecord compute(SeqsRecord const & record);
 };
 
 class SeqsToChains 
-: public kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16> {
+: public kestrelFlow::MapStage<
+      SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH> {
  public:
   SeqsToChains(int n=1): 
-      kestrelFlow::MapStage<SeqsRecord, ChainsRecord, 4, 16>(n)
+      kestrelFlow::MapStage<
+          SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n)
   {;}
 
   ChainsRecord compute(SeqsRecord const & record);
 };
 
 class ChainsToRegions
-: public kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>
+: public kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
 {
  public:
-  ChainsToRegions(int n=1): 
-      kestrelFlow::MapPartitionStage<ChainsRecord, RegionsRecord, 16, 16>(n) {;}
+  ChainsToRegions(int n=1): kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n) {;}
 
   void compute(int wid);
  private:
@@ -133,19 +139,21 @@ class ChainsToRegions
 };
 
 class RegionsToSam
-: public kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 8> 
+: public kestrelFlow::MapStage<
+      RegionsRecord, SeqsRecord, COMPUTE_DEPTH, OUTPUT_DEPTH> 
 {
  public:
-  RegionsToSam(int n=1): 
-      kestrelFlow::MapStage<RegionsRecord, SeqsRecord, 16, 8>(n)
+  RegionsToSam(int n=1): kestrelFlow::MapStage<
+      RegionsRecord, SeqsRecord, COMPUTE_DEPTH, OUTPUT_DEPTH>(n)
   {;}
 
   SeqsRecord compute(RegionsRecord const & record);
 };
 
-class SamsPrint : public kestrelFlow::SinkStage<SeqsRecord, 8> {
+class SamsPrint
+: public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsPrint(): kestrelFlow::SinkStage<SeqsRecord, 8>() {;}
+  SamsPrint(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
   void compute();
 };
 

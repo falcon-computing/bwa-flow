@@ -523,7 +523,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   std::vector<int>* chains_idxes;
   std::list<SWRead*>* read_batch;
 
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     chains_idxes = new std::vector<int>[batch_num];
     read_batch   = new std::list<SWRead*>;
   }
@@ -532,7 +532,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
     chains[i] = seq2chain(aux, &seqs[i]);
     kv_init(alnreg[i]);
 
-    if (FLAGS_use_fpga) {
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       SWRead *read_ptr = new SWRead(start_idx, i, aux, 
           seqs+i, chains+i, alnreg+i, chains_idxes+i);
 
@@ -546,7 +546,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.seqs         = seqs;
   ret.chains       = chains;
   ret.alnreg       = alnreg;
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     ret.chains_idxes = chains_idxes;
     ret.read_batch = read_batch;
   }
@@ -606,7 +606,6 @@ inline bool ChainsToRegions::addBatch(
 
   // copy all new reads to current read_batch
   read_batch.splice(read_batch.end(), *new_reads);
-  VLOG(2) << "Add " << new_reads->size() << " new reads to process";
 
   delete new_reads;
 
@@ -813,7 +812,7 @@ void ChainsToRegions::compute(int wid) {
               iter = read_batch.erase(iter);
 
               // Collecting throughput for reads
-              if (read_num < 1000) {
+              if (read_num < 10000) {
                 read_num ++;
               }
               else {
@@ -880,7 +879,7 @@ void ChainsToRegions::compute(int wid) {
     int batch_num       = record.batch_num;
 
     // Free all read batches
-    if (FLAGS_use_fpga) {
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       std::list<SWRead*>* read_batch = record.read_batch;
       for (std::list<SWRead*>::iterator iter = read_batch->begin();
           iter != read_batch->end();

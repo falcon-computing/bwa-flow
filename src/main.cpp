@@ -123,6 +123,9 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+  else {
+    FLAGS_use_fpga = false;
+  }
 
   // Get output file folder
   std::string sam_dir = FLAGS_output_dir;
@@ -237,7 +240,7 @@ int main(int argc, char *argv[]) {
   }
   
   // Start FPGA context
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
       opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
       //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
@@ -252,7 +255,7 @@ int main(int argc, char *argv[]) {
   compute_flow.start();
   compute_flow.wait();
 
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     delete opencl_env;
   }
 
