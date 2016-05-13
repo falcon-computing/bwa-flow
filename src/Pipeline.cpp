@@ -717,7 +717,8 @@ void ChainsToRegions::compute(int wid) {
                 nextTask_time = 0;
                 nextTask_num = 0;
 
-                packData(stage_cnt,
+                packData(&agent,
+                    stage_cnt,
                     task_batch[stage_cnt],
                     task_num,
                     aux->opt);
@@ -753,6 +754,7 @@ void ChainsToRegions::compute(int wid) {
 
                 boost::shared_ptr<task_t> extension_task =
                   boost::make_shared<task_t>(boost::bind(&SwFPGA,
+                        &agent,
                         stage_cnt,
                         task_batch[stage_cnt],
                         task_num,
