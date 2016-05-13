@@ -616,12 +616,16 @@ inline bool ChainsToRegions::addBatch(
 void ChainsToRegions::compute(int wid) {
 
   if (FLAGS_use_fpga && wid < FLAGS_max_fpga_thread) {
+
     VLOG(1) << "Worker " << wid << " is working on FPGA";
 
     int chunk_size = FLAGS_chunk_size;
 
     const int stage_num = 2;
     int stage_cnt = 0;
+
+    // Create FPGAAgent
+    FPGAAgent agent(opencl_env, chunk_size);
 
     // Create io_service to post work to the group
     boost::asio::io_service ios;
@@ -755,6 +759,7 @@ void ChainsToRegions::compute(int wid) {
                         aux->opt));
                 extension_event = extension_task->get_future();
                 ios.post(boost::bind(&task_t::operator(), extension_task));
+
                 last_batch_ts = getUs();
 
                 task_num = 0;
