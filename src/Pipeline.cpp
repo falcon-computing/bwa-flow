@@ -631,13 +631,16 @@ void ChainsToRegions::compute(int wid) {
   boost::any var = this->getConst("aux");
   ktp_aux_t* aux = boost::any_cast<ktp_aux_t*>(var);
 
-  if (wid == 0) {
+  if (wid <= 1) {
     VLOG(1) << "Worker " << wid << " is working on FPGA";
 
     int chunk_size = FLAGS_chunk_size;
 
     const int stage_num = 2;
     int stage_cnt = 0;
+
+    // Create FPGAAgent
+    FPGAAgent agent(opencl_env, chunk_size);
 
     // Create io_service to post work to the group
     boost::asio::io_service ios;
@@ -730,7 +733,8 @@ void ChainsToRegions::compute(int wid) {
                 nextTask_num = 0;
 
                 if (FLAGS_use_fpga) {
-                  packData(stage_cnt,
+                  packData(&agent,
+                      stage_cnt,
                       task_batch[stage_cnt],
                       task_num,
                       aux->opt);
@@ -767,6 +771,7 @@ void ChainsToRegions::compute(int wid) {
                 if (FLAGS_use_fpga) {
                   boost::shared_ptr<task_t> extension_task =
                     boost::make_shared<task_t>(boost::bind(&SwFPGA,
+                          &agent,
                           stage_cnt,
                           task_batch[stage_cnt],
                           task_num,
