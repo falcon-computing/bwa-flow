@@ -696,9 +696,9 @@ void ChainsToRegions::compute(int wid) {
           uint64_t start_idx;
 
           ExtParam* param_task;
-          start_ts = getUs();
+          start_ts = getNs();
           SWRead::TaskStatus status = (*iter)->nextTask(param_task);
-          nextTask_time += getUs() - start_ts; 
+          nextTask_time += getNs() - start_ts; 
           nextTask_num ++;
 
           int curr_size = 0;
@@ -710,7 +710,7 @@ void ChainsToRegions::compute(int wid) {
               task_batch[stage_cnt][task_num] = param_task;
               task_num++;
               if (task_num >= chunk_size) {
-                VLOG(3) << "nextTask takes " << nextTask_time << " us in " 
+                VLOG(3) << "nextTask takes " << nextTask_time/1e3 << " us in " 
                         << nextTask_num << " calls";
 
                 nextTask_time = 0;
@@ -730,8 +730,8 @@ void ChainsToRegions::compute(int wid) {
                     << getUs() - start_ts << " us";
                 }
 
-                VLOG(3) << "Process SWRead::Pending takes " << pending_time << " us";
-                VLOG(3) << "Process SWRead::Finish takes " << finish_time << " us";
+                VLOG(3) << "Process SWRead::Pending takes " << pending_time/1e3 << " us";
+                VLOG(3) << "Process SWRead::Finish takes " << finish_time/1e3 << " us";
                 VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
 
                 pending_time = 0;
@@ -770,7 +770,7 @@ void ChainsToRegions::compute(int wid) {
               break;
 
             case SWRead::TaskStatus::Pending:
-              start_ts = getUs();
+              start_ts = getNs();
               if (flag_more_reads) {
                 // Try to get a new batch
                 curr_size = read_batch.size(); 
@@ -786,10 +786,7 @@ void ChainsToRegions::compute(int wid) {
               else {
                 // No more new tasks, must do extend before proceeding
                 if (extension_event.valid() && !extension_event.is_ready()) {
-                  uint64_t start_ts = getUs();
                   extension_event.wait();
-                  VLOG(3) << "Waiting for pending tasks to finish takes "
-                    << getUs() - start_ts << " us";
                 }
                 else {
                   extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
@@ -798,11 +795,11 @@ void ChainsToRegions::compute(int wid) {
                   iter++;
                 }
               }
-              pending_time += getUs() - start_ts;
+              pending_time += getNs() - start_ts;
               break;
 
             case SWRead::TaskStatus::Finished:
-              start_ts = getUs();
+              start_ts = getNs();
               // Read is finished, remove from batch
               start_idx = (*iter)->start_idx();
               tasks_remain[start_idx]--;
@@ -842,7 +839,7 @@ void ChainsToRegions::compute(int wid) {
 
                 last_output_ts = getUs();
               }
-              finish_time += getUs() - start_ts;
+              finish_time += getNs() - start_ts;
               break;
 
             default: ;
