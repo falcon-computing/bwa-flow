@@ -7,14 +7,15 @@
 #include "FPGAAgent.h"
 #include "SWTask.h"
 
-extern FPGAAgent* agent;
+extern OpenCLEnv* opencl_env;
 
-void packData(int stage_cnt,
-      ExtParam** &tasks,
-      int batch_num,
-      mem_opt_t *opt);
+void packData(FPGAAgent* agent,
+    int stage_cnt,
+    ExtParam** &tasks,
+    int batch_num,
+    mem_opt_t *opt);
 
-void SwFPGA(
+void SwFPGA(FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
     int batch_num,

@@ -1,13 +1,16 @@
 #ifndef OPENCLENV_H
 #define OPENCLENV_H
 
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lockable_adapter.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <stdexcept>
 
 #include <CL/opencl.h>
 
-class OpenCLEnv {
+class OpenCLEnv 
+: public boost::basic_lockable_adapter<boost::mutex> {
  public:
   OpenCLEnv(
       const char* bin_path,

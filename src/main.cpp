@@ -31,7 +31,7 @@
 #include "Pipeline.h"
 #include "util.h"
 
-FPGAAgent* agent;
+OpenCLEnv* opencl_env;
 
 boost::mutex mpi_mutex;
 
@@ -239,10 +239,11 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(2, output_stage);
   }
   
-  // Start FPGA agent
+  // Start FPGA context
   if (FLAGS_use_fpga) {
     try {
-      agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+      opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
+      //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
       VLOG(1) << "Configured FPGA bitstream from " << FLAGS_fpga_path;
     }
     catch (std::runtime_error &e) {
@@ -255,7 +256,7 @@ int main(int argc, char *argv[]) {
   compute_flow.wait();
 
   if (FLAGS_use_fpga) {
-    delete agent;
+    delete opencl_env;
   }
 
 #ifdef SCALE_OUT

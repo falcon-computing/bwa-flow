@@ -30,6 +30,7 @@ void sw_top (int *a, int *output_a, int __inc);
 #endif
 
 void packData(
+    FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
     int batch_num,
@@ -166,6 +167,7 @@ void packData(
 }
 
 void SwFPGA(
+    FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
     int batch_num,

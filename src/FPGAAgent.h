@@ -8,11 +8,9 @@
 
 #define FPGA_RET_PARAM_NUM 5
 
-class FPGAAgent
-: public boost::basic_lockable_adapter<boost::mutex>
-{
+class FPGAAgent {
  public:
-  FPGAAgent(const char* bit_path, 
+  FPGAAgent(OpenCLEnv* env, 
       int chunk_size,
       uint64_t buf_size = 32*1024*1024);
 
@@ -23,7 +21,7 @@ class FPGAAgent
   void start(int task_num, int cnt);
 
  private:
-  OpenCLEnv      env_;
+  OpenCLEnv*     env_;
   const uint64_t max_buf_size_;
   const int      chunk_size_;
   cl_mem         input_buf_[2];
