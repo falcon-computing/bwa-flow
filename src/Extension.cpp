@@ -29,7 +29,7 @@ void sw_top (int *a, int *output_a, int __inc);
 }
 #endif
 
-void packData(
+void extendOnFPGAPackInput(
     FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
@@ -160,13 +160,14 @@ void packData(
 
   start_ts = getUs();
   agent->writeInput(buf1, data_size*sizeof(int), stage_cnt);
+  agent->start(batch_num, stage_cnt);
 
-  //delete [] buf1;
+  delete [] buf1;
   VLOG(3) << "FPGA input takes " 
     << getUs() - start_ts << " us";
 }
 
-void SwFPGA(
+void extendOnFPGAProcessOutput(
     FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
@@ -176,7 +177,7 @@ void SwFPGA(
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
   uint64_t start_ts = getUs();
 
-  agent->start(batch_num, stage_cnt);
+  agent->wait(stage_cnt);
   agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
   VLOG(3) << "SmithWaterman kernel on FPGA " << stage_cnt << " used " 
     << getUs() - start_ts << " us";

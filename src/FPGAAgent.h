@@ -19,6 +19,8 @@ class FPGAAgent {
   void writeInput(void* host_ptr, uint64_t size, int cnt);
   void readOutput(void* host_ptr, uint64_t size, int cnt);
   void start(int task_num, int cnt);
+  void wait(int cnt);
+  bool pending(int cnt);
 
  private:
   OpenCLEnv*     env_;
@@ -26,7 +28,7 @@ class FPGAAgent {
   const int      chunk_size_;
   cl_mem         input_buf_[2];
   cl_mem         output_buf_[2];
-  void*          host_buf_[2];
+  FPGATask*      fpga_task_[2];
 };
 
 #endif

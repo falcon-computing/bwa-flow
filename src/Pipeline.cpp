@@ -626,18 +626,6 @@ void ChainsToRegions::compute(int wid) {
     // Create FPGAAgent
     FPGAAgent agent(opencl_env, chunk_size);
 
-    // Create io_service to post work to the group
-    boost::asio::io_service ios;
-    boost::asio::io_service::work ios_work(ios);
-
-    // Create a thread group
-    boost::thread_group stage_workers;
-    stage_workers.create_thread(
-        boost::bind(&boost::asio::io_service::run, &ios));
-    
-    // Event handle to wait for thread to finish
-    boost::unique_future<void> extension_event;
-
     int task_num = 0;
 
     // Batch of SWTasks
@@ -716,18 +704,23 @@ void ChainsToRegions::compute(int wid) {
                 nextTask_time = 0;
                 nextTask_num = 0;
 
-                packData(&agent,
+                extendOnFPGAPackInput(
+                    &agent,
                     stage_cnt,
                     task_batch[stage_cnt],
-                    task_num,
+                    chunk_size,
                     aux->opt);
 
-                if (extension_event.valid()) {
-                  uint64_t start_ts = getUs();
-                  extension_event.wait();
+                stage_cnt = 1 - stage_cnt;
 
-                  VLOG(3) << "Waiting for last batch to finish takes "
-                    << getUs() - start_ts << " us";
+                // Wait for last batch to finish if valid
+                if (agent.pending(stage_cnt)) {
+                  extendOnFPGAProcessOutput(
+                      &agent,
+                      stage_cnt,
+                      task_batch[stage_cnt],
+                      chunk_size,
+                      aux->opt);
                 }
 
                 VLOG(3) << "Process SWRead::Pending takes " << pending_time/1e3 << " us";
@@ -748,23 +741,9 @@ void ChainsToRegions::compute(int wid) {
                   batch_num = 0;
                   batch_time = 0;
                 }
-
-                typedef boost::packaged_task<void> task_t;
-
-                boost::shared_ptr<task_t> extension_task =
-                  boost::make_shared<task_t>(boost::bind(&SwFPGA,
-                        &agent,
-                        stage_cnt,
-                        task_batch[stage_cnt],
-                        task_num,
-                        aux->opt));
-                extension_event = extension_task->get_future();
-                ios.post(boost::bind(&task_t::operator(), extension_task));
-
                 last_batch_ts = getUs();
 
                 task_num = 0;
-                stage_cnt = (stage_cnt + 1) % stage_num;
               }
               iter ++;
               break;
@@ -785,11 +764,17 @@ void ChainsToRegions::compute(int wid) {
               }
               else {
                 // No more new tasks, must do extend before proceeding
-                if (extension_event.valid() && !extension_event.is_ready()) {
-                  extension_event.wait();
+                if (agent.pending(stage_cnt)) {
+                  extendOnFPGAProcessOutput(
+                      &agent,
+                      stage_cnt,
+                      task_batch[stage_cnt],
+                      chunk_size,
+                      aux->opt);
                 }
                 else {
                   extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
+                  stage_cnt = 1 - stage_cnt;
 
                   task_num = 0;
                   iter++;

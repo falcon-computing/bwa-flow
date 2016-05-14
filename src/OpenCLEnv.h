@@ -1,21 +1,29 @@
 #ifndef OPENCLENV_H
 #define OPENCLENV_H
 
+#include <boost/atomic.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lockable_adapter.hpp>
+#include <boost/thread.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <stdexcept>
 
 #include <CL/opencl.h>
 
+#include "kflow/Queue.h"
+
+struct FPGATask {
+  int     task_num;
+  cl_mem* input;
+  cl_mem* output;
+  boost::promise<bool> ready;
+};
+
 class OpenCLEnv 
 : public boost::basic_lockable_adapter<boost::mutex> {
  public:
-  OpenCLEnv(
-      const char* bin_path,
-      const char* kernel_name): initialized(false)
-  {
+  OpenCLEnv(const char* bin_path, const char* kernel_name) {
     // start platform setting up
     int err;
 
@@ -59,16 +67,16 @@ class OpenCLEnv
     }
 
     // Create a compute context 
-    context = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
+    context_ = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
 
-    if (!context) {
+    if (!context_) {
         throw std::runtime_error("Failed to create a compute context!");
     }
 
     // Create a command commands
-    commands = clCreateCommandQueue(context, device_id, 0, &err);
+    commands_ = clCreateCommandQueue(context_, device_id, 0, &err);
 
-    if (!commands) {
+    if (!commands_) {
         throw std::runtime_error("Failed to create a command queue context!");
     }
 
@@ -90,72 +98,90 @@ class OpenCLEnv
     int status = 0;
 
     // Create the compute program from offline
-    program = clCreateProgramWithBinary(context, 1, &device_id, &n_t,
+    program_ = clCreateProgramWithBinary(context_, 1, &device_id, &n_t,
             (const unsigned char **) &kernelbinary, &status, &err);
 
-    if ((!program) || (err!=CL_SUCCESS)) {
+    if ((!program_) || (err!=CL_SUCCESS)) {
         throw std::runtime_error(
             "Failed to create compute program from binary");
     }
 
     // Build the program executable
-    err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+    err = clBuildProgram(program_, 0, NULL, NULL, NULL, NULL);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to build program executable!");
     }
 
     // Create the compute kernel in the program we wish to run
-    kernel = clCreateKernel(program, kernel_name, &err);
+    kernel_ = clCreateKernel(program_, kernel_name, &err);
 
-    if (!kernel || err != CL_SUCCESS) {
+    if (!kernel_ || err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create compute kernel!");
     }
 
-    initialized = true;
+    // Start executor
+    task_workers_.create_thread(boost::bind(&OpenCLEnv::execute, this));
   }
 
   ~OpenCLEnv() {
-    if (initialized) {
-      clReleaseKernel(kernel);
-      clReleaseCommandQueue(commands);
-      clReleaseProgram(program);
-      clReleaseContext(context);
-    }
+    task_workers_.interrupt_all();
+
+    clReleaseKernel(kernel_);
+    clReleaseCommandQueue(commands_);
+    clReleaseProgram(program_);
+    clReleaseContext(context_);
   }
 
   cl_context& getContext() {
-    if (initialized) {
-      return context;
-    }
-    else {
-      throw std::runtime_error("environment not setup");
-    }
+    return context_;
   }
 
   cl_command_queue& getCmdQueue() {
-    if (initialized) {
-      return commands;
-    }
-    else {
-      throw std::runtime_error("environment not setup");
-    }
+    return commands_;
   }
 
   cl_kernel& getKernel() {
-    if (initialized) {
-      return kernel;
-    }
-    else {
-      throw std::runtime_error("environment not setup");
+    return kernel_;
+  }
+
+  void post_task(FPGATask* task) {
+    task_queue_.push(task);   
+  }
+
+  void execute() {
+    DLOG(INFO) << "OpenCLEnv executor started.";
+
+    cl_int err;
+    cl_event event;
+
+    while (true) {
+      FPGATask* task;
+      task_queue_.pop(task);
+
+      // Got new task and start execution
+      int task_num  = task->task_num;
+      cl_mem* input  = task->input;
+      cl_mem* output = task->output;
+
+      err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input);
+      err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), output);
+      err |= clSetKernelArg(kernel_, 2, sizeof(int), &task_num);
+
+      err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
+      if (err) {
+        LOG(ERROR) << "Failed to execute kernel.";
+      }
+      clWaitForEvents(1, &event);
+
+      task->ready.set_value(true);
     }
   }
 
  private:
   int load_file(
       const char *filename, 
-      char **result)
-  { 
+      char **result) { 
     int size = 0;
     FILE *f = fopen(filename, "rb");
     if (f == NULL) 
@@ -177,11 +203,12 @@ class OpenCLEnv
     return size;
   }
 
-  bool initialized;
+  boost::thread_group task_workers_;
+  kestrelFlow::Queue<FPGATask*, 4> task_queue_;
 
-  cl_context context;                 // compute context
-  cl_command_queue commands;          // compute command queue
-  cl_program program;                 // compute program
-  cl_kernel kernel;                   // compute kernel
+  cl_context       context_;   // compute context
+  cl_command_queue commands_;  // compute command queue
+  cl_program       program_;   // compute program
+  cl_kernel        kernel_;    // compute kernel
 };
 #endif

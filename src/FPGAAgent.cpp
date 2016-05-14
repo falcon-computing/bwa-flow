@@ -1,6 +1,7 @@
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/future.hpp>
 #include <boost/thread/lockable_adapter.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread.hpp>
 #include "FPGAAgent.h"
 
 FPGAAgent::FPGAAgent(
@@ -25,6 +26,8 @@ FPGAAgent::FPGAAgent(
         CL_MEM_WRITE_ONLY, 
         chunk_size*FPGA_RET_PARAM_NUM*sizeof(int),
         NULL, NULL);
+
+    fpga_task_[i] = NULL;
   }
 
   // Skip error handling at this point
@@ -54,7 +57,6 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
   if (err != CL_SUCCESS) {
     throw std::runtime_error("Failed to write to input buffer");
   }
-  host_buf_[cnt] = host_ptr;
 }
 
 void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
@@ -72,33 +74,36 @@ void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
   if (err != CL_SUCCESS) {
     throw std::runtime_error("Cannot read output buffer\n");
   }
-
-  // delete input buffer from host
-  free(host_buf_[cnt]);
 }
 
 void FPGAAgent::start(int task_num, int cnt) {
-  cl_event event;
-  cl_int err;
-  cl_kernel kernel = env_->getKernel();
-  cl_command_queue cmd = env_->getCmdQueue();
-
   if (task_num > chunk_size_) {
     throw std::runtime_error("Too many tasks\n");
   }
 
-  boost::lock_guard<OpenCLEnv> guard(*env_);
-  err  = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input_buf_[cnt]);
-  err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &output_buf_[cnt]);
-  err |= clSetKernelArg(kernel, 2, sizeof(int), &task_num);
+  fpga_task_[cnt] = new FPGATask;
+  fpga_task_[cnt]->task_num = task_num;
+  fpga_task_[cnt]->input    = &input_buf_[cnt];
+  fpga_task_[cnt]->output   = &output_buf_[cnt];
 
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to set kernel args!");
-  }
+  env_->post_task(fpga_task_[cnt]);
+}
 
-  err = clEnqueueTask(cmd, kernel, 0, NULL, &event);
-  if (err) {
-    throw("Failed to execute kernel!");
+void FPGAAgent::wait(int cnt) {
+  // Wait for task to finish
+  boost::shared_future<bool> f = fpga_task_[cnt]->ready.get_future();
+
+  if (f.valid()) f.wait();
+
+  delete fpga_task_[cnt];
+  fpga_task_[cnt] = NULL;
+}
+
+bool FPGAAgent::pending(int cnt) {
+  if (fpga_task_[cnt]) {
+    return true;
   }
-  clWaitForEvents(1, &event);
+  else {
+    return false;
+  }
 }

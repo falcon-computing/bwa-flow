@@ -9,13 +9,15 @@
 
 extern OpenCLEnv* opencl_env;
 
-void packData(FPGAAgent* agent,
+void extendOnFPGAPackInput(
+    FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
     int batch_num,
     mem_opt_t *opt);
 
-void SwFPGA(FPGAAgent* agent,
+void extendOnFPGAProcessOutput(
+    FPGAAgent* agent,
     int stage_cnt,
     ExtParam** &tasks,
     int batch_num,
