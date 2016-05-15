@@ -20,8 +20,10 @@ class MapPartitionStage :
   public Stage<U, V, IN_DEPTH, OUT_DEPTH> 
 {
  public:
-  // force one worker for IO stages
-  MapPartitionStage(int n=1);
+  MapPartitionStage(int n_workers=1, bool is_dyn=true):
+      Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
+
+  bool execute();
 
  protected:
   virtual void compute(int wid) = 0;
@@ -30,100 +32,110 @@ class MapPartitionStage :
   void pushOutput(V const & item);
 
  private:
+  // Function body of worker threads
   void worker_func(int wid);
 
-  Queue<U, IN_DEPTH>*  src_queue_;
-  Queue<V, OUT_DEPTH>* dst_queue_;
+  // Function body of execute function
+  void execute_func();
 };
 
 template <
-  typename U,
-  typename V, 
-  int IN_DEPTH,
-  int OUT_DEPTH
->
-MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::MapPartitionStage(int n): 
-  Stage<U, V, IN_DEPTH, OUT_DEPTH>(n) 
-{}
-
-template <
-  typename U,
-  typename V, 
-  int IN_DEPTH,
-  int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::getInput(U &item) {
-  if (!src_queue_) {
+  if (!this->input_queue_) {
     return false; 
   }
-  return src_queue_->async_pop(item);
+  return this->input_queue_->async_pop(item);
 }
 
 template <
-  typename U,
-  typename V, 
-  int IN_DEPTH,
-  int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
 void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::pushOutput(V const & item) {
-  if (!dst_queue_) {
+  if (!this->output_queue_) {
     return; 
   }
-  dst_queue_->push(item);
+  this->output_queue_->push(item);
 }
 
 template <
-  typename U,
-  typename V, 
-  int IN_DEPTH,
-  int OUT_DEPTH
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
 >
-void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
+bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
-#ifndef DISABLE_PROFILING
-  uint64_t start_ts = getUs();
-#endif
-
-  if (!this->input_queue || !this->output_queue) {
-    LOG(ERROR) << "Empty input/output queue is not allowed";
-    return;
+  // Return false if input queue is empty or max num_worker_threads reached
+  if (this->input_queue_->empty() || 
+      this->getNumThreads() >= this->getMaxNumThreads()) {
+    return false;
   }
 
-  src_queue_ = dynamic_cast<Queue<U, IN_DEPTH>*>(this->input_queue);
-  dst_queue_ = dynamic_cast<Queue<V, OUT_DEPTH>*>(this->output_queue);
+  // Post work from the compute function
+  this->pipeline_->post(boost::bind(
+        &MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func, this));
 
-  if (!src_queue_ || !dst_queue_) {
-    LOG(ERROR) << "Wrong input/output queue type(s)";
-    return;
-  }
+  return true;
+}
+
+template <
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
+>
+void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func() {
 
   try {
-#ifndef DISABLE_PROFILING
-    uint64_t start_ts = getUs();
-#endif
-    // call user-defined compute function
-    compute(wid); 
+    OccupancyCounter seat(this->pipeline_, this);
 
-#ifndef DISABLE_PROFILING
-    // record compute time
-    this->perf_meters[wid][1] += getUs() - start_ts;
-#endif
+    int n_workers = this->getNumThreads();
+
+    DLOG(INFO) << "Post a work for MapPartitionStage, there are "
+      << n_workers
+      << " active threads in this stage";
+
+    // call user-defined compute function
+    compute(n_workers-1); 
   } 
   catch (boost::thread_interrupted &e) {
     VLOG(2) << "Worker thread is interrupted";
     return;
   }
+  catch (std::runtime_error &e) {
+    LOG(ERROR) << "Error in compute(): " << e.what();  
+  }
+}
+
+template <
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
+>
+void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
+
+  if (this->isDynamic()) {
+    LOG(WARNING) << "Dynamic stages are not supposed to "
+      << "start worker threads, exiting.";
+    return;
+  }
+    
+  if (!this->input_queue_ || !this->output_queue_) {
+    LOG(ERROR) << "Empty input/output queue is not allowed";
+    return;
+  }
+
+  try {
+    // call user-defined compute function
+    compute(wid); 
+  } 
+  catch (boost::thread_interrupted &e) {
+    VLOG(2) << "Worker thread is interrupted";
+  }
   // inform the next Stage there will be no more
   // output records
   this->finalize();
 
-#ifndef DISABLE_PROFILING
-  // record total time
-  this->perf_meters[wid][3] = getUs()-start_ts;
-#endif
-  this->end_ts = getUs();
-
-  DLOG(INFO) << "Worker thread is terminated";
+  DLOG(INFO) << "MapPartition worker thread is terminated";
 }
 
 } // namespace kestrelFlow

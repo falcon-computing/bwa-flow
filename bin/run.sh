@@ -5,8 +5,8 @@ option="--logtostderr=1 \
         --offload \
         --use_fpga \
         --fpga_path=/curr/yaoh/kernels/smithwaterman_80pe_new.xclbin \
-        --stage_1_nt=6 \
-        --stage_2_nt=1 \
+        --stage_1_nt=7 \
+        --stage_2_nt=4 \
         --stage_3_nt=2 \
         --inorder_output"
 

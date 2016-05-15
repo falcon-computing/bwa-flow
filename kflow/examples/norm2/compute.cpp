@@ -124,11 +124,11 @@ class Norm :
     Record<double>*>
 {
 public:
-  Norm(int n): 
+  Norm(bool is_dyn=true, int n_workers=1): 
     MapStage<
       Record<std::vector<double> >*, 
       Record<double>* 
-    >(n) {}
+    >(is_dyn, n_workers) {}
 
   Record<double>* compute(
       Record<std::vector<double> >* const & input) 
@@ -148,16 +148,15 @@ int main(int argc, char** argv) {
   FLAGS_logtostderr = 1;
   google::InitGoogleLogging(argv[0]);
 
-  Pipeline norm(3);
+  Pipeline norm(3, 0);
 
   std::string input_fname = "input.txt";
   std::string output_fname = "output.txt";
   norm.addConst("input_fname", input_fname);
   norm.addConst("output_fname", output_fname);
 
-
   Load  stage0;
-  Norm  stage1(4);
+  Norm  stage1(false, 2);
   Store<> stage2;
 
   norm.addStage(0, &stage0);
@@ -168,7 +167,5 @@ int main(int argc, char** argv) {
   // gracefully end the pipeline
   norm.wait();
 
-  norm.printPerf();
-  
   return 0;
 }

@@ -2,6 +2,10 @@
 #define KFLOW_PIPELINE_H
 
 #include <boost/any.hpp>
+#include <boost/asio.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/thread.hpp>
+#include <deque>
 
 #include "Common.h"
 #include "Stage.h"
@@ -11,43 +15,61 @@
 #define TEST_FRIENDS_LIST
 #endif
 
-namespace kestrelFlow 
-{
-class Pipeline 
-{
+namespace kestrelFlow {
+
+class Pipeline {
+  friend class OccupancyCounter;
   TEST_FRIENDS_LIST
 
-  public:
-    Pipeline(int _num_stages);
+ public:
+  Pipeline(int num_stages, int num_threads);
+  ~Pipeline();
 
-    template <typename U, typename V,
-              int IN_DEPTH,  int OUT_DEPTH> 
-    bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
-    
-    template <typename T>
-    bool addConst(std::string key, T val);
+  template <typename U, typename V,
+            int IN_DEPTH,  int OUT_DEPTH> 
+  bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
+  
+  template <typename T>
+  bool addConst(std::string key, T val);
 
-    boost::any getConst(std::string key);
+  boost::any getConst(std::string key);
 
-    void start();
-    void stop();
-    void wait();
-    void finalize();
+  void start();
+  void stop();
+  void wait();
+  void finalize();
 
-    void printPerf();
+  // Post work to pipeline workers
+  template <typename CompletionHandler>
+    void post(CompletionHandler handler); 
 
-    QueueBase* getInputQueue();
-    QueueBase* getOutputQueue();
+  QueueBase* getInputQueue();
+  QueueBase* getOutputQueue();
 
-  private:
-    int num_stages;
-    std::vector<StageBase*> stages;
-    std::vector<boost::shared_ptr<QueueBase> > queues;
-    std::map<std::string, boost::any> constants;
 
-    // beginning and end timestamps of all stage workers
-    uint64_t  start_ts;
-    uint64_t  end_ts;
+ private:
+  void schedule();
+
+  void addSeat() {num_active_threads_.fetch_add(1);}
+  void removeSeat() {num_active_threads_.fetch_sub(1);}
+
+  boost::shared_ptr<boost::asio::io_service> ios_;
+  boost::shared_ptr<boost::asio::io_service::work> ios_work_;
+
+  boost::thread_group workers_;
+  boost::thread_group scheduler_;
+
+  int num_stages_;
+  int num_threads_;
+  mutable boost::atomic<int> num_active_threads_;
+
+  std::vector<StageBase*> stages_;
+  std::vector<boost::shared_ptr<QueueBase> > queues_;
+
+  std::map<std::string, boost::any> constants_;
+
+  // Unfinished stages that require dynamic task dispatching
+  std::deque<StageBase*> pending_stages_;
 };
 
 template <
@@ -57,53 +79,58 @@ template <
 bool Pipeline::addStage(int idx,
     Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage)
 {
-  if (idx < 0 || idx >= num_stages) {
+  if (idx < 0 || idx >= num_stages_) {
     LOG(ERROR) << "index out of bound";
     return false;
   }
-  if (stages[idx]) {
+  if (stages_[idx]) {
     LOG(WARNING) << "Overwritting existing stage at idx=" << idx;
   }
 
   // bind input queue for stage if it exists
   if (idx == 0 && IN_DEPTH > 0) {
     boost::shared_ptr<QueueBase> queue(new Queue<U, IN_DEPTH>);
-    queues[idx] = queue;
+    queues_[idx] = queue;
   }
   Queue<U, IN_DEPTH>* input_queue = 
-    dynamic_cast<Queue<U, IN_DEPTH>*>(queues[idx].get());
+    dynamic_cast<Queue<U, IN_DEPTH>*>(queues_[idx].get());
 
-  stage->input_queue = input_queue;
+  stage->input_queue_ = input_queue;
 
   // create output queue for the stage
-  if (idx < num_stages-1 && OUT_DEPTH <= 0) {
+  if (idx < num_stages_-1 && OUT_DEPTH <= 0) {
     LOG(ERROR) << "Intermediate stage must have an output queue";
     return false;
   }
   if (OUT_DEPTH > 0) {
     boost::shared_ptr<QueueBase> output_queue(new Queue<V, OUT_DEPTH>);
-    queues[idx+1] = output_queue;
+    queues_[idx+1] = output_queue;
 
-    stage->output_queue = dynamic_cast<
+    stage->output_queue_ = dynamic_cast<
       Queue<V, OUT_DEPTH>*>(output_queue.get());
   }
-  stages[idx] = stage;
+  stages_[idx] = stage;
   if (idx > 0) {
-    stages[idx-1]->next_stage = stage;
+    stages_[idx-1]->next_stage_ = stage;
   }
-  stage->pipeline = this;
+  stage->pipeline_ = this;
 
   return true;
 }
 
 template <typename T>
 bool Pipeline::addConst(std::string key, T val) {
-  if (constants.count(key)) {
+  if (constants_.count(key)) {
     LOG(ERROR) << key << " already exists in the constant table";
     return false;
   }
-  constants[key] = val;
+  constants_[key] = val;
   return true;
+}
+
+template <typename CompletionHandler>
+void Pipeline::post(CompletionHandler handler) {
+  ios_->post(handler);
 }
 
 } // namespace kestrelFlow

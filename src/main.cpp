@@ -38,7 +38,15 @@ boost::mutex mpi_mutex;
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
-std::string output_dir;
+
+int mpi_rank;
+int mpi_nprocs;
+ktp_aux_t* aux;
+
+// Original BWA parameters
+DEFINE_string(R, "", "-R arg in original BWA");
+DEFINE_int32(t, 1, "-t arg in original BWA");
+DEFINE_bool(M, false, "-M arg in original BWA");
 
 // Parameters
 DEFINE_bool(offload, false,
@@ -55,6 +63,9 @@ DEFINE_string(fpga_path, "",
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");
 
+DEFINE_int32(max_fpga_thread, 1,
+    "Max number of threads for FPGA worker");
+
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
 
@@ -64,13 +75,13 @@ DEFINE_string(output_dir, "",
 DEFINE_int32(nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for the entire program");
 
-DEFINE_int32(stage_1_nt, 1,
+DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 1");
 
-DEFINE_int32(stage_2_nt, 1,
+DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 2");
 
-DEFINE_int32(stage_3_nt, 1,
+DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
 int main(int argc, char *argv[]) {
@@ -90,8 +101,10 @@ int main(int argc, char *argv[]) {
     LOG(ERROR) << "Available thread level is " << init_ret;
     throw std::runtime_error("Cannot initialize MPI with threads");
   }
-  int rank   = MPI::COMM_WORLD.Get_rank();
-  int nprocs = MPI::COMM_WORLD.Get_size();
+  mpi_rank   = MPI::COMM_WORLD.Get_rank();
+  mpi_nprocs = MPI::COMM_WORLD.Get_size();
+
+  int rank = mpi_rank;
 #else
   const int rank = 0;
 #endif
@@ -100,8 +113,8 @@ int main(int argc, char *argv[]) {
   extern char *bwa_pg;
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
-  ktp_aux_t aux;
-  memset(&aux, 0, sizeof(ktp_aux_t));
+  aux = new ktp_aux_t;
+  memset(aux, 0, sizeof(ktp_aux_t));
 
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
@@ -114,6 +127,9 @@ int main(int argc, char *argv[]) {
         << FLAGS_fpga_path;
       return 1;
     }
+  }
+  else {
+    FLAGS_use_fpga = false;
   }
 
   // Get output file folder
@@ -143,8 +159,39 @@ int main(int argc, char *argv[]) {
     std::string fname = sam_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
   }
-  // Get the index and the options
-  pre_process(argc-1, argv+1, &aux, rank==0);
+
+  // Produce original BWA arguments
+  std::stringstream ss;
+  std::vector<const char*> bwa_args;
+  if (strcmp(argv[1], "mem")) {
+    LOG(ERROR) << "Expecting 'mem' as the first argument.";
+    return 1;
+  }
+  bwa_args.push_back("mem");
+
+  // Start to pass Google flags through to bwa
+  if (FLAGS_M) {
+    bwa_args.push_back("-M");
+  }
+  if (!FLAGS_R.empty()) {
+    bwa_args.push_back("-R"); 
+    bwa_args.push_back(FLAGS_R.c_str()); 
+  }
+  for (int i = 2; i < argc; i++) {
+    bwa_args.push_back(argv[i]); 
+  }
+
+  // Check arguments
+  for (int i = 0; i < bwa_args.size(); i++) {
+    ss << bwa_args[i] << " ";
+  }
+  VLOG(1) << "Command: " << ss.str();
+
+  // Parse BWA arguments and generate index and the options
+  if ( pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, rank==0)) {
+    LOG(ERROR) << "Failed to parse BWA arguments";
+    return 1;
+  }
 
   // Restore stdout if stdout is redirected
   if (rank==0 && !sam_dir.empty()) {
@@ -162,10 +209,10 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef SCALE_OUT
-  kestrelFlow::Pipeline scatter_flow(2);
-  kestrelFlow::Pipeline gather_flow(2);
+  kestrelFlow::Pipeline scatter_flow(2, 0);
+  kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages);
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_nt);
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
@@ -197,20 +244,9 @@ int main(int argc, char *argv[]) {
 #endif
 
   // Bind global vars to each pipeline
-  compute_flow.addConst("aux", &aux);
   compute_flow.addConst("sam_dir", sam_dir);
 
 #ifdef SCALE_OUT
-  compute_flow.addConst("mpi_rank", rank);
-  compute_flow.addConst("mpi_nprocs", nprocs);
-
-  scatter_flow.addConst("aux", &aux);
-  scatter_flow.addConst("mpi_rank", rank);
-  scatter_flow.addConst("mpi_nprocs", nprocs);
-
-  gather_flow.addConst("aux", &aux);
-  gather_flow.addConst("mpi_rank", rank);
-  gather_flow.addConst("mpi_nprocs", nprocs);
   gather_flow.addConst("sam_dir", sam_dir);
 
   scatter_flow.addStage(0, &read_stage);
@@ -240,7 +276,7 @@ int main(int argc, char *argv[]) {
   }
   
   // Start FPGA context
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
       opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
       //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
@@ -255,7 +291,7 @@ int main(int argc, char *argv[]) {
   compute_flow.start();
   compute_flow.wait();
 
-  if (FLAGS_use_fpga) {
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     delete opencl_env;
   }
 
@@ -270,12 +306,12 @@ int main(int argc, char *argv[]) {
   if (rank == 0) {
 #endif
 
-    kseq_destroy(aux.ks);
+    kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
     kclose(ko_read1);
 
-    if (aux.ks2) {
-      kseq_destroy(aux.ks2);
+    if (aux->ks2) {
+      kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
 
@@ -299,8 +335,9 @@ int main(int argc, char *argv[]) {
     free(bwa_pg);
   }
 
-  free(aux.opt);
-  bwa_idx_destroy(aux.idx);
+  free(aux->opt);
+  bwa_idx_destroy(aux->idx);
+  delete aux;
 
 #ifdef SCALE_OUT
   MPI_Finalize();

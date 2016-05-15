@@ -2,14 +2,14 @@
 #define KFLOW_MAPSTAGE_H
 
 #include "Stage.h"
+#include "OccupancyCounter.h"
 
 // for testing purpose
 #ifndef TEST_FRIENDS_LIST
 #define TEST_FRIENDS_LIST
 #endif
 
-namespace kestrelFlow 
-{
+namespace kestrelFlow {
 
 template <
   typename U, 
@@ -17,124 +17,140 @@ template <
   int IN_DEPTH  = 64,
   int OUT_DEPTH = 64 
 >
-class MapStage : public Stage<U, V, IN_DEPTH, OUT_DEPTH>
-{
-  public:
-    MapStage(int _num_workers=1);
+class MapStage : public Stage<U, V, IN_DEPTH, OUT_DEPTH> {
+ public:
+  MapStage(int n_workers=1, bool is_dyn=true):
+    Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
 
-  protected:
-    virtual V compute(U const & input) = 0;
+  bool execute();
 
-  private:
-    void deleteIfPtr(U &obj, boost::true_type) {delete obj;}
-    void deleteIfPtr(U &obj, boost::false_type) {}
+ protected:
+  virtual V compute(U const & input) = 0;
 
-    void worker_func(int wid);
+ private:
+  void deleteIfPtr(U &obj, boost::true_type) {delete obj;}
+  void deleteIfPtr(U &obj, boost::false_type) {}
+
+  // Function body of worker threads
+  void worker_func(int wid);
+
+  // Function body of execute function
+  void execute_func(U input);
 };
 
 template <
   typename U, typename V, 
   int IN_DEPTH, int OUT_DEPTH
 >
-MapStage<U, V, IN_DEPTH, OUT_DEPTH>::MapStage(int _num_workers):
-  Stage<U, V, IN_DEPTH, OUT_DEPTH>(_num_workers) 
-{}
+bool MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
+
+  // Return false if input queue is empty or max num_worker_threads reached
+  if (this->getNumThreads() >= this->getMaxNumThreads()) {
+    return false;
+  }
+
+  // Try to get one input from the input queue
+  U input;
+  bool ready = this->input_queue_->async_pop(input);
+
+  if (!ready) {
+    // return false if input queue is empty
+    return false;
+  }
+
+  // Post work from the compute function
+  this->pipeline_->post(boost::bind(
+        &MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func, this, input));
+
+  return true;
+}
 
 template <
   typename U, typename V, 
   int IN_DEPTH, int OUT_DEPTH
 >
-void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid)
-{
-#ifndef DISABLE_PROFILING
-  uint64_t start_ts = getUs();
-#endif
+void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
 
-  if (!this->input_queue) {
-    LOG(ERROR) << "Empty input queue for MapStage is not allowed";
+  try {
+    OccupancyCounter seat(this->pipeline_, this);
+
+    DLOG(INFO) << "Post a work for MapStage, there are "
+      << this->getNumThreads()
+      << " active threads in this stage";
+
+    // call user-defined compute function
+    V output = compute(input); 
+
+    // write result to output_queue
+    if (this->output_queue_) {
+      this->output_queue_->push(output);
+    }
+
+    // free input if it is a pointer
+    deleteIfPtr(input, boost::is_pointer<U>());
+  } 
+  catch (boost::thread_interrupted &e) {
+    VLOG(2) << "Worker thread is interrupted";
+  }
+  catch (std::runtime_error &e) {
+    LOG(ERROR) << "Error in compute(): " << e.what();  
+  }
+}
+
+template <
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
+>
+void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
+
+  if (this->isDynamic()) {
+    LOG(WARNING) << "Dynamic stages are not supposed to "
+      << "start worker threads, exiting.";
     return;
   }
-
-  Queue<U, IN_DEPTH>* input_queue = dynamic_cast<
-    Queue<U, IN_DEPTH>*>(this->input_queue);
-
-  Queue<V, OUT_DEPTH>* output_queue = dynamic_cast<
-    Queue<V, OUT_DEPTH>*>(this->output_queue);
-
-  if (!input_queue) {
-    LOG(ERROR) << "Mismatched input queue type";
-    return;
-  }
-  if (!output_queue && this->output_queue) {
-    LOG(ERROR) << "Mismatched ouput queue type";
-    return;
+    
+  if (!this->input_queue_ || !this->output_queue_) {
+    throw std::runtime_error("Empty input/output queue is not allowed");
   }
 
-  while (true) 
-  {
-    try 
-    {
-#ifndef DISABLE_PROFILING
-      uint64_t start_ts = getUs();
-#endif
-
+  while (true) {
+    try {
       // first read input from input queue
       U input;
-      bool ready = input_queue->async_pop(input);
+      bool ready = this->input_queue_->async_pop(input);
 
       while (!this->isFinal() && !ready) {
         boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-        ready = input_queue->async_pop(input);
+        ready = this->input_queue_->async_pop(input);
       }
       if (!ready) { 
         // this means isFinal() is true and input queue is empty
         break; 
       }
       
-#ifndef DISABLE_PROFILING
-      // record load wait time
-      this->perf_meters[wid][0] += getUs() - start_ts;
-      start_ts = getUs();
-#endif
-
       // call user-defined compute function
       V output = compute(input); 
 
-#ifndef DISABLE_PROFILING
-      // record compute time
-      this->perf_meters[wid][1] += getUs() - start_ts;
-      start_ts = getUs();
-#endif
-
       // write result to output_queue
-      if (output_queue) {
-        output_queue->push(output);
-      }
+      this->output_queue_->push(output);
+
       // free input if it is a pointer
       deleteIfPtr(input, boost::is_pointer<U>());
-
-#ifndef DISABLE_PROFILING
-      // record write_wait time
-      this->perf_meters[wid][2] += getUs() - start_ts;
-#endif
     } 
     catch (boost::thread_interrupted &e) {
       VLOG(2) << "Worker thread is interrupted";
       break;
+    }
+    catch (std::runtime_error &e) {
+      LOG(INFO) << "compute() failed from " << e.what();
+      return;
     }
   }
   // inform the next Stage there will be no more
   // output records
   this->finalize();
 
-#ifndef DISABLE_PROFILING
-  // record total time
-  this->perf_meters[wid][3] = getUs()-start_ts;
-#endif
-  this->end_ts = getUs();
-
-  DLOG(INFO) << "Worker thread is terminated";
+  DLOG(INFO) << "Map Worker thread is terminated";
 }
-
 } // namespace kestrelFlow
 #endif 

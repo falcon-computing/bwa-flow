@@ -82,26 +82,20 @@ int main(int argc, char** argv) {
 
     start_ts = getUs();
 
-    /*
     cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
         m, n, k, alpha, 
         a, k, 
         b, n, beta,
         c, n);
-    */
-    mmul(a, b, c, m, k, n);
+    //mmul(a, b, c, m, k, n);
 
-    compute_t += getUs() - start_ts;
+    LOG(INFO) << "Compute time is " <<  getUs() - start_ts << " us";
 
     mkl_free(a);
     mkl_free(b);
     mkl_free(c);
   }
   total_t = getUs() - start_ts;
-
-  printf("Total time: %fms\n", (double)total_t/1e3);
-  printf("Data gen time: %fms\n", (double)gen_t/1e3);
-  printf("Compute time: %fms\n", (double)compute_t/1e3);
 
   return 0;
 }

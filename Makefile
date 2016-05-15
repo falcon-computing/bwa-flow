@@ -4,7 +4,7 @@ BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3
+CFLAGS 	:= -g -std=c++0x -fPIC -O3 -DNDEBUG
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
