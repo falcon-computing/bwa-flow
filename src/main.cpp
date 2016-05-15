@@ -43,6 +43,11 @@ int mpi_rank;
 int mpi_nprocs;
 ktp_aux_t* aux;
 
+// Original BWA parameters
+DEFINE_string(R, "", "-R arg in original BWA");
+DEFINE_int32(t, 1, "-t arg in original BWA");
+DEFINE_bool(M, false, "-M arg in original BWA");
+
 // Parameters
 DEFINE_bool(offload, false,
     "Use three compute pipeline stages to enable offloading"
@@ -154,8 +159,39 @@ int main(int argc, char *argv[]) {
     std::string fname = sam_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
   }
-  // Get the index and the options
-  pre_process(argc-1, argv+1, aux, rank==0);
+
+  // Produce original BWA arguments
+  std::stringstream ss;
+  std::vector<const char*> bwa_args;
+  if (strcmp(argv[1], "mem")) {
+    LOG(ERROR) << "Expecting 'mem' as the first argument.";
+    return 1;
+  }
+  bwa_args.push_back("mem");
+
+  // Start to pass Google flags through to bwa
+  if (FLAGS_M) {
+    bwa_args.push_back("-M");
+  }
+  if (!FLAGS_R.empty()) {
+    bwa_args.push_back("-R"); 
+    bwa_args.push_back(FLAGS_R.c_str()); 
+  }
+  for (int i = 2; i < argc; i++) {
+    bwa_args.push_back(argv[i]); 
+  }
+
+  // Check arguments
+  for (int i = 0; i < bwa_args.size(); i++) {
+    ss << bwa_args[i] << " ";
+  }
+  VLOG(1) << "Command: " << ss.str();
+
+  // Parse BWA arguments and generate index and the options
+  if ( pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, rank==0)) {
+    LOG(ERROR) << "Failed to parse BWA arguments";
+    return 1;
+  }
 
   // Restore stdout if stdout is redirected
   if (rank==0 && !sam_dir.empty()) {
