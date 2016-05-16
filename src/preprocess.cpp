@@ -13,6 +13,7 @@
 #include "bntseq.h"
 #include "kseq.h"
 #include "bwa_wrapper.h"
+#include "config.h"
 
 extern unsigned char nst_nt4_table[256];
 
@@ -281,6 +282,19 @@ int pre_process(int argc,
       if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
       return 1;
     }
+    fp_idx = gzdopen(fd, "r");
+    aux->ks = kseq_init(fp_idx);
+    int read_length = kseq_read(aux->ks);
+    if (read_length >= 250){
+       fprintf(stderr,"The read_length is %d so working in CPU-ONLY mode\n",read_length);
+       FLAGS_use_fpga = false;
+    }
+    else{
+       fprintf(stderr,"The read_length is %d so we can work on FPGA\n",read_length);
+    }
+    err_gzclose(fp_idx);
+    kclose(ko_read1);
+    ko_read1 = kopen(argv[optind + 1], &fd);
     fp_idx = gzdopen(fd, "r");
     aux->ks = kseq_init(fp_idx);
     if (optind + 2 < argc) {
