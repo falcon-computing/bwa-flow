@@ -175,14 +175,14 @@ void extendOnFPGAProcessOutput(
     mem_opt_t *opt)
 {
   short* output_ptr = new short[FPGA_RET_PARAM_NUM*batch_num*2];
-  uint64_t start_ts = getUs();
 
+  uint64_t start_ts = getUs();
   agent->wait(stage_cnt);
-  agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
-  VLOG(3) << "SmithWaterman kernel on FPGA " << stage_cnt << " used " 
+  VLOG(3) << "Wait for FPGA takes " 
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
+  agent->readOutput(output_ptr, FPGA_RET_PARAM_NUM*batch_num*4, stage_cnt);
 
   for (int i = 0; i < batch_num; i++) {  
     

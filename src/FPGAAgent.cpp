@@ -48,7 +48,7 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
 
   cl_command_queue cmd = env_->getCmdQueue();
 
-  boost::lock_guard<OpenCLEnv> guard(*env_);
+  //boost::lock_guard<OpenCLEnv> guard(*env_);
 
   cl_int err = clEnqueueWriteBuffer(cmd, 
       input_buf_[cnt], CL_TRUE, 0, size, 
@@ -65,7 +65,7 @@ void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
   }
   cl_command_queue cmd = env_->getCmdQueue();
   
-  boost::lock_guard<OpenCLEnv> guard(*env_);
+  //boost::lock_guard<OpenCLEnv> guard(*env_);
 
   cl_int err = clEnqueueReadBuffer(cmd,
       output_buf_[cnt], CL_TRUE, 0, size,

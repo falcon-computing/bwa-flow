@@ -809,10 +809,6 @@ void ChainsToRegions::compute(int wid) {
               if (tasks_remain[start_idx] == 0) {
                 pushOutput(output_buf[start_idx]);
 
-                // Free data in the input record
-                //freeChains(input_buf[start_idx].chains, 
-                //    input_buf[start_idx].batch_num);
-
                 tasks_remain.erase(start_idx);
                 input_buf.erase(start_idx);
                 output_buf.erase(start_idx);

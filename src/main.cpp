@@ -45,11 +45,14 @@ ktp_aux_t* aux;
 
 // Original BWA parameters
 DEFINE_string(R, "", "-R arg in original BWA");
-DEFINE_int32(t, 1, "-t arg in original BWA");
+
+DEFINE_int32(t, boost::thread::hardware_concurrency(),
+    "-t arg in original BWA, total number of parallel threads");
+
 DEFINE_bool(M, false, "-M arg in original BWA");
 
 // Parameters
-DEFINE_bool(offload, false,
+DEFINE_bool(offload, true,
     "Use three compute pipeline stages to enable offloading"
     "workload to accelerators. "
     "If disabled, --use_fpga, --fpga_path will be discard");
@@ -72,9 +75,6 @@ DEFINE_bool(inorder_output, false,
 DEFINE_string(output_dir, "",
     "If not empty the output will be redirect to --output_dir");
 
-DEFINE_int32(nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for the entire program");
-
 DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 1");
 
@@ -85,6 +85,12 @@ DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
 int main(int argc, char *argv[]) {
+
+  // Print arguments for records
+  std::stringstream ss;
+  for (int i = 0; i < argc; i++) {
+    ss << argv[i] << " ";
+  }
 
   // Initialize Google Flags
   gflags::SetUsageMessage(argv[0]);
@@ -152,16 +158,7 @@ int main(int argc, char *argv[]) {
     VLOG(1) << "Putting sam output to stdout";
   }
 
-  // If output_dir is set then redirect sam_header to a file
-  int stdout_fd;
-  if (rank==0 && !sam_dir.empty()) {
-    stdout_fd = dup(STDOUT_FILENO);
-    std::string fname = sam_dir + "/header";
-    freopen(fname.c_str(), "w+", stdout);
-  }
-
   // Produce original BWA arguments
-  std::stringstream ss;
   std::vector<const char*> bwa_args;
   if (strcmp(argv[1], "mem")) {
     LOG(ERROR) << "Expecting 'mem' as the first argument.";
@@ -170,6 +167,17 @@ int main(int argc, char *argv[]) {
   bwa_args.push_back("mem");
 
   // Start to pass Google flags through to bwa
+  if (FLAGS_v > 1) {
+    // Convert glog verbosity to bwa_verbose
+    // v< 2 --> bwa_verbose = 2
+    // v>=2 --> bwa_verbose = 3
+    bwa_args.push_back("-v");
+    bwa_args.push_back("3");
+  }
+  else {
+    bwa_args.push_back("-v");
+    bwa_args.push_back("2");
+  }
   if (FLAGS_M) {
     bwa_args.push_back("-M");
   }
@@ -177,18 +185,22 @@ int main(int argc, char *argv[]) {
     bwa_args.push_back("-R"); 
     bwa_args.push_back(FLAGS_R.c_str()); 
   }
+
+  // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 
   }
 
-  // Check arguments
-  for (int i = 0; i < bwa_args.size(); i++) {
-    ss << bwa_args[i] << " ";
+  // If output_dir is set then redirect sam_header to a file
+  int stdout_fd;
+  if (rank==0 && !sam_dir.empty()) {
+    stdout_fd = dup(STDOUT_FILENO);
+    std::string fname = sam_dir + "/header";
+    freopen(fname.c_str(), "w+", stdout);
   }
-  VLOG(1) << "Command: " << ss.str();
 
   // Parse BWA arguments and generate index and the options
-  if ( pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, rank==0)) {
+  if (pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, rank==0)) {
     LOG(ERROR) << "Failed to parse BWA arguments";
     return 1;
   }
@@ -212,7 +224,7 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_nt);
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
@@ -224,7 +236,7 @@ int main(int argc, char *argv[]) {
   SamsReceive     sam_recv_stage;
 #endif
   // Stages for bwa computation
-  SeqsToSams      seq2sam_stage(FLAGS_nt);
+  SeqsToSams      seq2sam_stage(FLAGS_t);
   SeqsToChains    seq2chain_stage(FLAGS_stage_1_nt);
   ChainsToRegions chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam    reg2sam_stage(FLAGS_stage_3_nt);
@@ -322,12 +334,10 @@ int main(int argc, char *argv[]) {
     }
     bwa_pg = pg.s;
 
-    fprintf(stderr, "[%s] Version: %s\n", __func__, PACKAGE_VERSION);
-    fprintf(stderr, "[%s] CMD:", __func__);
-    for (int i = 0; i < argc; ++i) {
-      fprintf(stderr, " %s", argv[i]);
-    }
-    fprintf(stderr, "\n[%s] Real time: %.3f sec; CPU: %.3f sec\n", __func__, realtime() - t_real, cputime());
+    LOG(INFO) << "Version: " << PACKAGE_VERSION;
+    LOG(INFO) << "Command: " << ss.str();
+    LOG(INFO) << "Real time: " << realtime() - t_real << " sec, "
+              << "CPU time: " << cputime() << " sec";
 
     err_fflush(stdout);
     err_fclose(stdout);

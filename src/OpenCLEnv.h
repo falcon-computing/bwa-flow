@@ -12,6 +12,7 @@
 #include <CL/opencl.h>
 
 #include "kflow/Queue.h"
+#include "util.h"
 
 struct FPGATask {
   int     task_num;
@@ -126,6 +127,7 @@ class OpenCLEnv
 
   ~OpenCLEnv() {
     task_workers_.interrupt_all();
+    task_workers_.join_all();
 
     clReleaseKernel(kernel_);
     clReleaseCommandQueue(commands_);
@@ -155,26 +157,60 @@ class OpenCLEnv
     cl_int err;
     cl_event event;
 
-    while (true) {
-      FPGATask* task;
-      task_queue_.pop(task);
+    int counter = 0;
+    int thresh_counter = 0;
+    uint64_t total_wait_time = 0;
+    uint64_t total_fpga_time = 0;
 
-      // Got new task and start execution
-      int task_num  = task->task_num;
-      cl_mem* input  = task->input;
-      cl_mem* output = task->output;
+    try {
+      while (true) {
+        uint64_t start_ts = getNs();
 
-      err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input);
-      err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), output);
-      err |= clSetKernelArg(kernel_, 2, sizeof(int), &task_num);
+        FPGATask* task;
+        task_queue_.pop(task);
+        uint64_t wait_time = getNs() - start_ts;
 
-      err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
-      if (err) {
-        LOG(ERROR) << "Failed to execute kernel.";
+        start_ts = getNs();
+
+        // Got new task and start execution
+        int task_num  = task->task_num;
+        cl_mem* input  = task->input;
+        cl_mem* output = task->output;
+
+        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input);
+        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), output);
+        err |= clSetKernelArg(kernel_, 2, sizeof(int), &task_num);
+
+        err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
+        if (err) {
+          LOG(ERROR) << "Failed to execute kernel.";
+        }
+        clWaitForEvents(1, &event);
+
+        task->ready.set_value(true);
+
+        uint64_t fpga_time = getNs() - start_ts;
+
+        VLOG(3) << "SW-FPGA kernel takes " 
+          << fpga_time/1e3 << " us";
+
+        // Only measure middle part of execution
+        if (counter > 100 && counter < 10000) {
+          total_wait_time += wait_time;
+          total_fpga_time += fpga_time;
+        }
+
+        if (wait_time < 0.2*fpga_time) {
+          thresh_counter++;
+        }
+        counter++;
       }
-      clWaitForEvents(1, &event);
-
-      task->ready.set_value(true);
+    }
+    catch (boost::thread_interrupted &e) {
+      VLOG(1) << "FPGA utilization is " 
+        << 100.0f*total_fpga_time/(total_fpga_time+total_wait_time) << " %";
+      VLOG(1) << "Percentage of tasks that FPGA util > 80\% is " 
+        << 100.0f*thresh_counter/counter << " %";
     }
   }
 
