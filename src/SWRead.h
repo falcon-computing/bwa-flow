@@ -6,6 +6,17 @@
 #include "bwa_wrapper.h"
 #include "SWTask.h"
 
+inline int cal_max_gap(
+    const mem_opt_t *opt, 
+    int qlen
+) {
+	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
+	int l_ins = (int)((double)(qlen * opt->a - opt->o_ins) / opt->e_ins + 1.);
+	int l = l_del > l_ins? l_del : l_ins;
+	l = l > 1? l : 1;
+	return l < opt->w<<1? l : opt->w<<1;
+}
+
 class SWRead {
  public:
 
@@ -14,6 +25,7 @@ class SWRead {
       const bseq1_t* seq, 
       const mem_chain_v* chains,
       mem_alnreg_v* alnregs,
+      mem_chainref_t* ref,
       std::vector<int>* chain_idxes);
 
   ~SWRead();
@@ -49,12 +61,6 @@ class SWRead {
       uint8_t *rseq,
       int idx);
 
-  static inline void prepareChainRef(
-      const ktp_aux_t* aux,
-      const bseq1_t* seq,
-      const mem_chain_v* chain,
-      mem_chainref_t* &ref);
-
   static inline int testExtension(
       mem_opt_t *opt,
       mem_seed_t& seed,
@@ -67,10 +73,6 @@ class SWRead {
       mem_chain_t& chain,
       uint64_t *srt);
 
-  static inline int cal_max_gap(
-      const mem_opt_t *opt, 
-      int qlen);
-
   bool is_pend_;
   bool is_finished_;
   
@@ -82,8 +84,8 @@ class SWRead {
   ktp_aux_t*         aux_;
   const bseq1_t*     seq_;
   const mem_chain_v* chains_;
-  mem_chainref_t*    ref_;
   mem_alnreg_v*      alnregs_;
+  mem_chainref_t*    ref_;
   std::vector<int>*  chain_idxes_;
 };
 

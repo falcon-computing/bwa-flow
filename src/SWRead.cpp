@@ -6,12 +6,13 @@ SWRead::SWRead(int start_idx, int idx,
     const bseq1_t* seq, 
     const mem_chain_v* chains,
     mem_alnreg_v* alnregs,
+    mem_chainref_t* ref,
     std::vector<int>* chain_idxes):
   is_pend_(false), 
   start_idx_(start_idx),
   read_idx_(idx), chain_idx_(0),
   aux_(aux), seq_(seq), chains_(chains),
-  ref_(NULL), alnregs_(alnregs),
+  alnregs_(alnregs), ref_(ref),
   chain_idxes_(chain_idxes)
 {
   if (chains && chains->n > 0) {
@@ -22,8 +23,6 @@ SWRead::SWRead(int start_idx, int idx,
     seed_idx_ = -1;
     is_finished_ = true;
   }
-
-  prepareChainRef(aux, seq, chains, ref_);
 }
 
 SWRead::~SWRead() {
@@ -182,63 +181,6 @@ inline ExtParam* SWRead::getTask(
   return SwTask;
 }
 
-inline void SWRead::prepareChainRef(
-    const ktp_aux_t* aux,
-    const bseq1_t* seq,
-    const mem_chain_v* chain,
-    mem_chainref_t* &ref) 
-{
-  int64_t l_pac = aux->idx->bns->l_pac;
-
-  // input for SmithWaterman for each chain
-  ref = (mem_chainref_t*)malloc(chain->n*sizeof(mem_chainref_t));
-
-  for (int j = 0; j < chain->n; j++) {
-    // Prepare the maxspan and rseq for each seed
-    mem_chain_t *c = &chain->a[j]; 
-
-    int64_t rmax[2], tmp, max = 0;
-    uint8_t *rseq = 0;
-    uint64_t *srt;
-
-    if (c->n == 0) {
-      continue;
-    }
-    // get the max possible span
-    rmax[0] = l_pac<<1; rmax[1] = 0;
-    for (int k = 0; k < c->n; ++k) {
-      int64_t b, e;
-      const mem_seed_t *t = &c->seeds[k];
-      b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
-      e = t->rbeg + t->len + ((seq->l_seq - t->qbeg - t->len)
-          + cal_max_gap(aux->opt, seq->l_seq - t->qbeg - t->len));
-      rmax[0] = rmax[0] < b? rmax[0] : b;
-      rmax[1] = rmax[1] > e? rmax[1] : e;
-      if (t->len > max) max = t->len;
-    }
-    rmax[0] = rmax[0] > 0? rmax[0] : 0;
-    rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
-    if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
-      if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
-      else rmax[0] = l_pac;
-    }
-    // retrieve the reference sequence
-    int rid;
-    rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-    assert(c->rid == rid);
-
-    srt = (uint64_t *)malloc(c->n * 8);
-    for (int l = 0; l < c->n; ++l)
-      srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
-    ks_introsort_64(c->n, srt);
-
-    ref[j].rmax[0] = rmax[0];
-    ref[j].rmax[1] = rmax[1];
-    ref[j].rseq = rseq;
-    ref[j].srt = srt;
-  }
-}
-
 inline int SWRead::testExtension(
     mem_opt_t *opt,
     mem_seed_t& seed,
@@ -321,16 +263,4 @@ inline int SWRead::checkOverlap(
   }
   return i;
 }
-
-inline int SWRead::cal_max_gap(
-    const mem_opt_t *opt, 
-    int qlen
-) {
-	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
-	int l_ins = (int)((double)(qlen * opt->a - opt->o_ins) / opt->e_ins + 1.);
-	int l = l_del > l_ins? l_del : l_ins;
-	l = l > 1? l : 1;
-	return l < opt->w<<1? l : opt->w<<1;
-}
-
 

@@ -2,6 +2,7 @@
 #define BWA_FLOW_PIPELINE_H
 
 #include <boost/thread/mutex.hpp>
+#include <glog/logging.h>
 #include <list>
 #include <unordered_map>
 
@@ -46,8 +47,8 @@ struct ChainsRecord {
   bseq1_t* seqs;
   mem_chain_v* chains;
   mem_alnreg_v* alnreg;
-  std::vector<int>* chains_idxes;
   std::list<SWRead*>* read_batch;
+  std::vector<int>* chains_idxes;
 };
 
 struct RegionsRecord {
@@ -116,8 +117,13 @@ class SeqsToChains
       kestrelFlow::MapStage<
           SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n)
   {;}
-
   ChainsRecord compute(SeqsRecord const & record);
+ private:
+  static inline void prepareChainRef(
+      const ktp_aux_t* aux,
+      const bseq1_t* seq,
+      const mem_chain_v* chain,
+      mem_chainref_t* &ref);
 };
 
 class ChainsToRegions

@@ -507,37 +507,104 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   return input;
 }
 
+inline void SeqsToChains::prepareChainRef(
+      const ktp_aux_t* aux,
+      const bseq1_t* seq,
+      const mem_chain_v* chain,
+      mem_chainref_t* &ref
+) {
+  int64_t l_pac = aux->idx->bns->l_pac;
+
+  // input for SmithWaterman for each chain
+  ref = (mem_chainref_t*)malloc(chain->n*sizeof(mem_chainref_t));
+
+  for (int j = 0; j < chain->n; j++) {
+    // Prepare the maxspan and rseq for each seed
+    mem_chain_t *c = &chain->a[j]; 
+
+    int64_t rmax[2], tmp, max = 0;
+    uint8_t *rseq = 0;
+    uint64_t *srt;
+
+    if (c->n == 0) {
+      continue;
+    }
+    // get the max possible span
+    rmax[0] = l_pac<<1; rmax[1] = 0;
+    for (int k = 0; k < c->n; ++k) {
+      int64_t b, e;
+      const mem_seed_t *t = &c->seeds[k];
+      b = t->rbeg - (t->qbeg + cal_max_gap(aux->opt, t->qbeg));
+      e = t->rbeg + t->len + ((seq->l_seq - t->qbeg - t->len)
+          + cal_max_gap(aux->opt, seq->l_seq - t->qbeg - t->len));
+      rmax[0] = rmax[0] < b? rmax[0] : b;
+      rmax[1] = rmax[1] > e? rmax[1] : e;
+      if (t->len > max) max = t->len;
+    }
+    rmax[0] = rmax[0] > 0? rmax[0] : 0;
+    rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+    if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+      if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+      else rmax[0] = l_pac;
+    }
+    // retrieve the reference sequence
+    int rid;
+    rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+    assert(c->rid == rid);
+
+    srt = (uint64_t *)malloc(c->n * 8);
+    for (int l = 0; l < c->n; ++l)
+      srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
+    ks_introsort_64(c->n, srt);
+
+    ref[j].rmax[0] = rmax[0];
+    ref[j].rmax[1] = rmax[1];
+    ref[j].rseq = rseq;
+    ref[j].srt = srt;
+  }
+}
+
 ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
 
   VLOG(2) << "Started SeqsToChains() for one input";
 
   uint64_t start_ts = getUs();
+  uint64_t ref_time = 0;
 
   bseq1_t* seqs = seqs_record.seqs;
   int start_idx = seqs_record.start_idx;
   int batch_num = seqs_record.batch_num;
 
-  mem_chain_v*  chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+  mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
   mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
-  std::vector<int>* chains_idxes;
+  mem_chainref_t** chainrefs;
   std::list<SWRead*>* read_batch;
+  std::vector<int>* chains_idxes;
 
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+    // Freed one by one in chain2reg stage
+    read_batch = new std::list<SWRead*>;
+    // Allocate here and it will be freed after SWRead is destroyed
+    chainrefs = (mem_chainref_t**)malloc(batch_num*sizeof(mem_chainref_t*));
+    // Freed in reg2sam stage
     chains_idxes = new std::vector<int>[batch_num];
-    read_batch   = new std::list<SWRead*>;
   }
 
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(aux, &seqs[i]);
     kv_init(alnreg[i]);
 
+    uint64_t start_ts = getNs();
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      prepareChainRef(aux, &seqs[i], &chains[i], chainrefs[i]);
+
       SWRead *read_ptr = new SWRead(start_idx, i, aux, 
-          seqs+i, chains+i, alnreg+i, chains_idxes+i);
+          seqs+i, chains+i, alnreg+i, chainrefs[i], chains_idxes+i);
 
       read_batch->push_back(read_ptr); 
     }
+    ref_time += getNs() - start_ts;
   }
 
   ChainsRecord ret;
@@ -547,16 +614,16 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.chains       = chains;
   ret.alnreg       = alnreg;
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    ret.chains_idxes = chains_idxes;
     ret.read_batch = read_batch;
+    ret.chains_idxes = chains_idxes;
   }
   else {
-    ret.chains_idxes = NULL;
     ret.read_batch   = NULL;
+    ret.chains_idxes = NULL;
   }
 
-  VLOG(1) << "Produced a chain batch in "
-    << getUs() - start_ts << " us";
+  VLOG(1) << "Produced a chain batch in " << getUs() - start_ts << " us";
+  VLOG(2) << "prepareChainRef takes " << ref_time/1e3 << " us";
 
   return ret;
 }
@@ -789,6 +856,7 @@ void ChainsToRegions::compute(int wid) {
               start_idx = (*iter)->start_idx();
               tasks_remain[start_idx]--;
 
+              // Free SWRead
               delete *iter;
 
               iter = read_batch.erase(iter);
@@ -808,6 +876,7 @@ void ChainsToRegions::compute(int wid) {
               // Check if corresponding batch is finished
               if (tasks_remain[start_idx] == 0) {
                 pushOutput(output_buf[start_idx]);
+
 
                 tasks_remain.erase(start_idx);
                 input_buf.erase(start_idx);
@@ -918,7 +987,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   std::vector<int>* chains_idxes = record.chains_idxes;
 
   for (int i = 0; i < batch_num; i++) {
-    uint64_t start_ts = getUs();
+    uint64_t start_ts = getNs();
     if (chains_idxes) {
       // Calculate seed coverage
       for (int j = 0; j < alnreg[i].n; j++) {
@@ -938,7 +1007,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
         newreg->seedcov = seedcov;  
       }
     }
-    seedcov_time += getUs() - start_ts;
+    seedcov_time += getNs() - start_ts;
     
     // Post-process each chain before output
     alnreg[i].n = mem_sort_dedup_patch(
@@ -959,7 +1028,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
     delete [] chains_idxes;
     freeChains(chains, batch_num);
   }
-  VLOG(2) << "Seed coverage time is " << seedcov_time << " us";
+  VLOG(2) << "Seed coverage time is " << seedcov_time/1e3 << " us";
 
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);

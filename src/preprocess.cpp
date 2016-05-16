@@ -1,17 +1,19 @@
-#include <zlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
 #include <ctype.h>
+#include <glog/logging.h>
+#include <limits.h>
 #include <math.h>
-#include "bwa.h"
-#include "bwamem.h"
-#include "kvec.h"
-#include "utils.h"
-#include "bntseq.h"
-#include "kseq.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <zlib.h>
+
+#include "bwa/bwa.h"
+#include "bwa/bwamem.h"
+#include "bwa/kvec.h"
+#include "bwa/utils.h"
+#include "bwa/bntseq.h"
+#include "bwa/kseq.h"
 #include "bwa_wrapper.h"
 #include "config.h"
 
@@ -284,14 +286,16 @@ int pre_process(int argc,
     }
     fp_idx = gzdopen(fd, "r");
     aux->ks = kseq_init(fp_idx);
+
+    // Decide FPGA usage based on read size
     int read_length = kseq_read(aux->ks);
-    if (read_length >= 250){
-       fprintf(stderr,"The read_length is %d so working in CPU-ONLY mode\n",read_length);
-       FLAGS_use_fpga = false;
+    if (read_length >= 250 || read_length < 100){
+      if (FLAGS_use_fpga) {
+        LOG(WARNING) << "Disabling FPGA for read length = " << read_length;
+      }
+      FLAGS_use_fpga = false;
     }
-    else{
-       fprintf(stderr,"The read_length is %d so we can work on FPGA\n",read_length);
-    }
+
     err_gzclose(fp_idx);
     kclose(ko_read1);
     ko_read1 = kopen(argv[optind + 1], &fd);
