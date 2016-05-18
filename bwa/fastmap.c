@@ -27,6 +27,8 @@ typedef struct {
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
+  bam_hdr_t *h;
+  samFile * out;
 } ktp_aux_t;
 
 typedef struct {
@@ -61,6 +63,7 @@ static void *process(void *shared, int step, void *_data)
 	} else if (step == 1) {
 		const mem_opt_t *opt = aux->opt;
 		const bwaidx_t *idx = aux->idx;
+    const bam_hdr_t *h = aux->h;
 		if (opt->flag & MEM_F_SMARTPE) {
 			bseq1_t *sep[2];
 			int n_sep[2];
@@ -70,25 +73,40 @@ static void *process(void *shared, int step, void *_data)
 				fprintf(stderr, "[M::%s] %d single-end sequences; %d paired-end sequences\n", __func__, n_sep[0], n_sep[1]);
 			if (n_sep[0]) {
 				tmp_opt.flag &= ~MEM_F_PE;
-				mem_process_seqs(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, n_sep[0], sep[0], 0);
+				mem_process_seqs2(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, n_sep[0], sep[0], 0, h);
+#ifndef USE_HTSLIB
 				for (i = 0; i < n_sep[0]; ++i)
 					data->seqs[sep[0][i].id].sam = sep[0][i].sam;
+#endif
 			}
 			if (n_sep[1]) {
 				tmp_opt.flag |= MEM_F_PE;
-				mem_process_seqs(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed + n_sep[0], n_sep[1], sep[1], aux->pes0);
+				mem_process_seqs2(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed + n_sep[0], n_sep[1], sep[1], aux->pes0, h);
+#ifndef USE_HTSLIB
 				for (i = 0; i < n_sep[1]; ++i)
 					data->seqs[sep[1][i].id].sam = sep[1][i].sam;
+#endif
 			}
 			free(sep[0]); free(sep[1]);
-		} else mem_process_seqs(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0);
+		} else mem_process_seqs2(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0, h);
 		aux->n_processed += data->n_seqs;
 		return data;
 	} else if (step == 2) {
 		for (i = 0; i < data->n_seqs; ++i) {
+#ifdef USE_HTSLIB    
+      if (data->seqs[i].bams) {   
+        int j;    
+        for (j = 0; j < data->seqs[i].bams->l; j++) {   
+          sam_write1(aux->out, aux->h, data->seqs[i].bams->bams[j]);    
+        }   
+      }   
+      bams_destroy(data->seqs[i].bams); data->seqs[i].bams = NULL;    
+#else
 			if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, stdout);
+      free(data->seqs[i].sam);
+#endif
 			free(data->seqs[i].name); free(data->seqs[i].comment);
-			free(data->seqs[i].seq); free(data->seqs[i].qual); free(data->seqs[i].sam);
+			free(data->seqs[i].seq); free(data->seqs[i].qual);
 		}
 		free(data->seqs); free(data);
 		return 0;
@@ -130,7 +148,11 @@ int main_mem(int argc, char *argv[])
 
 	aux.opt = opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
+#ifdef USE_HTSLIB
+	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:o:")) >= 0) {
+#else
 	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
+#endif
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
 		else if (c == '1') no_mt_io = 1;
 		else if (c == 'x') mode = optarg;
@@ -162,6 +184,9 @@ int main_mem(int argc, char *argv[])
 		else if (c == 'C') aux.copy_comment = 1;
 		else if (c == 'K') fixed_chunk_size = atoi(optarg);
 		else if (c == 'X') opt->mask_level = atof(optarg);
+#ifdef USE_HTSLIB
+		else if (c == 'o') opt->bam_output = atoi(optarg), opt0.bam_output = 1;
+#endif
 		else if (c == 'h') {
 			opt0.max_XA_hits = opt0.max_XA_hits_alt = 1;
 			opt->max_XA_hits = opt->max_XA_hits_alt = strtol(optarg, &p, 10);
@@ -222,7 +247,7 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 3)
 				fprintf(stderr, "[M::%s] mean insert size: %.3f, stddev: %.3f, max: %d, min: %d\n",
 						__func__, pes[1].avg, pes[1].std, pes[1].high, pes[1].low);
-		}
+    }
 		else return 1;
 	}
 
@@ -278,6 +303,9 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "                     specify the mean, standard deviation (10%% of the mean if absent), max\n");
 		fprintf(stderr, "                     (4 sigma from the mean if absent) and min of the insert size distribution.\n");
 		fprintf(stderr, "                     FR orientation only. [inferred]\n");
+#ifdef USE_HTSLIB
+		fprintf(stderr, "       -o INT        0 - BAM (compressed), 1 - BAM (uncompressed), 2 - SAM [%d]\n)\n", opt->bam_output);
+#endif
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Note: Please read the man page for detailed description of the command line and options.\n");
 		fprintf(stderr, "\n");
@@ -348,14 +376,45 @@ int main_mem(int argc, char *argv[])
 			opt->flag |= MEM_F_PE;
 		}
 	}
+  bam_hdr_t *h = NULL; // TODO
+#ifdef USE_HTSLIB
+  samFile *out = NULL;
+  char *modes[] = {"wb", "wbu", "w"};
+  switch (opt->bam_output) {
+    case 0: // BAM compressed
+    case 1: // BAM uncompressed
+    case 2: // SAM
+      out = sam_open("-", modes[opt->bam_output]); 
+      break;
+    default:
+      fprintf(stderr, "Error: output format was out of range [%d]\n", opt->bam_output);
+      return 1;
+  }
+#endif
+#ifdef USE_HTSLIB
+  kstring_t str;
+  str.l = str.m = 0; str.s = 0;
+  bwa_format_sam_hdr(aux.idx->bns, hdr_line, &str);
+  h = sam_hdr_parse(str.l, str.s);
+  h->l_text = str.l; h->text = str.s;
+  sam_hdr_write(out, h);
+#else
 	bwa_print_sam_hdr(aux.idx->bns, hdr_line);
+#endif
+
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+  aux.h = h;
+  aux.out = out;
 	kt_pipeline(no_mt_io? 1 : 2, process, &aux, 3);
 	free(hdr_line);
 	free(opt);
 	bwa_idx_destroy(aux.idx);
 	kseq_destroy(aux.ks);
 	err_gzclose(fp); kclose(ko);
+#ifdef USE_HTSLIB
+  sam_close(out);
+  bam_hdr_destroy(h);
+#endif
 	if (aux.ks2) {
 		kseq_destroy(aux.ks2);
 		err_gzclose(fp2); kclose(ko2);
