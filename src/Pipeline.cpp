@@ -681,26 +681,24 @@ inline bool ChainsToRegions::addBatch(
 
 void ChainsToRegions::compute(int wid) {
 
-  if (FLAGS_use_fpga && wid < FLAGS_max_fpga_thread) {
+  if (FLAGS_use_fpga && wid == 0 ) {
 
     VLOG(1) << "Worker " << wid << " is working on FPGA";
 
     int chunk_size = FLAGS_chunk_size;
 
-    const int stage_num = 2;
+    const int stage_num = 5;
     int stage_cnt = 0;
 
-    // Create FPGAAgent
-    FPGAAgent agent(opencl_env, chunk_size);
 
     int task_num = 0;
 
     // Batch of SWTasks
-    ExtParam** task_batch[stage_num];
-
+    /*
     for (int i = 0; i < stage_num; i++) {
       task_batch[i] = new ExtParam*[chunk_size];
-    }
+      pend_flag[i] = false;
+    }*/
 
     // Batch of SWReads
     std::list<SWRead*> read_batch;
@@ -728,7 +726,8 @@ void ChainsToRegions::compute(int wid) {
 
     bool flag_need_reads = false;
     bool flag_more_reads = true;
-
+    boost::unique_lock<boost::mutex> lock(driver_mutex);
+    lock.unlock();
     while (flag_more_reads || !read_batch.empty()) { 
 
       if (read_batch.empty()) {
@@ -757,11 +756,14 @@ void ChainsToRegions::compute(int wid) {
           nextTask_num ++;
 
           int curr_size = 0;
-
           switch (status) {
 
             case SWRead::TaskStatus::Successful:
-
+              while (pend_flag[stage_cnt] == true){
+                 lock.lock();
+                 driver_cond.wait(lock);
+                 lock.unlock();
+              }
               task_batch[stage_cnt][task_num] = param_task;
               task_num++;
               if (task_num >= chunk_size) {
@@ -770,7 +772,15 @@ void ChainsToRegions::compute(int wid) {
 
                 nextTask_time = 0;
                 nextTask_num = 0;
-
+                task_num = 0;
+                {
+                  boost::lock_guard<boost::mutex> guard(driver_mutex);
+                  pend_flag[stage_cnt] = true;
+                  pend_depth = pend_depth +1;
+                }
+                driver_cond.notify_one();
+                stage_cnt = (stage_cnt +1) %stage_num;
+                /*
                 extendOnFPGAPackInput(
                     &agent,
                     stage_cnt,
@@ -789,6 +799,7 @@ void ChainsToRegions::compute(int wid) {
                       chunk_size,
                       aux->opt);
                 }
+                */
 
                 VLOG(3) << "Process SWRead::Pending takes " << pending_time/1e3 << " us";
                 VLOG(3) << "Process SWRead::Finish takes " << finish_time/1e3 << " us";
@@ -831,18 +842,17 @@ void ChainsToRegions::compute(int wid) {
               }
               else {
                 // No more new tasks, must do extend before proceeding
-                if (agent.pending(stage_cnt)) {
-                  extendOnFPGAProcessOutput(
-                      &agent,
-                      stage_cnt,
-                      task_batch[stage_cnt],
-                      chunk_size,
-                      aux->opt);
+                if(pend_flag[stage_cnt]){
+                  
+                  while (pend_flag[stage_cnt] == true){
+                     lock.lock();
+                     driver_cond.wait(lock);
+                     lock.unlock();
+                  }
                 }
                 else {
                   extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
-                  stage_cnt = 1 - stage_cnt;
-
+                  stage_cnt = (stage_cnt + 1)%stage_num ;
                   task_num = 0;
                   iter++;
                 }
@@ -902,6 +912,38 @@ void ChainsToRegions::compute(int wid) {
       delete [] task_batch[i];
     }
   }
+  /*
+  else if(0){
+    VLOG(1) << "Worker " << wid << " is working on FPGA";
+    int pack_stage_cnt = 0;
+    int old_stage_cnt = 0;
+    int pingpong_flag = 0;
+    const int stage_num = 5;
+    while(true){
+      if(pend_flag[pack_stage_cnt]==true) {
+        extendOnFPGAPackInput(
+           agent,
+           pingpong_flag,
+           task_batch[pack_stage_cnt],
+           2000,
+           aux->opt);
+        pingpong_flag = 1 - pingpong_flag;
+        if (agent->pending(pingpong_flag)){
+              extendOnFPGAProcessOutput(
+                      agent,
+                      pingpong_flag,
+                      task_batch[old_stage_cnt],
+                      2000,
+                      aux->opt);
+              pend_flag[old_stage_cnt] =false;
+        }
+        old_stage_cnt = pack_stage_cnt;  
+        pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
+      }
+    }
+
+
+  }*/
   else {
     VLOG(1) << "Worker " << wid << " is working on CPU";
 
