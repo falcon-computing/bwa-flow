@@ -38,7 +38,6 @@ boost::mutex mpi_mutex;
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
-
 int mpi_rank;
 int mpi_nprocs;
 ktp_aux_t* aux;
@@ -321,6 +320,10 @@ int main(int argc, char *argv[]) {
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
     kclose(ko_read1);
+#ifdef USE_HTSLIB
+    sam_close(aux->out);
+    bam_hdr_destroy(aux->h);
+#endif
 
     if (aux->ks2) {
       kseq_destroy(aux->ks2);

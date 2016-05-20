@@ -13,10 +13,10 @@
 #include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
+#include "bwa_wrapper.h"
 
 #ifdef SCALE_OUT
 #include "mpi.h"
-
 // Encode a scalar value to serialized data
 template <typename T>
 static inline void putT(std::stringstream &ss, T value) {
@@ -481,6 +481,21 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
 
+#ifdef USE_HTSLIB
+  for (int i =0; i< batch_num/2; i++) {
+    seqs[i<<1].bams = bams_init();
+    seqs[1+(i<<1)].bams = bams_init();
+    mem_sam_pe(
+        aux->opt,
+        aux->idx->bns,
+        aux->idx->pac,
+        pes,
+        (start_idx>>1)+i,
+        &seqs[i<<1],
+        &alnreg[i<<1],
+        aux->h);
+     }
+#else
   for (int i = 0; i < batch_num/2; i++) {
     mem_sam_pe(
         aux->opt,
@@ -491,6 +506,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
         &seqs[i<<1],
         &alnreg[i<<1]);
   }
+#endif
   freeAligns(alnreg, batch_num);
 
   // Free fields in seq except sam
@@ -1032,6 +1048,21 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
+#ifdef USE_HTSLIB
+  for (int i =0; i< batch_num/2; i++) {
+    seqs[i<<1].bams = bams_init();
+    seqs[1+(i<<1)].bams = bams_init();
+    mem_sam_pe(
+        aux->opt,
+        aux->idx->bns,
+        aux->idx->pac,
+        pes,
+        (start_idx>>1)+i,
+        &seqs[i<<1],
+        &alnreg[i<<1],
+        aux->h);
+     }
+#else
   for (int i = 0; i < batch_num/2; i++) {
     mem_sam_pe(
         aux->opt,
@@ -1042,6 +1073,8 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
         &seqs[i<<1],
         &alnreg[i<<1]);
   }
+#endif
+
   freeAligns(alnreg, batch_num);
 
   // Free fields in seq except sam
@@ -1122,10 +1155,23 @@ void SamsPrint::compute() {
         int      batch_num = record.batch_num;
         bseq1_t* seqs      = record.seqs;
 
-        for (int i = 0; i < batch_num; ++i) {
-          if (seqs[i].sam) fputs(seqs[i].sam, fout);
-          free(seqs[i].sam);
-        }
+#ifdef USE_HTSLIB    
+      for (int i = 0; i < batch_num; ++i){
+        if (seqs[i].bams) {   
+          int j;    
+          for (j = 0; j < seqs[i].bams->l; j++) {   
+            sam_write1(aux->out, aux->h, seqs[i].bams->bams[j]);    
+          }   
+        }   
+        bams_destroy(seqs[i].bams); seqs[i].bams = NULL;    
+      }
+#else
+      for (int i = 0; i < batch_num; ++i) {
+        if (seqs[i].sam) fputs(seqs[i].sam, fout);
+        //err_fputs(seqs[i].sam, stdout);
+        free(seqs[i].sam);
+      }
+#endif
 
         // Remove the record from buffer
         record_buf.erase(n_processed);
@@ -1159,12 +1205,23 @@ void SamsPrint::compute() {
           DLOG(INFO) << "Start writing output to " << ss.str();
         }
       }
-
+#ifdef USE_HTSLIB    
+      for (int i = 0; i < batch_num; ++i){
+        if (seqs[i].bams) {   
+          int j;    
+          for (j = 0; j < seqs[i].bams->l; j++) {   
+            sam_write1(aux->out, aux->h, seqs[i].bams->bams[j]);    
+          }   
+        }   
+        bams_destroy(seqs[i].bams); seqs[i].bams = NULL;    
+      }
+#else
       for (int i = 0; i < batch_num; ++i) {
         if (seqs[i].sam) fputs(seqs[i].sam, fout);
         //err_fputs(seqs[i].sam, stdout);
         free(seqs[i].sam);
       }
+#endif
       free(seqs);
 
       VLOG(1) << "Written batch " << input.start_idx << " to file in "

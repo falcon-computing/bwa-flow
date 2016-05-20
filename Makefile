@@ -44,6 +44,11 @@ INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 endif
 
+ifneq ($(HTSLIB_PATH),)
+INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
+LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
+endif
+
 PROG	 := ./bin/bwa
 
 all:	$(PROG)
