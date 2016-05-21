@@ -24,7 +24,6 @@
 #define PACKAGE_VERSION "0.7.13-r1126-wrappered"
 #endif
 
-#define USE_HTSLIB
 #ifdef USE_HTSLIB
 #include <htslib/sam.h>
 #endif

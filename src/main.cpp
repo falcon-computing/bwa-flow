@@ -83,6 +83,10 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
+DEFINE_int32(output_flag, 0, 
+    "Flag to specify output format: "
+    "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
+
 int main(int argc, char *argv[]) {
 
   // Print arguments for records
@@ -144,13 +148,15 @@ int main(int argc, char *argv[]) {
     sam_dir += "/" + boost::asio::ip::host_name()+
       "-" + std::to_string((long long)getpid());
 #endif
-    // Create output folder if it does not exist
-    if (boost::filesystem::create_directories(sam_dir)) {
-      VLOG(1) << "Putting sam output to " << sam_dir;
-    }
-    else {
-      LOG(ERROR) << "Cannot create output dir: " << sam_dir;
-      return 1;
+    if (!boost::filesystem::exists(sam_dir)) {
+      // Create output folder if it does not exist
+      if (boost::filesystem::create_directories(sam_dir)) {
+        VLOG(1) << "Putting sam output to " << sam_dir;
+      }
+      else {
+        LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+        return 1;
+      }
     }
   }
   else {
@@ -184,11 +190,24 @@ int main(int argc, char *argv[]) {
     bwa_args.push_back("-R"); 
     bwa_args.push_back(FLAGS_R.c_str()); 
   }
+  if (FLAGS_output_flag < 0 || FLAGS_output_flag > 2) {
+    LOG(ERROR) << "Illegal argument of --output_flag";
+    return 1;
+  }
+  bwa_args.push_back("-o");
+  bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
 
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 
   }
+
+  kstring_t pg = {0,0,0};
+  ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
+  for (int i = 1; i < argc; i++) {
+    ksprintf(&pg, " %s", argv[i]);
+  }
+  bwa_pg = pg.s;
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
@@ -320,30 +339,19 @@ int main(int argc, char *argv[]) {
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
     kclose(ko_read1);
-#ifdef USE_HTSLIB
-    sam_close(aux->out);
-    bam_hdr_destroy(aux->h);
-#endif
 
     if (aux->ks2) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
 
-    kstring_t pg = {0,0,0};
-    ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
-    for (int i = 1; i < argc; i++) {
-      ksprintf(&pg, " %s", argv[i]);
-    }
-    bwa_pg = pg.s;
-
     LOG(INFO) << "Version: " << PACKAGE_VERSION;
     LOG(INFO) << "Command: " << ss.str();
     LOG(INFO) << "Real time: " << realtime() - t_real << " sec, "
               << "CPU time: " << cputime() << " sec";
 
-    err_fflush(stdout);
-    err_fclose(stdout);
+    //err_fflush(stdout);
+    //err_fclose(stdout);
 
     free(bwa_pg);
   }

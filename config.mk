@@ -6,7 +6,7 @@ GTEST_DIR=/curr/diwu/tools/googletest/googletest
 OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
 PROTOBUF_DIR=/curr/diwu/tools/protobuf-2.5.0/build/install
 XILINX_OPENCL_DIR=/curr/software/Xilinx/SDAccel/2015.4
-HTSLIB_PATH=/curr/mhhuang/tools/htslib-1.3.1
+HTSLIB_PATH=/curr/diwu/tools/htslib-1.3.1
 
 MAKE=make
 CC=gcc

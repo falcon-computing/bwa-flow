@@ -1,6 +1,5 @@
 #ifndef BWA_H_
 #define BWA_H_
-#define USE_HTSLIB
 #include <stdint.h>
 #include "bntseq.h"
 #include "bwt.h"

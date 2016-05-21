@@ -1,4 +1,4 @@
-include config.mk
+include ../config.mk
 
 CC=		gcc
 CFLAGS=		-g -Wall -Wno-unused-function -O2

@@ -327,35 +327,18 @@ int pre_process(int argc,
       }
     }
 #ifdef USE_HTSLIB
-  bam_hdr_t *h = NULL; // TODO
-  samFile *out = NULL;
-  char *modes[] = {"wb", "wbu", "w"};
-  switch (opt->bam_output) {
-    case 0: // BAM compressed
-    case 1: // BAM uncompressed
-    case 2: // SAM
-      out = sam_open("-", modes[opt->bam_output]); 
-      out = sam_open("-", modes[0]); 
-      break;
-    default:
-      fprintf(stderr, "Error: output format was out of range [%d]\n", opt->bam_output);
-      return 1;
-  }
-#endif
-#ifdef USE_HTSLIB
-  kstring_t str;
-  str.l = str.m = 0; str.s = 0;
-  bwa_format_sam_hdr(aux->idx->bns, hdr_line, &str);
-  h = sam_hdr_parse(str.l, str.s);
-  h->l_text = str.l; h->text = str.s;
-  sam_hdr_write(out, h);
-#else
-	bwa_print_sam_hdr(aux->idx->bns, hdr_line);
-#endif
-
-    aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+    bam_hdr_t *h = NULL; // TODO
+    kstring_t str;
+    str.l = str.m = 0; str.s = 0;
+    bwa_format_sam_hdr(aux->idx->bns, hdr_line, &str);
+    h = sam_hdr_parse(str.l, str.s);
+    h->l_text = str.l; h->text = str.s;
+    //sam_hdr_write(out, h);
     aux->h = h;
-    aux->out = out;
+#else
+    bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+#endif
+    aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
   }
 	return 0;
 }

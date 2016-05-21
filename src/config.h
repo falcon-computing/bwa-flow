@@ -13,6 +13,7 @@ DECLARE_bool(M);
 DECLARE_bool(use_fpga);
 DECLARE_int32(chunk_size);
 DECLARE_int32(max_fpga_thread);
+DECLARE_int32(output_flag);
 DECLARE_int32(stage_1_nt);
 DECLARE_int32(stage_2_nt);
 DECLARE_int32(stage_3_nt);
