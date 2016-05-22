@@ -59,6 +59,9 @@ DEFINE_bool(offload, true,
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
 
+DEFINE_bool(sort, false,
+    "Enable in-memory sorting of output bam file");
+
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
 
@@ -67,6 +70,9 @@ DEFINE_int32(chunk_size, 2000,
 
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
+
+DEFINE_int32(max_num_records, 100000,
+    "Max number of records per bam file");
 
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");

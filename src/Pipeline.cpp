@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/function_types/result_type.hpp>
 #include <boost/make_shared.hpp>
@@ -9,11 +10,19 @@
 #include <queue>
 
 #include "bwa/utils.h"
+#include "htslib/ksort.h"
+
 #include "config.h"
 #include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
 #include "bwa_wrapper.h"
+
+// Comparator function for bam1_t records
+bool bam1_lt(const bam1_t* a, const bam1_t* b) {
+  return ((uint64_t)a->core.tid<<32|(a->core.pos+1)<<1|bam_is_rev(a)) 
+       < ((uint64_t)b->core.tid<<32|(b->core.pos+1)<<1|bam_is_rev(b));
+}
 
 #ifdef SCALE_OUT
 #include "mpi.h"
@@ -1096,8 +1105,54 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+void SamsPrint::sortAndWriteBamBatch(
+    bam1_t** buf,
+    int n_elements,
+    std::string out_dir) 
+{
+  uint64_t start_ts = getUs();
+
+  // sort the buffer first
+  std::sort(buf, buf+n_elements, bam1_lt);
+
+  VLOG(1) << "Sort " << n_elements 
+          << " records in "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+
+  bool use_file = !out_dir.empty();
+  // open file if necessary
+  if (use_file) {
+    const char *modes[] = {"wb", "wbu", "w"};
+
+    std::stringstream ss;
+    ss << out_dir << "/part-"
+       << std::setw(6) << std::setfill('0') << file_id_;
+
+    fout_ = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+    if (!fout_) {
+      throw std::runtime_error("Cannot open sam output file");
+    }
+    sam_hdr_write(fout_, aux->h);
+  }
+  // start writing to file
+  for (int i = 0; i < n_elements; ++i){
+    sam_write1(fout_, aux->h, buf[i]); 
+    bam_destroy1(buf[i]);
+  }
+  if (use_file) {
+    sam_close(fout_);
+    file_id_++;
+  }
+
+  VLOG(1) << "Written " << n_elements 
+          << " records in "
+          << getUs() - start_ts << " us";
+}
+
 void SamsPrint::compute() {
-  
+
   boost::any var = this->getConst("sam_dir");
   std::string out_dir = boost::any_cast<std::string>(var);
 
@@ -1137,7 +1192,9 @@ void SamsPrint::compute() {
   }
   else {
 #ifdef USE_HTSLIB
-    fout = sam_open("-", modes[FLAGS_output_flag]); 
+    fout  = sam_open("-", modes[FLAGS_output_flag]); 
+    // TODO: temporary
+    fout_ = sam_open("-", modes[FLAGS_output_flag]); 
     int status = sam_hdr_write(fout, aux->h);
     if (status) {
       LOG(ERROR) << "sam_hdr_write error: " << status;
@@ -1145,6 +1202,14 @@ void SamsPrint::compute() {
 #else
     fout = stdout;
 #endif
+  }
+
+  // Buffer to sort output bam
+  int      max_bam_records = FLAGS_max_num_records;
+  bam1_t** bam_buffer;
+  int      bam_buffer_idx = 0;
+  if (FLAGS_sort) {
+    bam_buffer = (bam1_t**)malloc(FLAGS_max_num_records*sizeof(bam1_t*));
   }
 
   // NOTE: input may be out-of-order, use a reorder buffer if
@@ -1192,7 +1257,6 @@ void SamsPrint::compute() {
           free(seqs[i].sam);
         }
 #endif
-
         // Remove the record from buffer
         record_buf.erase(n_processed);
 
@@ -1201,6 +1265,24 @@ void SamsPrint::compute() {
         VLOG(1) << "Written batch " << record.start_idx << " to file in "
           << getUs() - start_ts << " us";
       }
+    }
+    else if (FLAGS_sort) {
+      uint64_t start_ts = getUs();
+      int batch_num = input.batch_num;
+      bseq1_t* seqs = input.seqs;
+
+      for (int i = 0; i < batch_num; i++) {
+        if (seqs[i].bams) {   
+          for (int j = 0; j < seqs[i].bams->l; j++) {
+            bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+            if (bam_buffer_idx >= max_bam_records) {
+              sortAndWriteBamBatch(bam_buffer, max_bam_records, out_dir);
+              bam_buffer_idx = 0;
+            }
+          }  
+        }
+      }
+      free(seqs);
     }
     else {
       uint64_t start_ts = getUs();
@@ -1254,8 +1336,13 @@ void SamsPrint::compute() {
         << getUs() - start_ts << " us";
     }
   }
+  if (bam_buffer_idx > 0) {
+    sortAndWriteBamBatch(bam_buffer, bam_buffer_idx, out_dir);
+  }
 #ifdef USE_HTSLIB    
-  sam_close(fout);
+  if (!FLAGS_sort) {
+    sam_close(fout);
+  }
   bam_hdr_destroy(aux->h);
 #else
   if (use_file) {

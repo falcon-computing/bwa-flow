@@ -159,8 +159,20 @@ class RegionsToSam
 class SamsPrint
 : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsPrint(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
+  SamsPrint():
+    kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>(),
+    file_id_(0), fout_(NULL)
+  {;}
   void compute();
+ private:
+  void sortAndWriteBamBatch(bam1_t** buf, int n_elements, std::string out_dir);
+
+  int file_id_;
+#ifdef USE_HTSLIB
+  samFile* fout_;
+#else
+  FILE* fout_
+#endif
 };
 
 #endif
