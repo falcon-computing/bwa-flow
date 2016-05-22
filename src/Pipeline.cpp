@@ -1169,6 +1169,7 @@ void SamsPrint::compute() {
   // Open first file if output is file
 #ifdef USE_HTSLIB
   samFile *fout = NULL;
+  // TODO(mhhuang): To be fixed. "wbu" results in bam file header read error.
   const char *modes[] = {"wb", "wbu", "w"};
 #else
   FILE* fout;
