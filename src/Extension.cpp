@@ -222,14 +222,23 @@ void fpga_driver(FPGAAgent* agent)
     int chunk_size =FLAGS_chunk_size; 
     boost::unique_lock<boost::mutex> lock(driver_mutex);
     lock.unlock();
+    bool process_flag[5];
+    for (int i =0; i<5; i++){
+        process_flag[i]=false;
+    }
   try{
     while(true){
-      while (pend_depth ==0){
+    /*  while (pend_depth ==0){
             lock.lock();
             driver_cond.wait(lock);
             lock.unlock();
+      }*/
+      while (pend_flag[pack_stage_cnt]==false && end_flag==false){
+         lock.lock();
+         driver_cond.wait(lock);
+         lock.unlock();
       }
-      if(pend_flag[pack_stage_cnt]==true) {
+      if(pend_flag[pack_stage_cnt]==true ) {
         VLOG(3) << "Pack input on stage " << pack_stage_cnt <<" ";
         extendOnFPGAPackInput(
            agent,
@@ -238,9 +247,10 @@ void fpga_driver(FPGAAgent* agent)
            chunk_size,
            aux->opt);
         stage_cnt_save = pack_stage_cnt;
+        pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
       }
       pingpong_flag = 1 - pingpong_flag;
-      if (agent->pending(pingpong_flag)){
+      if (agent->pending(pingpong_flag) ){
             extendOnFPGAProcessOutput(
                     agent,
                     pingpong_flag,
@@ -255,7 +265,7 @@ void fpga_driver(FPGAAgent* agent)
             driver_cond.notify_one();
             old_stage_cnt = stage_cnt_save;
       }
-      pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
+    
     }
   }
   catch (boost::thread_interrupted &e) {

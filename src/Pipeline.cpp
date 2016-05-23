@@ -776,30 +776,11 @@ void ChainsToRegions::compute(int wid) {
                 {
                   boost::lock_guard<boost::mutex> guard(driver_mutex);
                   pend_flag[stage_cnt] = true;
+                  end_flag=false;
                   pend_depth = pend_depth +1;
                 }
                 driver_cond.notify_one();
                 stage_cnt = (stage_cnt +1) %stage_num;
-                /*
-                extendOnFPGAPackInput(
-                    &agent,
-                    stage_cnt,
-                    task_batch[stage_cnt],
-                    chunk_size,
-                    aux->opt);
-
-                stage_cnt = 1 - stage_cnt;
-
-                // Wait for last batch to finish if valid
-                if (agent.pending(stage_cnt)) {
-                  extendOnFPGAProcessOutput(
-                      &agent,
-                      stage_cnt,
-                      task_batch[stage_cnt],
-                      chunk_size,
-                      aux->opt);
-                }
-                */
 
                 VLOG(3) << "Process SWRead::Pending takes " << pending_time/1e3 << " us";
                 VLOG(3) << "Process SWRead::Finish takes " << finish_time/1e3 << " us";
@@ -842,17 +823,26 @@ void ChainsToRegions::compute(int wid) {
               }
               else {
                 // No more new tasks, must do extend before proceeding
-                if(pend_flag[stage_cnt]){
-                  
+              /*  if(pend_flag[stage_cnt]){
                   while (pend_flag[stage_cnt] == true){
                      lock.lock();
+                     end_flag=true;
                      driver_cond.wait(lock);
                      lock.unlock();
                   }
-                }
+                }*/
+                if(pend_depth >0){
+                   while (pend_depth >0){
+                      lock.lock();
+                      end_flag=true;
+                      driver_cond.notify_one();
+                      driver_cond.wait(lock);
+                      lock.unlock();
+                   }
+                }    
                 else {
                   extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
-                  stage_cnt = (stage_cnt + 1)%stage_num ;
+                  //stage_cnt = (stage_cnt + 1)%stage_num ;
                   task_num = 0;
                   iter++;
                 }

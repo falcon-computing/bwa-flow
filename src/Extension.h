@@ -11,6 +11,7 @@ extern OpenCLEnv* opencl_env;
 
 extern  ExtParam** task_batch[5];
 extern  bool pend_flag[5];
+extern  bool end_flag;
 extern  int pend_depth; 
 extern  boost::mutex driver_mutex;
 extern  boost::condition_variable driver_cond;

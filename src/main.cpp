@@ -36,6 +36,7 @@ OpenCLEnv* opencl_env;
 
 ExtParam** task_batch[5];
 bool pend_flag[5];
+bool end_flag;
 int pend_depth;
 boost::mutex mpi_mutex;
 
@@ -311,6 +312,7 @@ int main(int argc, char *argv[]) {
       pend_flag[i] = false;
     }
     pend_depth = 0;
+    end_flag =false;
     // Create FPGAAgent 
     agent = new FPGAAgent(opencl_env, chunk_size);
     pack_threads.create_thread(boost::bind(&fpga_driver,agent)) ;
