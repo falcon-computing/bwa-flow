@@ -228,11 +228,6 @@ void fpga_driver(FPGAAgent* agent)
     }
   try{
     while(true){
-    /*  while (pend_depth ==0){
-            lock.lock();
-            driver_cond.wait(lock);
-            lock.unlock();
-      }*/
       while (pend_flag[pack_stage_cnt]==false && end_flag==false){
          lock.lock();
          driver_cond.wait(lock);
@@ -246,11 +241,9 @@ void fpga_driver(FPGAAgent* agent)
            task_batch[pack_stage_cnt],
            chunk_size,
            aux->opt);
-        stage_cnt_save = pack_stage_cnt;
-        pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
-      }
-      pingpong_flag = 1 - pingpong_flag;
-      if (agent->pending(pingpong_flag) ){
+      
+        pingpong_flag = 1 - pingpong_flag;
+        if (agent->pending(pingpong_flag) ){
             extendOnFPGAProcessOutput(
                     agent,
                     pingpong_flag,
@@ -263,9 +256,29 @@ void fpga_driver(FPGAAgent* agent)
               pend_depth --;
             }
             driver_cond.notify_one();
-            old_stage_cnt = stage_cnt_save;
+            old_stage_cnt = pack_stage_cnt;
+        }
+        pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
       }
-    
+      else if(end_flag) {
+        pingpong_flag = 1 - pingpong_flag;
+        if (agent->pending(pingpong_flag) ){
+            extendOnFPGAProcessOutput(
+                    agent,
+                    pingpong_flag,
+                    task_batch[old_stage_cnt],
+                    chunk_size,
+                    aux->opt);
+            {
+              boost::lock_guard<boost::mutex> guard(driver_mutex);
+              pend_flag[old_stage_cnt] =false;
+              pend_depth --;
+            }
+            driver_cond.notify_one();
+            old_stage_cnt = pack_stage_cnt;
+        }
+      boost::this_thread::interruption_point(); 
+      }
     }
   }
   catch (boost::thread_interrupted &e) {

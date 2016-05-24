@@ -294,7 +294,7 @@ int main(int argc, char *argv[]) {
   
   // Start FPGA context
   
-  boost::thread_group pack_threads; 
+  boost::thread_group driver_threads; 
   FPGAAgent* agent;
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
@@ -315,7 +315,7 @@ int main(int argc, char *argv[]) {
     end_flag =false;
     // Create FPGAAgent 
     agent = new FPGAAgent(opencl_env, chunk_size);
-    pack_threads.create_thread(boost::bind(&fpga_driver,agent)) ;
+    driver_threads.create_thread(boost::bind(&fpga_driver,agent)) ;
   }
 
   
@@ -323,8 +323,8 @@ int main(int argc, char *argv[]) {
   compute_flow.wait();
 
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    pack_threads.interrupt_all();
-    pack_threads.join_all();
+    driver_threads.interrupt_all();
+    driver_threads.join_all();
     delete opencl_env;
     delete agent;
   }
