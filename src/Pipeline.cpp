@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/function_types/result_type.hpp>
 #include <boost/make_shared.hpp>
@@ -9,14 +10,22 @@
 #include <queue>
 
 #include "bwa/utils.h"
+#include "htslib/ksort.h"
+
 #include "config.h"
 #include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
+#include "bwa_wrapper.h"
+
+// Comparator function for bam1_t records
+bool bam1_lt(const bam1_t* a, const bam1_t* b) {
+  return ((uint64_t)a->core.tid<<32|(a->core.pos+1)<<1|bam_is_rev(a)) 
+       < ((uint64_t)b->core.tid<<32|(b->core.pos+1)<<1|bam_is_rev(b));
+}
 
 #ifdef SCALE_OUT
 #include "mpi.h"
-
 // Encode a scalar value to serialized data
 template <typename T>
 static inline void putT(std::stringstream &ss, T value) {
@@ -489,6 +498,21 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
 
+#ifdef USE_HTSLIB
+  for (int i =0; i< batch_num/2; i++) {
+    seqs[i<<1].bams = bams_init();
+    seqs[1+(i<<1)].bams = bams_init();
+    mem_sam_pe(
+        aux->opt,
+        aux->idx->bns,
+        aux->idx->pac,
+        pes,
+        (start_idx>>1)+i,
+        &seqs[i<<1],
+        &alnreg[i<<1],
+        aux->h);
+     }
+#else
   for (int i = 0; i < batch_num/2; i++) {
     mem_sam_pe(
         aux->opt,
@@ -499,6 +523,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
         &seqs[i<<1],
         &alnreg[i<<1]);
   }
+#endif
   freeAligns(alnreg, batch_num);
 
   // Free fields in seq except sam
@@ -1040,6 +1065,21 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
+#ifdef USE_HTSLIB
+  for (int i =0; i< batch_num/2; i++) {
+    seqs[i<<1].bams = bams_init();
+    seqs[1+(i<<1)].bams = bams_init();
+    mem_sam_pe(
+        aux->opt,
+        aux->idx->bns,
+        aux->idx->pac,
+        pes,
+        (start_idx>>1)+i,
+        &seqs[i<<1],
+        &alnreg[i<<1],
+        aux->h);
+     }
+#else
   for (int i = 0; i < batch_num/2; i++) {
     mem_sam_pe(
         aux->opt,
@@ -1050,6 +1090,8 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
         &seqs[i<<1],
         &alnreg[i<<1]);
   }
+#endif
+
   freeAligns(alnreg, batch_num);
 
   // Free fields in seq except sam
@@ -1071,8 +1113,54 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+void SamsPrint::sortAndWriteBamBatch(
+    bam1_t** buf,
+    int n_elements,
+    std::string out_dir) 
+{
+  uint64_t start_ts = getUs();
+
+  // sort the buffer first
+  std::sort(buf, buf+n_elements, bam1_lt);
+
+  VLOG(1) << "Sort " << n_elements 
+          << " records in "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+
+  bool use_file = !out_dir.empty();
+  // open file if necessary
+  if (use_file) {
+    const char *modes[] = {"wb", "wbu", "w"};
+
+    std::stringstream ss;
+    ss << out_dir << "/part-"
+       << std::setw(6) << std::setfill('0') << file_id_;
+
+    fout_ = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+    if (!fout_) {
+      throw std::runtime_error("Cannot open sam output file");
+    }
+    sam_hdr_write(fout_, aux->h);
+  }
+  // start writing to file
+  for (int i = 0; i < n_elements; ++i){
+    sam_write1(fout_, aux->h, buf[i]); 
+    bam_destroy1(buf[i]);
+  }
+  if (use_file) {
+    sam_close(fout_);
+    file_id_++;
+  }
+
+  VLOG(1) << "Written " << n_elements 
+          << " records in "
+          << getUs() - start_ts << " us";
+}
+
 void SamsPrint::compute() {
-  
+
   boost::any var = this->getConst("sam_dir");
   std::string out_dir = boost::any_cast<std::string>(var);
 
@@ -1087,19 +1175,50 @@ void SamsPrint::compute() {
   std::unordered_map<uint64_t, SeqsRecord> record_buf;
 
   // Open first file if output is file
+#ifdef USE_HTSLIB
+  samFile *fout = NULL;
+  // TODO(mhhuang): To be fixed. "wbu" results in bam file header read error.
+  const char *modes[] = {"wb", "wbu", "w"};
+#else
   FILE* fout;
+#endif
+
   if (use_file) {
     std::stringstream ss;
     ss << out_dir << "/part-"
        << std::setw(6) << std::setfill('0') << file_id;
+#ifdef USE_HTSLIB
+    fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+    sam_hdr_write(fout, aux->h);
+#else
     fout = fopen(ss.str().c_str(), "w+");
+#endif
     if (!fout) {
       throw std::runtime_error("Cannot open sam output file");
     }
+
     DLOG(INFO) << "Start writing output to " << ss.str();
   }
   else {
+#ifdef USE_HTSLIB
+    fout  = sam_open("-", modes[FLAGS_output_flag]); 
+    // TODO: temporary
+    fout_ = sam_open("-", modes[FLAGS_output_flag]); 
+    int status = sam_hdr_write(fout, aux->h);
+    if (status) {
+      LOG(ERROR) << "sam_hdr_write error: " << status;
+    }
+#else
     fout = stdout;
+#endif
+  }
+
+  // Buffer to sort output bam
+  int      max_bam_records = FLAGS_max_num_records;
+  bam1_t** bam_buffer;
+  int      bam_buffer_idx = 0;
+  if (FLAGS_sort) {
+    bam_buffer = (bam1_t**)malloc(FLAGS_max_num_records*sizeof(bam1_t*));
   }
 
   // NOTE: input may be out-of-order, use a reorder buffer if
@@ -1130,11 +1249,23 @@ void SamsPrint::compute() {
         int      batch_num = record.batch_num;
         bseq1_t* seqs      = record.seqs;
 
+#ifdef USE_HTSLIB    
+        for (int i = 0; i < batch_num; ++i){
+          if (seqs[i].bams) {   
+            for (int j = 0; j < seqs[i].bams->l; j++) {   
+              int status = sam_write1(fout, aux->h, seqs[i].bams->bams[j]);    
+              LOG_IF(ERROR, status<0) << "sam_write1 error: " << status;
+            }   
+          }   
+          bams_destroy(seqs[i].bams); seqs[i].bams = NULL;    
+        }
+#else
         for (int i = 0; i < batch_num; ++i) {
           if (seqs[i].sam) fputs(seqs[i].sam, fout);
+          //err_fputs(seqs[i].sam, stdout);
           free(seqs[i].sam);
         }
-
+#endif
         // Remove the record from buffer
         record_buf.erase(n_processed);
 
@@ -1143,6 +1274,24 @@ void SamsPrint::compute() {
         VLOG(1) << "Written batch " << record.start_idx << " to file in "
           << getUs() - start_ts << " us";
       }
+    }
+    else if (FLAGS_sort) {
+      uint64_t start_ts = getUs();
+      int batch_num = input.batch_num;
+      bseq1_t* seqs = input.seqs;
+
+      for (int i = 0; i < batch_num; i++) {
+        if (seqs[i].bams) {   
+          for (int j = 0; j < seqs[i].bams->l; j++) {
+            bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+            if (bam_buffer_idx >= max_bam_records) {
+              sortAndWriteBamBatch(bam_buffer, max_bam_records, out_dir);
+              bam_buffer_idx = 0;
+            }
+          }  
+        }
+      }
+      free(seqs);
     }
     else {
       uint64_t start_ts = getUs();
@@ -1162,24 +1311,51 @@ void SamsPrint::compute() {
           ss << out_dir << "/part-"
             << std::setw(6) << std::setfill('0') << file_id;
 
+#ifdef USE_HTSLIB
+          sam_close(fout);
+          fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+          sam_hdr_write(fout, aux->h);
+#else
           fclose(fout);
           fout = fopen(ss.str().c_str(), "w+");
+#endif
           DLOG(INFO) << "Start writing output to " << ss.str();
         }
       }
-
+#ifdef USE_HTSLIB    
+      for (int i = 0; i < batch_num; ++i){
+        if (seqs[i].bams) {   
+          for (int j = 0; j < seqs[i].bams->l; j++) {   
+            int status = sam_write1(fout, aux->h, seqs[i].bams->bams[j]);    
+            LOG_IF(ERROR, status<0) << "sam_write1 error: " << status;
+          }   
+        }   
+        bams_destroy(seqs[i].bams); seqs[i].bams = NULL;    
+      }
+#else
       for (int i = 0; i < batch_num; ++i) {
         if (seqs[i].sam) fputs(seqs[i].sam, fout);
         //err_fputs(seqs[i].sam, stdout);
         free(seqs[i].sam);
       }
+#endif
       free(seqs);
 
       VLOG(1) << "Written batch " << input.start_idx << " to file in "
         << getUs() - start_ts << " us";
     }
   }
+  if (bam_buffer_idx > 0) {
+    sortAndWriteBamBatch(bam_buffer, bam_buffer_idx, out_dir);
+  }
+#ifdef USE_HTSLIB    
+  if (!FLAGS_sort) {
+    sam_close(fout);
+  }
+  bam_hdr_destroy(aux->h);
+#else
   if (use_file) {
     fclose(fout);
   }
+#endif
 }

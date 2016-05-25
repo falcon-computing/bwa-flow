@@ -7,7 +7,6 @@
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
 #endif
-
 //#include "kstring.h"
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
@@ -36,7 +35,7 @@ mem_chain_v seq2chain(
 
   return chn;
 }
-
+/*
 void reg2sam(
     ktp_aux_t* aux,
     bseq1_t* seqs,
@@ -62,7 +61,7 @@ void reg2sam(
     if (seqs[i].sam) err_fputs(seqs[i].sam, stdout);
   }
 }
-
+*/
 void freeChains(mem_chain_v* chains, int batch_num) {
   // Free the chains
   for (int i = 0; i < batch_num; i++) {
@@ -81,6 +80,7 @@ void freeAligns(mem_alnreg_v* alnreg, int batch_num) {
   free(alnreg);
 }
 
+/*
 void freeSeqs(bseq1_t* seqs, int batch_num) {
   for (int i = 0; i < batch_num; i++) {
     free(seqs[i].name); 
@@ -91,3 +91,4 @@ void freeSeqs(bseq1_t* seqs, int batch_num) {
   }
   free(seqs);
 }
+*/

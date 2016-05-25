@@ -82,7 +82,11 @@ int pre_process(int argc,
 
 	aux->opt = opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
+#ifdef USE_HTSLIB
+	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:o:")) >= 0) {
+#else
 	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
+#endif
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
 		else if (c == '1') no_mt_io = 1;
 		else if (c == 'x') mode = optarg;
@@ -114,6 +118,9 @@ int pre_process(int argc,
 		else if (c == 'C') aux->copy_comment = 1;
 		else if (c == 'K') fixed_chunk_size = atoi(optarg);
 		else if (c == 'X') opt->mask_level = atof(optarg);
+#ifdef USE_HTSLIB
+		else if (c == 'o') opt->bam_output = atoi(optarg), opt0.bam_output = 1;
+#endif
 		else if (c == 'h') {
 			opt0.max_XA_hits = opt0.max_XA_hits_alt = 1;
 			opt->max_XA_hits = opt->max_XA_hits_alt = strtol(optarg, &p, 10);
@@ -230,6 +237,9 @@ int pre_process(int argc,
 		fprintf(stderr, "                     specify the mean, standard deviation (10%% of the mean if absent), max\n");
 		fprintf(stderr, "                     (4 sigma from the mean if absent) and min of the insert size distribution.\n");
 		fprintf(stderr, "                     FR orientation only. [inferred]\n");
+#ifdef USE_HTSLIB
+		fprintf(stderr, "       -o INT        0 - BAM (compressed), 1 - BAM (uncompressed), 2 - SAM [%d]\n)\n", opt->bam_output);
+#endif
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Note: Please read the man page for detailed description of the command line and options.\n");
 		fprintf(stderr, "\n");
@@ -316,7 +326,18 @@ int pre_process(int argc,
         opt->flag |= MEM_F_PE;
       }
     }
+#ifdef USE_HTSLIB
+    bam_hdr_t *h = NULL; // TODO
+    kstring_t str;
+    str.l = str.m = 0; str.s = 0;
+    bwa_format_sam_hdr(aux->idx->bns, hdr_line, &str);
+    h = sam_hdr_parse(str.l, str.s);
+    h->l_text = str.l; h->text = str.s;
+    //sam_hdr_write(out, h);
+    aux->h = h;
+#else
     bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+#endif
     aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
   }
 	return 0;
