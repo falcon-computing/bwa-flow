@@ -131,6 +131,13 @@ int main(int argc, char *argv[]) {
   aux = new ktp_aux_t;
   memset(aux, 0, sizeof(ktp_aux_t));
 
+  kstring_t pg = {0,0,0};
+  ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
+  for (int i = 1; i < argc; i++) {
+    ksprintf(&pg, " %s", argv[i]);
+  }
+  bwa_pg = pg.s;
+
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
 
