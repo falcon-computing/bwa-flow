@@ -9,6 +9,13 @@
 
 extern OpenCLEnv* opencl_env;
 
+extern  ExtParam** task_batch[5];
+extern  bool pend_flag[5];
+extern  bool end_flag;
+extern  int pend_depth; 
+extern  boost::mutex driver_mutex;
+extern  boost::condition_variable driver_cond;
+
 void extendOnFPGAPackInput(
     FPGAAgent* agent,
     int stage_cnt,
@@ -22,6 +29,9 @@ void extendOnFPGAProcessOutput(
     ExtParam** &tasks,
     int batch_num,
     mem_opt_t *opt);
+
+void fpga_driver(
+    FPGAAgent* agent);
 
 void extendOnCPU(
     ExtParam** tasks,

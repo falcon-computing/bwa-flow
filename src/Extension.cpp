@@ -208,6 +208,84 @@ void extendOnFPGAProcessOutput(
     << getUs() - start_ts << " us";
 }
 
+boost::mutex driver_mutex;
+boost::condition_variable driver_cond;
+
+void fpga_driver(FPGAAgent* agent)
+{
+   VLOG(1) << "Starting a thread working on fpga_driver";
+    int pack_stage_cnt = 0;
+    int stage_cnt_save = 0;
+    int old_stage_cnt = 0;
+    int pingpong_flag = 0;
+    const int stage_num = 5;
+    int chunk_size =FLAGS_chunk_size; 
+    boost::unique_lock<boost::mutex> lock(driver_mutex);
+    lock.unlock();
+    bool process_flag[5];
+    for (int i =0; i<5; i++){
+        process_flag[i]=false;
+    }
+  try{
+    while(true){
+      while (pend_flag[pack_stage_cnt]==false && end_flag==false){
+         lock.lock();
+         driver_cond.wait(lock);
+         lock.unlock();
+      }
+      if(pend_flag[pack_stage_cnt]==true ) {
+        VLOG(3) << "Pack input on stage " << pack_stage_cnt <<" ";
+        extendOnFPGAPackInput(
+           agent,
+           pingpong_flag,
+           task_batch[pack_stage_cnt],
+           chunk_size,
+           aux->opt);
+      
+        pingpong_flag = 1 - pingpong_flag;
+        if (agent->pending(pingpong_flag) ){
+            extendOnFPGAProcessOutput(
+                    agent,
+                    pingpong_flag,
+                    task_batch[old_stage_cnt],
+                    chunk_size,
+                    aux->opt);
+            {
+              boost::lock_guard<boost::mutex> guard(driver_mutex);
+              pend_flag[old_stage_cnt] =false;
+              pend_depth --;
+            }
+            driver_cond.notify_one();
+            old_stage_cnt = pack_stage_cnt;
+        }
+        pack_stage_cnt =( pack_stage_cnt +1)%stage_num ;
+      }
+      else if(end_flag) {
+        pingpong_flag = 1 - pingpong_flag;
+        if (agent->pending(pingpong_flag) ){
+            extendOnFPGAProcessOutput(
+                    agent,
+                    pingpong_flag,
+                    task_batch[old_stage_cnt],
+                    chunk_size,
+                    aux->opt);
+            {
+              boost::lock_guard<boost::mutex> guard(driver_mutex);
+              pend_flag[old_stage_cnt] =false;
+              pend_depth --;
+            }
+            driver_cond.notify_one();
+            old_stage_cnt = pack_stage_cnt;
+        }
+      boost::this_thread::interruption_point(); 
+      }
+    }
+  }
+  catch (boost::thread_interrupted &e) {
+     VLOG(3) << "fpga driver stopped";
+  }
+}
+
 void extendOnCPU(
     ExtParam** tasks,
     int numoftask,

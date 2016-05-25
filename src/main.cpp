@@ -30,9 +30,14 @@
 #include "FPGAAgent.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "Extension.h"
 
 OpenCLEnv* opencl_env;
 
+ExtParam** task_batch[5];
+bool pend_flag[5];
+bool end_flag;
+int pend_depth;
 boost::mutex mpi_mutex;
 
 // global parameters
@@ -295,6 +300,9 @@ int main(int argc, char *argv[]) {
   }
   
   // Start FPGA context
+  
+  boost::thread_group driver_threads; 
+  FPGAAgent* agent;
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
       opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
@@ -306,12 +314,26 @@ int main(int argc, char *argv[]) {
         << " because: " << e.what();
       return 1;
     }
+    for (int i = 0; i < 5; i++) {
+      task_batch[i] = new ExtParam*[chunk_size];
+      pend_flag[i] = false;
+    }
+    pend_depth = 0;
+    end_flag =false;
+    // Create FPGAAgent 
+    agent = new FPGAAgent(opencl_env, chunk_size);
+    driver_threads.create_thread(boost::bind(&fpga_driver,agent)) ;
   }
+
+  
   compute_flow.start();
   compute_flow.wait();
 
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+    driver_threads.interrupt_all();
+    driver_threads.join_all();
     delete opencl_env;
+    delete agent;
   }
 
 #ifdef SCALE_OUT
