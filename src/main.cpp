@@ -215,12 +215,6 @@ int main(int argc, char *argv[]) {
     bwa_args.push_back(argv[i]); 
   }
 
-  kstring_t pg = {0,0,0};
-  ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ksprintf(&pg, " %s", argv[i]);
-  }
-  bwa_pg = pg.s;
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
