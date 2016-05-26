@@ -28,7 +28,9 @@ typedef struct {
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
   bam_hdr_t *h;
+#ifdef USE_HTSLIB
   samFile * out;
+#endif
 } ktp_aux_t;
 
 typedef struct {
@@ -404,7 +406,9 @@ int main_mem(int argc, char *argv[])
 
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
   aux.h = h;
+#ifdef USE_HTSLIB
   aux.out = out;
+#endif
 	kt_pipeline(no_mt_io? 1 : 2, process, &aux, 3);
 	free(hdr_line);
 	free(opt);
