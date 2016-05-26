@@ -10,9 +10,12 @@
 
 #include "bwa/utils.h"
 #include "config.h"
-#include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
+
+#ifdef BUILD_FPGA
+#include "Extension.h"
+#endif
 
 #ifdef SCALE_OUT
 #include "mpi.h"
@@ -590,6 +593,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   std::list<SWRead*>* read_batch;
   std::vector<int>* chains_idxes;
 
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     // Freed one by one in chain2reg stage
     read_batch = new std::list<SWRead*>;
@@ -598,11 +602,13 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
     // Freed in reg2sam stage
     chains_idxes = new std::vector<int>[batch_num];
   }
+#endif
 
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(aux, &seqs[i]);
     kv_init(alnreg[i]);
 
+#ifdef BUILD_FPGA
     uint64_t start_ts = getNs();
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       prepareChainRef(aux, &seqs[i], &chains[i], chainrefs[i]);
@@ -613,6 +619,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
       read_batch->push_back(read_ptr); 
     }
     ref_time += getNs() - start_ts;
+#endif
   }
 
   ChainsRecord ret;
@@ -621,17 +628,20 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.seqs         = seqs;
   ret.chains       = chains;
   ret.alnreg       = alnreg;
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     ret.read_batch = read_batch;
     ret.chains_idxes = chains_idxes;
   }
-  else {
+  else 
+#endif
+  {
     ret.read_batch   = NULL;
     ret.chains_idxes = NULL;
   }
 
   VLOG(1) << "Produced a chain batch in " << getUs() - start_ts << " us";
-  VLOG(2) << "prepareChainRef takes " << ref_time/1e3 << " us";
+  VLOG_IF(2, FLAGS_use_fpga) << "prepareChainRef takes " << ref_time/1e3 << " us";
 
   return ret;
 }
@@ -689,6 +699,7 @@ inline bool ChainsToRegions::addBatch(
 
 void ChainsToRegions::compute(int wid) {
 
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && wid < FLAGS_max_fpga_thread) {
 
     VLOG(1) << "Worker " << wid << " is working on FPGA";
@@ -910,7 +921,9 @@ void ChainsToRegions::compute(int wid) {
       delete [] task_batch[i];
     }
   }
-  else {
+  else 
+#endif
+  {
     VLOG(1) << "Worker " << wid << " is working on CPU";
 
     uint64_t last_output_ts;
@@ -933,6 +946,7 @@ void ChainsToRegions::compute(int wid) {
     mem_chain_v* chains = record.chains;
     int batch_num       = record.batch_num;
 
+#ifdef BUILD_FPGA
     // Free all read batches
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       std::list<SWRead*>* read_batch = record.read_batch;
@@ -944,6 +958,7 @@ void ChainsToRegions::compute(int wid) {
       }
       delete read_batch;
     }
+#endif
 
     mem_alnreg_v* alnreg = record.alnreg;
 
@@ -995,6 +1010,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   std::vector<int>* chains_idxes = record.chains_idxes;
 
   for (int i = 0; i < batch_num; i++) {
+#ifdef BUILD_FPGA
     uint64_t start_ts = getNs();
     if (chains_idxes) {
       // Calculate seed coverage
@@ -1016,6 +1032,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
       }
     }
     seedcov_time += getNs() - start_ts;
+#endif
     
     // Post-process each chain before output
     alnreg[i].n = mem_sort_dedup_patch(
@@ -1032,11 +1049,13 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
         p->is_alt = 1;
     }
   }
+#ifdef BUILD_FPGA
   if (chains_idxes) {
     delete [] chains_idxes;
     freeChains(chains, batch_num);
   }
   VLOG(2) << "Seed coverage time is " << seedcov_time/1e3 << " us";
+#endif
 
   mem_pestat_t pes[4];
   mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);

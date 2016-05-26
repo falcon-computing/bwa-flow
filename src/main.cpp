@@ -27,11 +27,13 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "FPGAAgent.h"
 #include "Pipeline.h"
 #include "util.h"
 
+#ifdef BUILD_FPGA
+#include "FPGAAgent.h"
 OpenCLEnv* opencl_env;
+#endif
 
 boost::mutex mpi_mutex;
 
@@ -133,6 +135,7 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
+#ifdef BUILD_FPGA
     VLOG(1) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
@@ -140,6 +143,10 @@ int main(int argc, char *argv[]) {
         << FLAGS_fpga_path;
       return 1;
     }
+#else
+    LOG(WARNING) << "FPGA support is not built with this binary, "
+                 << "switch to CPU version.";
+#endif
   }
   else {
     FLAGS_use_fpga = false;
@@ -294,6 +301,7 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(2, output_stage);
   }
   
+#ifdef BUILD_FPGA
   // Start FPGA context
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
@@ -307,12 +315,15 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+#endif
   compute_flow.start();
   compute_flow.wait();
 
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     delete opencl_env;
   }
+#endif
 
 #ifdef SCALE_OUT
   MPI::COMM_WORLD.Barrier();
