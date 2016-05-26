@@ -430,6 +430,14 @@ void SeqsRead::compute() {
 
     if (!seqs) break;
 
+		if (!aux->copy_comment) {
+			for (int i = 0; i < batch_num; i++) {
+				free(seqs[i].comment);
+				seqs[i].comment = 0;
+			}
+      VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
+    }
+
     VLOG(1) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
 
