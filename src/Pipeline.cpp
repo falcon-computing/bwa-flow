@@ -1308,6 +1308,8 @@ void SamsPrint::compute() {
               bam_buffer_idx = 0;
             }
           }  
+          free(seqs[i].bams->bams);
+          free(seqs[i].bams); seqs[i].bams = NULL;    
         }
       }
       free(seqs);
