@@ -1368,11 +1368,10 @@ void SamsPrint::compute() {
   }
   if (bam_buffer_idx > 0) {
     sortAndWriteBamBatch(bam_buffer, bam_buffer_idx, out_dir);
+    free(bam_buffer);
   }
 #ifdef USE_HTSLIB    
-  if (!FLAGS_sort) {
-    sam_close(fout);
-  }
+  sam_close(fout);
   bam_hdr_destroy(aux->h);
 #else
   if (use_file) {
