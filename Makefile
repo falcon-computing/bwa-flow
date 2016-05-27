@@ -8,16 +8,12 @@ CFLAGS 	:= -g -std=c++0x -fPIC -O3 -DNDEBUG -DUSE_HTSLIB
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
-           $(SRC_DIR)/Extension.o\
-           $(SRC_DIR)/FPGAAgent.o \
 	   $(SRC_DIR)/main.o \
-	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/util.o
 
 INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(KFLOW_DIR)/include \
 	   -I$(BOOST_DIR)/include \
-	   -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 \
 	   -I$(GLOG_DIR)/include \
 	   -I$(GFLAGS_DIR)/include
 	
@@ -31,7 +27,6 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
-	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
 	   -lpthread -lm -ldl -lz -lrt
 
 ifneq ($(NDEBUG),)
@@ -47,6 +42,18 @@ endif
 ifneq ($(HTSLIB_PATH),)
 INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
 LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
+endif 
+
+ifneq ($(BUILD_FPGA),)
+CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
+OBJS	 := $(OBJS) \
+	    $(SRC_DIR)/Extension.o \
+            $(SRC_DIR)/FPGAAgent.o \
+	    $(SRC_DIR)/SWRead.o
+INCLUDES := $(INCLUDES) \
+	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
+LIBS	 := $(LIBS) \
+	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
 endif
 
 PROG	 := ./bin/bwa
