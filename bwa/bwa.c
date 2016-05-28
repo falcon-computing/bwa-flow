@@ -389,8 +389,8 @@ bams_t *bams_init() {
 
 void bams_add(bams_t *bams, bam1_t *b) {
   if (bams->m == bams->l) {
-    bams->m = bams->m ? bams->m << 1 : 0x1000;
-    bams->bams = realloc(bams->bams, sizeof(bam1_t) * bams->m);
+    bams->m = bams->m ? bams->m << 1 : 4;
+    bams->bams = realloc(bams->bams, sizeof(bam1_t*) * bams->m);
   }
   bams->bams[bams->l] = b;
   bams->l++;
