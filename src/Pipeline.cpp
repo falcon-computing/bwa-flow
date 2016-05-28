@@ -1371,7 +1371,9 @@ void SamsPrint::compute() {
     free(bam_buffer);
   }
 #ifdef USE_HTSLIB    
-  sam_close(fout);
+  if(!FLAGS_sort) {
+    sam_close(fout);
+  }
   bam_hdr_destroy(aux->h);
 #else
   if (use_file) {
