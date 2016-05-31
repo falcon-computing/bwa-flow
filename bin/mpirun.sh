@@ -8,7 +8,8 @@ host_list=falcon2,falcon2
 
 option="--logtostderr=1 \
         --v=2 \
-        --inorder_output"
+        --offload \
+        --nt 6"
 
 $MPI_DIR/bin/mpirun \
     -np $num_proc \

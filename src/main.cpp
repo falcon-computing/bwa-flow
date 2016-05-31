@@ -345,13 +345,6 @@ int main(int argc, char *argv[]) {
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
 
-    kstring_t pg = {0,0,0};
-    ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
-    for (int i = 1; i < argc; i++) {
-      ksprintf(&pg, " %s", argv[i]);
-    }
-    bwa_pg = pg.s;
-
     LOG(INFO) << "Version: " << PACKAGE_VERSION;
     LOG(INFO) << "Command: " << ss.str();
     LOG(INFO) << "Real time: " << realtime() - t_real << " sec, "
