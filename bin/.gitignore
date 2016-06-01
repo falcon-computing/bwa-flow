@@ -1,5 +1,7 @@
 # Ignore everything in this directory
 bwa
 *.sam
-*.out
-*.log
+*.bam
+*.INFO
+*.WARNING
+*.ERROR

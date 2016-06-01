@@ -1,5 +1,8 @@
 app
+*.csv
+*.html
 *.o
 *.err
 *.txt
 *.out
+*.log*
