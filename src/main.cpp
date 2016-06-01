@@ -159,13 +159,15 @@ int main(int argc, char *argv[]) {
     sam_dir += "/" + boost::asio::ip::host_name()+
       "-" + std::to_string((long long)getpid());
 #endif
-    // Create output folder if it does not exist
-    if (boost::filesystem::create_directories(sam_dir)) {
-      VLOG(1) << "Putting sam output to " << sam_dir;
-    }
-    else {
-      LOG(ERROR) << "Cannot create output dir: " << sam_dir;
-      return 1;
+    if (!boost::filesystem::exists(sam_dir)) {
+      // Create output folder if it does not exist
+      if (boost::filesystem::create_directories(sam_dir)) {
+        VLOG(1) << "Putting sam output to " << sam_dir;
+      }
+      else {
+        LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+        return 1;
+      }
     }
   }
   else {
