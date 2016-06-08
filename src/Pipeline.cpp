@@ -267,6 +267,7 @@ SeqsRecord SeqsReceive::deserialize(const char* data, size_t length) {
 
 void SamsSend::compute() {
 
+#ifndef USE_HTSLIB    
   int rank   = mpi_rank;
   int nprocs = mpi_nprocs;
 
@@ -327,10 +328,14 @@ void SamsSend::compute() {
       free(input.seqs);
     }
   }
+#else
+  LOG(ERROR) << "SamSend() is not supported in sorted bwa version";
+#endif
 }
 
 std::string SamsSend::serialize(SeqsRecord* data) {
 
+#ifndef USE_HTSLIB    
   uint64_t start_idx = data->start_idx;
   int      batch_num = data->batch_num;
   
@@ -346,10 +351,12 @@ std::string SamsSend::serialize(SeqsRecord* data) {
   }
 
   return ss.str();
+#endif
 }
 
 void SamsReceive::compute() {
   
+#ifndef USE_HTSLIB    
   int rank   = mpi_rank;
   int nprocs = mpi_nprocs;
 
@@ -386,10 +393,14 @@ void SamsReceive::compute() {
       pushOutput(output);
     }
   }
+#else
+  LOG(ERROR) << "SamSend() is not supported in sorted bwa version";
+#endif
 }
 
 SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
 
+#ifndef USE_HTSLIB    
   uint64_t start_idx = 0;
   int      batch_num = 0;
 
@@ -416,6 +427,7 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
   output.seqs = seqs;
 
   return output;
+#endif
 }
 #endif
 
@@ -1207,6 +1219,7 @@ void SamsPrint::compute() {
     ss << out_dir << "/part-"
        << std::setw(6) << std::setfill('0') << file_id;
 #ifdef USE_HTSLIB
+    VLOG(2) << "Writting to " << out_dir;
     fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
     sam_hdr_write(fout, aux->h);
 #else

@@ -122,6 +122,9 @@ int main(int argc, char *argv[]) {
   mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
   int rank = mpi_rank;
+
+  LOG(INFO) << "Waiting for gdb bind";
+  sleep(5);
 #else
   const int rank = 0;
 #endif
@@ -170,17 +173,20 @@ int main(int argc, char *argv[]) {
 #endif
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
-      if (boost::filesystem::create_directories(sam_dir)) {
-        VLOG(1) << "Putting sam output to " << sam_dir;
-      }
-      else {
+      if (!boost::filesystem::create_directories(sam_dir)) {
         LOG(ERROR) << "Cannot create output dir: " << sam_dir;
         return 1;
+      }
+      if (FLAGS_sort) {
+        VLOG(1) << "Putting sorted BAM files to " << sam_dir;
+      }
+      else {
+        VLOG(1) << "Putting output to " << sam_dir;
       }
     }
   }
   else {
-    VLOG(1) << "Putting sam output to stdout";
+    VLOG(1) << "Putting output to stdout";
   }
 
   // Produce original BWA arguments
@@ -221,7 +227,6 @@ int main(int argc, char *argv[]) {
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 
   }
-
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
