@@ -1,3 +1,5 @@
+include config.mk
+
 CC=		gcc
 CFLAGS=		-g -Wall -Wno-unused-function -O2
 WRAP_MALLOC=	-DUSE_MALLOC_WRAPPERS
@@ -21,15 +23,27 @@ endif
 .SUFFIXES:.c .o .cc
 
 .c.o:
+ifneq ($(HTSLIB_PATH),)
+	$(CC) -c $(CFLAGS) $(DFLAGS) -DUSE_HTSLIB $(INCLUDES) -I$(HTSLIB_PATH) $< -o $@
+else
 	$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
+endif
 
 all:$(PROG)
 
 bwa:libbwa.a $(AOBJS) main.o
+ifneq ($(HTSLIB_PATH),)
+	$(CC) $(CFLAGS) $(DFLAGS) $(AOBJS) main.o -o $@ -L$(HTSLIB_PATH) -lhts -L. -lbwa $(LIBS)
+else
 	$(CC) $(CFLAGS) $(DFLAGS) $(AOBJS) main.o -o $@ -L. -lbwa $(LIBS)
+endif
 
 bwamem-lite:libbwa.a example.o
+ifneq ($(HTSLIB_PATH),)
+	$(CC) $(CFLAGS) $(DFLAGS) example.o -o $@ $(HTSLIB_PATH)/libhts.a -L. -lbwa $(LIBS)
+else
 	$(CC) $(CFLAGS) $(DFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
+endif
 
 libbwa.a:$(LOBJS)
 	$(AR) -csru $@ $(LOBJS)
