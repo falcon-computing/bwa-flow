@@ -97,19 +97,6 @@ DEFINE_int32(output_flag, 0,
 
 int main(int argc, char *argv[]) {
 
-  // Print arguments for records
-  std::stringstream ss;
-  for (int i = 0; i < argc; i++) {
-    ss << argv[i] << " ";
-  }
-
-  // Initialize Google Flags
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Initialize Google Log
-  google::InitGoogleLogging(argv[0]);
-
 #ifdef SCALE_OUT
   // Initialize MPI
   int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
@@ -122,12 +109,24 @@ int main(int argc, char *argv[]) {
   mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
   int rank = mpi_rank;
-
   LOG(INFO) << "Waiting for gdb bind";
-  sleep(5);
+  sleep(10);
 #else
   const int rank = 0;
 #endif
+
+  // Print arguments for records
+  std::stringstream ss;
+  for (int i = 0; i < argc; i++) {
+    ss << argv[i] << " ";
+  }
+
+  // Initialize Google Flags
+  gflags::SetUsageMessage(argv[0]);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Initialize Google Log
+  google::InitGoogleLogging(argv[0]);
 
   // Preprocessing
   extern char *bwa_pg;
@@ -258,6 +257,8 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef SCALE_OUT
+  MPI::COMM_WORLD.Barrier();
+
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif

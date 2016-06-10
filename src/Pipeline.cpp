@@ -974,8 +974,6 @@ void ChainsToRegions::compute(int wid) {
       // this means isFinal() is true or timeout
       return; 
     }
-    VLOG(2) << "Wait for input takes " << getUs() - start_ts << " us";
-
     last_output_ts = getUs();
     last_read_ts = getUs();
 
@@ -1161,6 +1159,7 @@ void SamsPrint::sortAndWriteBamBatch(
   start_ts = getUs();
 
   bool use_file = !out_dir.empty();
+
   // open file if necessary
   if (use_file) {
     const char *modes[] = {"wb", "wbu", "w"};
@@ -1171,10 +1170,16 @@ void SamsPrint::sortAndWriteBamBatch(
 
     fout_ = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
     if (!fout_) {
-      throw std::runtime_error("Cannot open sam output file");
+      throw std::runtime_error("Cannot open output file");
     }
     sam_hdr_write(fout_, aux->h);
   }
+  else {
+    LOG(ERROR) << "Sorting only works with file output,"
+               << " must specify --output_dir";
+    exit(1);
+  }
+
   // start writing to file
   for (int i = 0; i < n_elements; ++i){
     sam_write1(fout_, aux->h, buf[i]); 
@@ -1214,35 +1219,41 @@ void SamsPrint::compute() {
   FILE* fout;
 #endif
 
-  if (use_file) {
-    std::stringstream ss;
-    ss << out_dir << "/part-"
-       << std::setw(6) << std::setfill('0') << file_id;
+  if (!FLAGS_sort) {
+    if (use_file) {
+      std::stringstream ss;
+      ss << out_dir << "/part-"
+        << std::setw(6) << std::setfill('0') << file_id;
 #ifdef USE_HTSLIB
-    VLOG(2) << "Writting to " << out_dir;
-    fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
-    sam_hdr_write(fout, aux->h);
+      VLOG(2) << "Writting to " << ss.str();
+      fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+      if (!fout) {
+        throw std::runtime_error("Cannot open bam output file");
+      }
+      sam_hdr_write(fout, aux->h);
 #else
-    fout = fopen(ss.str().c_str(), "w+");
+      fout = fopen(ss.str().c_str(), "w+");
 #endif
-    if (!fout) {
-      throw std::runtime_error("Cannot open sam output file");
-    }
+      if (!fout) {
+        throw std::runtime_error("Cannot open sam output file");
+      }
 
-    DLOG(INFO) << "Start writing output to " << ss.str();
-  }
-  else {
-#ifdef USE_HTSLIB
-    fout  = sam_open("-", modes[FLAGS_output_flag]); 
-    // TODO: temporary
-    fout_ = sam_open("-", modes[FLAGS_output_flag]); 
-    int status = sam_hdr_write(fout, aux->h);
-    if (status) {
-      LOG(ERROR) << "sam_hdr_write error: " << status;
+      DLOG(INFO) << "Start writing output to " << ss.str();
     }
+    else {
+#ifdef USE_HTSLIB
+      fout  = sam_open("-", modes[FLAGS_output_flag]); 
+      if (!fout) {
+        throw std::runtime_error("Cannot open sam output file");
+      }
+      int status = sam_hdr_write(fout, aux->h);
+      if (status) {
+        LOG(ERROR) << "sam_hdr_write error: " << status;
+      }
 #else
-    fout = stdout;
+      fout = stdout;
 #endif
+    }
   }
 
   // Buffer to sort output bam
