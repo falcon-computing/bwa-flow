@@ -88,20 +88,7 @@ DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
 
 int main(int argc, char *argv[]) {
 
-  // Print arguments for records
-  std::stringstream ss;
-  for (int i = 0; i < argc; i++) {
-    ss << argv[i] << " ";
-  }
-
-  // Initialize Google Flags
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Initialize Google Log
-  google::InitGoogleLogging(argv[0]);
-
-#ifdef SCALE_OUT
+ #ifdef SCALE_OUT
   // Initialize MPI
   int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
 
@@ -116,6 +103,19 @@ int main(int argc, char *argv[]) {
 #else
   const int rank = 0;
 #endif
+
+ // Print arguments for records
+  std::stringstream ss;
+  for (int i = 0; i < argc; i++) {
+    ss << argv[i] << " ";
+  }
+
+  // Initialize Google Flags
+  gflags::SetUsageMessage(argv[0]);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Initialize Google Log
+  google::InitGoogleLogging(argv[0]);
 
   // Preprocessing
   extern char *bwa_pg;
@@ -209,10 +209,11 @@ int main(int argc, char *argv[]) {
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
-  if (rank==0 && !sam_dir.empty()) {
+  if (rank==0 && !FLAGS_output_dir.empty()) {
     stdout_fd = dup(STDOUT_FILENO);
-    std::string fname = sam_dir + "/header";
+    std::string fname = FLAGS_output_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
+    VLOG(1) << "Putting header to " << fname;
   }
 
   // Parse BWA arguments and generate index and the options
@@ -237,6 +238,9 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef SCALE_OUT
+  // Synchronize before launching the computation
+  MPI::COMM_WORLD.Barrier();
+
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
