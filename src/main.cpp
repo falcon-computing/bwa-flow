@@ -109,8 +109,8 @@ int main(int argc, char *argv[]) {
   mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
   int rank = mpi_rank;
-  LOG(INFO) << "Waiting for gdb bind";
-  sleep(10);
+  // LOG(INFO) << "Waiting for gdb bind";
+  // sleep(10);
 #else
   const int rank = 0;
 #endif

@@ -1172,7 +1172,7 @@ void SamsPrint::sortAndWriteBamBatch(
     if (!fout_) {
       throw std::runtime_error("Cannot open output file");
     }
-    sam_hdr_write(fout_, aux->h);
+    int status = sam_hdr_write(fout_, aux->h);
   }
   else {
     LOG(ERROR) << "Sorting only works with file output,"
@@ -1182,7 +1182,7 @@ void SamsPrint::sortAndWriteBamBatch(
 
   // start writing to file
   for (int i = 0; i < n_elements; ++i){
-    sam_write1(fout_, aux->h, buf[i]); 
+    int status = sam_write1(fout_, aux->h, buf[i]); 
     bam_destroy1(buf[i]);
   }
   if (use_file) {
@@ -1230,7 +1230,7 @@ void SamsPrint::compute() {
       if (!fout) {
         throw std::runtime_error("Cannot open bam output file");
       }
-      sam_hdr_write(fout, aux->h);
+      int status = sam_hdr_write(fout, aux->h);
 #else
       fout = fopen(ss.str().c_str(), "w+");
 #endif
@@ -1359,7 +1359,7 @@ void SamsPrint::compute() {
 #ifdef USE_HTSLIB
           sam_close(fout);
           fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
-          sam_hdr_write(fout, aux->h);
+          int status = sam_hdr_write(fout, aux->h);
 #else
           fclose(fout);
           fout = fopen(ss.str().c_str(), "w+");
