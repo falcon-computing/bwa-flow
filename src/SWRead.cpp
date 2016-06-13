@@ -37,45 +37,24 @@ void SWRead::finish() {
   is_pend_ = false;
 }
 
-enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
+void SWRead::nextTask(ExtParam** &task_batch,int &task_num) {
 
-  if (is_pend_) {
-    return TaskStatus::Pending;
+  if (is_finished_) {
+    return ;
   }
-  else if (is_finished_) {
-    return TaskStatus::Finished;
-  }
-
   for ( ; chain_idx_ < chains_->n; 
           seed_idx_ > 0 ? seed_idx_-- : seed_idx_ = chains_->a[++chain_idx_].n-1)
   {
-    uint32_t sorted_idx = (uint32_t)(ref_[chain_idx_].srt[seed_idx_]);
+      uint32_t sorted_idx = (uint32_t)(ref_[chain_idx_].srt[seed_idx_]);
 
     // get next available seed in the current read
-    mem_seed_t* seed_array = &chains_->a[chain_idx_].seeds[sorted_idx];
-    
-    if (alnregs_->n > testExtension(
-            aux_->opt, 
-            *seed_array,
-            *alnregs_, 
-            seq_->l_seq) 
-        && 
-        chains_->a[chain_idx_].n == checkOverlap(
-            seed_idx_+1,
-            *seed_array,
-            chains_->a[chain_idx_],
-            ref_[chain_idx_].srt)) 
-    {                                               
-      // Mark this seed as uncomputed
-      ref_[chain_idx_].srt[seed_idx_] = 0;         
-    }
-    else {
+      mem_seed_t* seed_array = &chains_->a[chain_idx_].seeds[sorted_idx];
       // initialize the newreg
       mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, *alnregs_);
       memset(newreg, 0, sizeof(mem_alnreg_t));
 
       // Push chain_idx to added newreg
-      chain_idxes_->push_back(chain_idx_);
+      //chain_idxes_->push_back(chain_idx_);
 
       newreg->score  = seed_array->len * aux_->opt->a;
       newreg->truesc = seed_array->len * aux_->opt->a;
@@ -87,12 +66,25 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
       newreg->seedlen0 = seed_array->len; 
       newreg->frac_rep = chains_->a[chain_idx_].frac_rep;
       newreg->w = aux_->opt->w;
+   }
+  int region_num = 0;
+  int read_task_num = 0;
+  chain_idx_ = 0;
+  seed_idx_ = chains_->a[0].n-1;
+ //TODO 
+  for ( ; chain_idx_ < chains_->n; 
+          seed_idx_ > 0 ? seed_idx_-- : seed_idx_ = chains_->a[++chain_idx_].n-1)
+  {
+      uint32_t sorted_idx = (uint32_t)(ref_[chain_idx_].srt[seed_idx_]);
+
+      // get next available seed in the current read
+      mem_seed_t* seed_array = &chains_->a[chain_idx_].seeds[sorted_idx];
 
       if (seed_array->qbeg > 0 ||
           seed_array->qbeg + seed_array->len != seq_->l_seq)
       { 
         // need to do extension
-        task = getTask(
+        task_batch[task_num + read_task_num] = getTask(
             aux_->opt,
             seed_array,
             (const uint8_t*)seq_->seq,
@@ -102,27 +94,19 @@ enum SWRead::TaskStatus SWRead::nextTask(ExtParam* &task) {
             ref_[chain_idx_].rseq,
             read_idx_);
 
-        task->read_obj = this;
-        task->newreg = newreg;
-        task->chain_idx = chain_idx_;
-        task->chain = &chains_->a[chain_idx_];
-
-        is_pend_ = true;
-
-        // update chain and seed indexes before return
-        if (seed_idx_ > 0) {
-          seed_idx_ --;
-        }
-        else {
-          seed_idx_ = chains_->a[++chain_idx_].n - 1;
-        }
-
-        return TaskStatus::Successful;
+        task_batch[task_num + read_task_num]->read_obj = this;
+        task_batch[task_num + read_task_num]->newreg = &(alnregs_->a[region_num]);
+        task_batch[task_num + read_task_num]->chain_idx = chain_idx_;
+        task_batch[task_num + read_task_num]->chain = &chains_->a[chain_idx_];
+        region_num++;
+        read_task_num++;
       }
-    }
+      else {
+        region_num++;
+      }
   }
-  is_finished_ = true;
-  return TaskStatus::Finished;
+  task_num += read_task_num;
+  return ;
 }
 
 inline ExtParam* SWRead::getTask(

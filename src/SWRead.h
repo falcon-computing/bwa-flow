@@ -41,7 +41,7 @@ class SWRead {
   // - 0: successful
   // - 1: task pending for extension
   // - 2: no more extension to do for this read
-  enum TaskStatus nextTask(ExtParam* &task);
+  void nextTask(ExtParam** &task_batch, int &task_num);
 
   // Called after seed extension is done
   void finish();

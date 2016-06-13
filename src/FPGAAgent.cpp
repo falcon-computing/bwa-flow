@@ -24,7 +24,7 @@ FPGAAgent::FPGAAgent(
     // Allocate maximum OpenCL output buffer
     output_buf_[i] = clCreateBuffer(context,
         CL_MEM_WRITE_ONLY, 
-        chunk_size*FPGA_RET_PARAM_NUM*sizeof(int),
+        2*chunk_size*FPGA_RET_PARAM_NUM*sizeof(int),
         NULL, NULL);
 
     fpga_task_[i] = NULL;
@@ -60,7 +60,7 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
 }
 
 void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
-  if (size > chunk_size_*FPGA_RET_PARAM_NUM*sizeof(int)) {
+  if (size > 2*chunk_size_*FPGA_RET_PARAM_NUM*sizeof(int)) {
     throw std::runtime_error("Output buffer size too big");
   }
   cl_command_queue cmd = env_->getCmdQueue();
@@ -77,7 +77,7 @@ void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
 }
 
 void FPGAAgent::start(int task_num, int cnt) {
-  if (task_num > chunk_size_) {
+  if (task_num > 2*chunk_size_) {
     throw std::runtime_error("Too many tasks\n");
   }
 

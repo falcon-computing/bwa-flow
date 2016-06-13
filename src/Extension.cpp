@@ -155,7 +155,7 @@ void extendOnFPGAPackInput(
     delete [] tasks[i]->leftRs;
     i = i + 1;
   }
-  VLOG(3) << "packData takes " 
+  VLOG(3) << "packData "<< stage_cnt << " takes " 
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
@@ -163,7 +163,7 @@ void extendOnFPGAPackInput(
   agent->start(batch_num, stage_cnt);
 
   delete [] buf1;
-  VLOG(3) << "FPGA input takes " 
+  VLOG(3) << "FPGA input "<< stage_cnt <<" takes " 
     << getUs() - start_ts << " us";
 }
 
