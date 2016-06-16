@@ -22,12 +22,6 @@
 
 #define MAX_BAND_TRY  2
 
-#ifdef SMITHWATERMAN_SIM
-// hw data structures
-extern "C"{
-void sw_top (int *a, int *output_a, int __inc);
-}
-#endif
 
 void extendOnFPGAPackInput(
     FPGAAgent* agent,
@@ -317,3 +311,169 @@ void extendOnCPU(
     << getUs() - start_ts << " us";
 }
 
+
+
+char* extendOnFPGAonlyPack(
+    ExtParam** &tasks,
+    int batch_num,
+    mem_opt_t *opt,
+    int* fpga_data_size)
+{
+  uint64_t start_ts = getUs();
+
+  int Buf1Len = 32 + 32*batch_num;
+  int data_size = Buf1Len >> 2;
+  for (int i = 0; i <batch_num ; i++){
+    data_size +=((((tasks[i]->leftQlen + 
+                    tasks[i]->leftRlen + 
+                    tasks[i]->rightQlen + 
+                    tasks[i]->rightRlen) + 1) / 
+                2)+3)/4; 
+  } 
+  *fpga_data_size = data_size; 
+  char* buf1 = (char*)malloc(data_size << 2);
+
+  //------------------ store the public options at the beginning-----------------
+  buf1[0] = (char)opt->o_del;
+  buf1[1] = (char)opt->e_del;
+  buf1[2] = (char)opt->o_ins;
+  buf1[3] = (char)opt->e_ins;
+  buf1[4] = (char)opt->pen_clip5;
+  buf1[5] = (char)opt->pen_clip3;
+  buf1[6] = (char)opt->w;
+  *(int*)(&buf1[8])= batch_num;
+  int i = 0;
+  int LeftMaxIns = 0;
+  int LeftMaxDel = 0;
+  int RightMaxIns = 0;
+  int RightMaxDel = 0;
+  int TaskPos = 0 ;
+  TaskPos = Buf1Len >> 2;
+  int buf1idx = 32;
+
+  for (int i = 0; i <batch_num ; i++)
+  {
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->leftQlen; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->leftRlen; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->rightQlen; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->rightRlen; buf1idx +=2;
+    *((int*)(&buf1[buf1idx]))= TaskPos; buf1idx +=4;
+    TaskPos += ((((tasks[i]->leftQlen + tasks[i]->leftRlen + tasks[i]->rightQlen + tasks[i]->rightRlen)+1)/2)+3)/4;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->regScore; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->qBeg; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->h0; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= (short)tasks[i]->idx; buf1idx +=2;
+    LeftMaxIns = (short)((double)(tasks[i]->leftQlen* 1 + opt->pen_clip5 -opt->o_ins)/opt->e_ins+1);
+    LeftMaxDel = (short)((double)(tasks[i]->leftQlen* 1 + opt->pen_clip5 -opt->o_del)/opt->e_del+1);
+    RightMaxIns = (short)((double)(tasks[i]->rightQlen *1 + opt->pen_clip3 -opt->o_ins)/opt->e_ins+1);
+    RightMaxDel = (short)((double)(tasks[i]->rightQlen* 1 + opt->pen_clip3 -opt->o_del)/opt->e_del+1);         // 1 stands for tasks[i]->mat.max
+    *((short*)(&buf1[buf1idx]))= LeftMaxIns; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= LeftMaxDel; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= RightMaxIns; buf1idx +=2;
+    *((short*)(&buf1[buf1idx]))= RightMaxDel; buf1idx +=2;
+    *((int*)(&buf1[buf1idx]))= i; buf1idx +=4;
+  }
+  i = 0;
+  int j = 0;
+  int TmpIntVar = 0;
+  int counter8 = 0;
+
+  while(i < batch_num) {
+    if(tasks[i]->leftQlen > 0) {
+      j = 0;
+      while(j < tasks[i]->leftQlen) {
+        counter8 = counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | tasks[i]->leftQs[j] ;
+        if(counter8 % 8 ==0){
+          *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
+          buf1idx += 4;
+        }
+        j = j + 1;
+      }
+    }
+    if(tasks[i]->rightQlen > 0) {
+      j = 0;
+      while(j < tasks[i]->rightQlen) {
+        counter8 = counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | tasks[i]->rightQs[j] ;
+        if(counter8 % 8 ==0){
+          *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
+          buf1idx += 4;
+        }
+        j = j + 1;
+      }
+    }
+    if(tasks[i]->leftRlen > 0) {
+      j = 0;
+      while(j < tasks[i]->leftRlen) {
+        counter8 = counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | tasks[i]->leftRs[j] ;
+        if(counter8 % 8 ==0){
+          *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
+          buf1idx += 4;
+        }
+        j = j + 1;
+      }
+    }
+    if(tasks[i]->rightRlen > 0) {
+      j = 0;
+      while(j < tasks[i]->rightRlen) {
+        counter8 = counter8 + 1;
+        TmpIntVar = TmpIntVar <<4 | tasks[i]->rightRs[j] ;
+        if(counter8 % 8 ==0){
+          *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
+          buf1idx += 4;
+        }
+        j = j + 1;
+      }
+    }
+    if(counter8 %8 != 0) {
+      while(counter8 %8 != 0 ) {
+        TmpIntVar = TmpIntVar << 4;
+        counter8 = counter8 + 1;
+      }
+      *(uint32_t*) (&buf1[buf1idx])= TmpIntVar;
+      buf1idx += 4;
+    }
+    delete [] tasks[i]->leftQs;
+    delete [] tasks[i]->leftRs;
+    i = i + 1;
+  }
+  VLOG(3) << "packData takes " 
+    << getUs() - start_ts << " us";
+
+  return buf1;
+}
+
+
+
+
+void extendOnFPGAonlyOutput(
+    ExtParam** &tasks,
+    int batch_num,
+    short* &output_ptr,
+    mem_opt_t *opt)
+{
+  uint64_t start_ts = getUs();
+  for (int i = 0; i < batch_num; i++) {  
+    
+    int task_idx = ((int)(output_ptr[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+                    (uint16_t)(output_ptr[0+FPGA_RET_PARAM_NUM*2*i]);
+
+    mem_alnreg_t *newreg = tasks[task_idx]->newreg;
+
+    newreg->qb = output_ptr[2+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->rb = output_ptr[4+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg;
+    newreg->qe = output_ptr[3+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->qBeg + tasks[task_idx]->seedLength;
+    newreg->re = output_ptr[5+FPGA_RET_PARAM_NUM*2*i] + tasks[task_idx]->rBeg + tasks[task_idx]->seedLength;
+    newreg->score = output_ptr[6+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->truesc = output_ptr[7+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->w = output_ptr[8+FPGA_RET_PARAM_NUM*2*i];
+
+    tasks[task_idx]->read_obj->finish();
+    delete tasks[task_idx];
+  }
+  delete [] output_ptr;
+  VLOG(3) << "FPGA output used " 
+    << getUs() - start_ts << " us";
+}

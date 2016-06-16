@@ -50,6 +50,10 @@ struct ChainsRecord {
   std::list<SWRead*>* read_batch;
   std::vector<int>* chains_idxes;
   mem_chainref_t** chainrefs;
+  char* fpga_data_buf;
+  int fpga_data_size;
+  int fpga_task_num;
+  ExtParam** fpga_task_batch;
 };
 
 struct RegionsRecord {
@@ -60,6 +64,9 @@ struct RegionsRecord {
   mem_alnreg_v* alnreg;
   std::vector<int>* chains_idxes;
   mem_chainref_t** chainrefs;
+  short* fpga_output_buf;
+  int fpga_task_num;
+  ExtParam** fpga_task_batch;
 };
 
 #ifdef SCALE_OUT
