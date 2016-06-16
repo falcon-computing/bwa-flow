@@ -28,4 +28,16 @@ void extendOnCPU(
     int numoftask,
     mem_opt_t *opt);
 
+char* extendOnFPGAonlyPack(
+     ExtParam** &tasks,
+     int batch_num,
+     mem_opt_t *opt,
+     int *fpga_data_size);
+
+void extendOnFPGAonlyOutput (
+     ExtParam** &tasks,
+     int batch_num,
+     short* &output_ptr,
+     mem_opt_t* opt);
+
 #endif

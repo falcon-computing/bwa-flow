@@ -12,7 +12,7 @@ class FPGAAgent {
  public:
   FPGAAgent(OpenCLEnv* env, 
       int chunk_size,
-      uint64_t buf_size = 32*1024*1024);
+      uint64_t buf_size = 1024*1024*1024);
 
   ~FPGAAgent();
 
