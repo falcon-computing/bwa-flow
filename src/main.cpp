@@ -97,7 +97,7 @@ DEFINE_int32(output_flag, 0,
 
 int main(int argc, char *argv[]) {
 
-#ifdef SCALE_OUT
+ #ifdef SCALE_OUT
   // Initialize MPI
   int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
 
@@ -109,8 +109,6 @@ int main(int argc, char *argv[]) {
   mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
   int rank = mpi_rank;
-  // LOG(INFO) << "Waiting for gdb bind";
-  // sleep(10);
 #else
   const int rank = 0;
 #endif
@@ -229,10 +227,11 @@ int main(int argc, char *argv[]) {
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
-  if (rank==0 && !sam_dir.empty()) {
+  if (rank==0 && !FLAGS_output_dir.empty()) {
     stdout_fd = dup(STDOUT_FILENO);
-    std::string fname = sam_dir + "/header";
+    std::string fname = FLAGS_output_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
+    VLOG(1) << "Putting header to " << fname;
   }
 
   // Parse BWA arguments and generate index and the options
@@ -257,6 +256,7 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef SCALE_OUT
+  // Synchronize before launching the computation
   MPI::COMM_WORLD.Barrier();
 
   kestrelFlow::Pipeline scatter_flow(2, 0);
