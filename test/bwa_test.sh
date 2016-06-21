@@ -41,6 +41,7 @@ while IFS='' read -r line; do
       rm $error_log_out
       rm $bwa_stderr
     fi
+    rm /curr/yaoh/prog/testing/result_bams/merged.bam
 done < "$1"
 
 echo "All test finished"
