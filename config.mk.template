@@ -1,0 +1,9 @@
+BOOST_DIR=/usr
+GFLAGS_DIR=/usr
+GLOG=/usr
+GTEST_DIR=/usr
+
+MAKE=make
+CC=gcc
+PP=g++
+AR=ar
