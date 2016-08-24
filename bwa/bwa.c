@@ -376,7 +376,7 @@ void bwa_format_sam_hdr(const bntseq_t *bns, const char *rg_line, kstring_t *str
   int i;
   extern char *bwa_pg;
   str->l = 0; str->s = 0;
-  ksprintf(str, "@HD\tVN:1.4\tSO:unknown\n");
+  ksprintf(str, "@HD\tVN:1.3\tSO:coordinate\n");
   for (i = 0; i < bns->n_seqs; ++i) 
     ksprintf(str, "@SQ\tSN:%s\tLN:%d\n", bns->anns[i].name, bns->anns[i].len);
   if (rg_line) ksprintf(str, "%s\n", rg_line);

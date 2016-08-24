@@ -986,7 +986,6 @@ void mem_aln2sam(const mem_opt_t *opt, const bntseq_t *bns, kstring_t *str, bseq
 		for (i = tmp; i < str->l; ++i) // replace TAB in the comment to SPACE
 			if (str->s[i] == '\t') str->s[i] = ' ';
 	}
-	kputc('\n', str);
   
 #ifdef USE_HTSLIB
   bam1_t *b = bam_init1();
@@ -997,6 +996,8 @@ void mem_aln2sam(const mem_opt_t *opt, const bntseq_t *bns, kstring_t *str, bseq
   bams_add(s->bams, b);
   str->l = 0; 
   //str->s = 0;
+#else
+	kputc('\n', str);
 #endif
 }
 
