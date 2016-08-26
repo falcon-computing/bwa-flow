@@ -381,7 +381,7 @@ int main_mem(int argc, char *argv[])
   bam_hdr_t *h = NULL; // TODO
 #ifdef USE_HTSLIB
   samFile *out = NULL;
-  char *modes[] = {"wb", "wbu", "w"};
+  char *modes[] = {"wb", "wb0", "w"};
   switch (opt->bam_output) {
     case 0: // BAM compressed
     case 1: // BAM uncompressed

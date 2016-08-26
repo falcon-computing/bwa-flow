@@ -1162,7 +1162,7 @@ void SamsPrint::sortAndWriteBamBatch(
 
   // open file if necessary
   if (use_file) {
-    const char *modes[] = {"wb", "wbu", "w"};
+    const char *modes[] = {"wb", "wb0", "w"};
 
     std::stringstream ss;
     ss << out_dir << "/part-"
@@ -1214,7 +1214,7 @@ void SamsPrint::compute() {
 #ifdef USE_HTSLIB
   samFile *fout = NULL;
   // TODO(mhhuang): To be fixed. "wbu" results in bam file header read error.
-  const char *modes[] = {"wb", "wbu", "w"};
+  const char *modes[] = {"wb", "wb0", "w"};
 #else
   FILE* fout;
 #endif
