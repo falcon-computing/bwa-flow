@@ -11,6 +11,7 @@ COMPILE	:= -c $(CFLAGS) \
 	   -I$(BOOST_DIR)/include \
 	   -I$(PROTOBUF_DIR)/include \
 	   -I$(GLOG_DIR)/include \
+	   -I$(GFLAGS_DIR)/include \
 	   -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux 
 	
 LINK	:= -L$(MANAGER_DIR)/lib -lblaze \
