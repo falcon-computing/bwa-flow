@@ -28,7 +28,7 @@ class OpenCLEnv
     // start platform setting up
     int err;
 
-    cl_platform_id platform_id;
+    cl_platform_id* platform_id = new cl_platform_id[2];
     cl_device_id device_id;
 
     char cl_platform_vendor[1001];
@@ -37,7 +37,7 @@ class OpenCLEnv
     cl_uint num_platforms = 0;
 
     // Connect to first platform
-    err = clGetPlatformIDs(2, &platform_id, &num_platforms);
+    err = clGetPlatformIDs(2, platform_id, &num_platforms);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error(
@@ -45,7 +45,7 @@ class OpenCLEnv
     }
 
     err = clGetPlatformInfo(
-        platform_id, 
+        platform_id[1], 
         CL_PLATFORM_VENDOR, 
         1000, 
         (void *)cl_platform_vendor,NULL);
@@ -54,14 +54,14 @@ class OpenCLEnv
         throw std::runtime_error(
             "clGetPlatformInfo(CL_PLATFORM_VENDOR) failed!");
     }
-    err = clGetPlatformInfo(platform_id,CL_PLATFORM_NAME,1000,(void *)cl_platform_name,NULL);
+    err = clGetPlatformInfo(platform_id[1],CL_PLATFORM_NAME,1000,(void *)cl_platform_name,NULL);
     
     if (err != CL_SUCCESS) {
         throw std::runtime_error("clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
     }
 
     // Connect to a compute device
-    err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
+    err = clGetDeviceIDs(platform_id[1], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a device group!");

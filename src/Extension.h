@@ -9,6 +9,23 @@
 
 extern OpenCLEnv* opencl_env;
 
+void buffer_out_process(short* kernel_output, int task_num, mem_alnreg_t** &region_batch);
+
+void extendOnFPGA(
+    FPGAAgent* agent,
+    char* &kernel_buffer,
+    int data_size,
+    int stage_cnt
+    );
+
+void FPGAPostProcess(
+    FPGAAgent* agent,
+    short* kernel_output,
+    int task_num,
+    mem_alnreg_t** &region_batch,
+    int stage_cnt
+    );
+
 void extendOnFPGAPackInput(
     FPGAAgent* agent,
     int stage_cnt,

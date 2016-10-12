@@ -27,13 +27,11 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "FPGAAgent.h"
 #include "Pipeline.h"
 #include "util.h"
 
-#ifdef BUILD_FPGA
-#include "FPGAAgent.h"
 OpenCLEnv* opencl_env;
-#endif
 
 boost::mutex mpi_mutex;
 
@@ -88,7 +86,20 @@ DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
 
 int main(int argc, char *argv[]) {
 
- #ifdef SCALE_OUT
+  // Print arguments for records
+  std::stringstream ss;
+  for (int i = 0; i < argc; i++) {
+    ss << argv[i] << " ";
+  }
+
+  // Initialize Google Flags
+  gflags::SetUsageMessage(argv[0]);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // Initialize Google Log
+  google::InitGoogleLogging(argv[0]);
+
+#ifdef SCALE_OUT
   // Initialize MPI
   int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
 
@@ -103,19 +114,6 @@ int main(int argc, char *argv[]) {
 #else
   const int rank = 0;
 #endif
-
- // Print arguments for records
-  std::stringstream ss;
-  for (int i = 0; i < argc; i++) {
-    ss << argv[i] << " ";
-  }
-
-  // Initialize Google Flags
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Initialize Google Log
-  google::InitGoogleLogging(argv[0]);
 
   // Preprocessing
   extern char *bwa_pg;
@@ -135,7 +133,6 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
-#ifdef BUILD_FPGA
     VLOG(1) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
@@ -143,10 +140,6 @@ int main(int argc, char *argv[]) {
         << FLAGS_fpga_path;
       return 1;
     }
-#else
-    LOG(WARNING) << "FPGA support is not built with this binary, "
-                 << "switch to CPU version.";
-#endif
   }
   else {
     FLAGS_use_fpga = false;
@@ -159,15 +152,13 @@ int main(int argc, char *argv[]) {
     sam_dir += "/" + boost::asio::ip::host_name()+
       "-" + std::to_string((long long)getpid());
 #endif
-    if (!boost::filesystem::exists(sam_dir)) {
-      // Create output folder if it does not exist
-      if (boost::filesystem::create_directories(sam_dir)) {
-        VLOG(1) << "Putting sam output to " << sam_dir;
-      }
-      else {
-        LOG(ERROR) << "Cannot create output dir: " << sam_dir;
-        return 1;
-      }
+    // Create output folder if it does not exist
+    if (boost::filesystem::create_directories(sam_dir)) {
+      VLOG(1) << "Putting sam output to " << sam_dir;
+    }
+    else {
+      LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+      return 1;
     }
   }
   else {
@@ -192,7 +183,7 @@ int main(int argc, char *argv[]) {
   }
   else {
     bwa_args.push_back("-v");
-    bwa_args.push_back("2");
+    bwa_args.push_back("1");
   }
   if (FLAGS_M) {
     bwa_args.push_back("-M");
@@ -209,11 +200,10 @@ int main(int argc, char *argv[]) {
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
-  if (rank==0 && !FLAGS_output_dir.empty()) {
+  if (rank==0 && !sam_dir.empty()) {
     stdout_fd = dup(STDOUT_FILENO);
-    std::string fname = FLAGS_output_dir + "/header";
+    std::string fname = sam_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
-    VLOG(1) << "Putting header to " << fname;
   }
 
   // Parse BWA arguments and generate index and the options
@@ -238,9 +228,6 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef SCALE_OUT
-  // Synchronize before launching the computation
-  MPI::COMM_WORLD.Barrier();
-
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
@@ -307,7 +294,6 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(2, output_stage);
   }
   
-#ifdef BUILD_FPGA
   // Start FPGA context
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
@@ -321,15 +307,14 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
-#endif
+	t_real = realtime();
   compute_flow.start();
   compute_flow.wait();
 
-#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     delete opencl_env;
   }
-#endif
+
 
 #ifdef SCALE_OUT
   MPI::COMM_WORLD.Barrier();
@@ -350,6 +335,13 @@ int main(int argc, char *argv[]) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
+
+    kstring_t pg = {0,0,0};
+    ksprintf(&pg, "@PG\tID:bwa\tPN:bwa\tVN:%s\tCL:%s", PACKAGE_VERSION, argv[0]);
+    for (int i = 1; i < argc; i++) {
+      ksprintf(&pg, " %s", argv[i]);
+    }
+    bwa_pg = pg.s;
 
     LOG(INFO) << "Version: " << PACKAGE_VERSION;
     LOG(INFO) << "Command: " << ss.str();

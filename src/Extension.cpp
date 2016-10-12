@@ -21,6 +21,7 @@
 #include "util.h"
 
 #define MAX_BAND_TRY  2
+#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
 // hw data structures
@@ -155,7 +156,7 @@ void extendOnFPGAPackInput(
     delete [] tasks[i]->leftRs;
     i = i + 1;
   }
-  VLOG(3) << "packData takes " 
+  VLOG(3) << "packData "<< stage_cnt << " takes " 
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
@@ -163,8 +164,71 @@ void extendOnFPGAPackInput(
   agent->start(batch_num, stage_cnt);
 
   delete [] buf1;
-  VLOG(3) << "FPGA input takes " 
+  VLOG(3) << "FPGA input "<< stage_cnt <<" takes " 
     << getUs() - start_ts << " us";
+}
+
+void extendOnFPGA(
+    FPGAAgent* agent,
+    char* &kernel_buffer,
+    int data_size,
+    int stage_cnt
+    )
+{
+  agent->writeInput( (int*)kernel_buffer, data_size, stage_cnt);
+  agent->start (data_size/4, stage_cnt);
+}
+
+// for sim
+void buffer_out_process(short* kernel_output, int task_num, mem_alnreg_t** &region_batch){
+  for (int i = 0; i < task_num; i++) {
+    int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+                    kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+    mem_alnreg_t *newreg = region_batch[seed_idx];
+
+    newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
+    newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
+    newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
+    newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
+  
+  }
+}
+
+void FPGAPostProcess(
+    FPGAAgent* agent,
+    short* kernel_output,
+    int task_num,
+    mem_alnreg_t** &region_batch,
+    int stage_cnt
+    )
+{
+  uint64_t start_ts = getUs();
+  agent->wait(stage_cnt);
+  VLOG(3) << "Wait for FPGA takes " 
+    << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+  agent->readOutput(kernel_output, FPGA_RET_PARAM_NUM*task_num*4, stage_cnt);
+  for (int i = 0; i < task_num; i++) {
+    int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+                    kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+    mem_alnreg_t *newreg = region_batch[seed_idx];
+
+    newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
+    newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
+    newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
+    newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
+  
+  }
+  VLOG(3) << "Process output takes " 
+    << getUs() - start_ts << " us";
+
 }
 
 void extendOnFPGAProcessOutput(

@@ -29,6 +29,7 @@ class SWRead {
       std::vector<int>* chain_idxes);
 
   ~SWRead();
+  friend class ChainsToRegions;
 
   enum TaskStatus {
     Successful = 0,
@@ -41,7 +42,10 @@ class SWRead {
   // - 0: successful
   // - 1: task pending for extension
   // - 2: no more extension to do for this read
-  enum TaskStatus nextTask(ExtParam* &task);
+ // void packRead(char* buffer, int &buffer_idx, int &task_num, int &read_num, mem_alnreg_t** &region_batch);
+  void packRead(char* buffer, int &buffer_idx, int &task_num, int &read_num,
+    mem_alnreg_t** &region_batch, mem_chainref_t* &chainref_p);
+  void nextTask(ExtParam** &task_batch, int &task_num);
 
   // Called after seed extension is done
   void finish();
@@ -72,6 +76,12 @@ class SWRead {
       mem_seed_t& seed,
       mem_chain_t& chain,
       uint64_t *srt);
+
+  inline void getChainRef(
+      const ktp_aux_t* aux,
+      const bseq1_t* seq,
+      const mem_chain_v* chain,
+      mem_chainref_t* &ref);
 
   bool is_pend_;
   bool is_finished_;

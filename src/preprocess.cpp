@@ -289,7 +289,7 @@ int pre_process(int argc,
 
     // Decide FPGA usage based on read size
     int read_length = kseq_read(aux->ks);
-    if (read_length >= 250 || read_length < 100){
+    if (read_length >= 300 || read_length < 100){
       if (FLAGS_use_fpga) {
         LOG(WARNING) << "Disabling FPGA for read length = " << read_length;
       }

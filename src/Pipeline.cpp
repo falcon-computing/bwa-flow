@@ -5,17 +5,18 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread.hpp>
+#include <fstream>
 #include <list>
 #include <queue>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "bwa/utils.h"
 #include "config.h"
+#include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
-
-#ifdef BUILD_FPGA
-#include "Extension.h"
-#endif
 
 #ifdef SCALE_OUT
 #include "mpi.h"
@@ -410,6 +411,7 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
 }
 #endif
 
+uint64_t get_task_time;
 void SeqsRead::compute() {
 
   int num_seqs_produced = 0;
@@ -419,7 +421,7 @@ void SeqsRead::compute() {
 
     // Read from file input, get mem_chains
     int batch_num = 0;
-    bseq1_t *seqs = bseq_read(aux->actual_chunk_size, 
+    bseq1_t *seqs = bseq_read(10000000, 
         &batch_num, aux->ks, aux->ks2);
 
     if (!seqs) break;
@@ -448,7 +450,7 @@ void SeqsRead::compute() {
 
 SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
 
-  VLOG(2) << "Started SeqsToSams() for one input";
+  VLOG(1) << "Started SeqsToSams() for one input";
   uint64_t start_ts = getUs();
 
   bseq1_t* seqs = input.seqs;
@@ -512,7 +514,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
     free(seqs[i].qual);
   }
 
-  VLOG(1) << "Compute a batch in "
+  VLOG(1) << "Finished SeqsToSams() for one batch in "
     << getUs() - start_ts << " us";
 
   return input;
@@ -577,7 +579,7 @@ inline void SeqsToChains::prepareChainRef(
 
 ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
 
-  VLOG(2) << "Started SeqsToChains() for one input";
+  VLOG(1) << "Started SeqsToChains() for one input";
 
   uint64_t start_ts = getUs();
   uint64_t ref_time = 0;
@@ -593,33 +595,30 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   std::list<SWRead*>* read_batch;
   std::vector<int>* chains_idxes;
 
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    // Freed one by one in chain2reg stage
-    read_batch = new std::list<SWRead*>;
-    // Allocate here and it will be freed after SWRead is destroyed
-    chainrefs = (mem_chainref_t**)malloc(batch_num*sizeof(mem_chainref_t*));
-    // Freed in reg2sam stage
-    chains_idxes = new std::vector<int>[batch_num];
-  }
-#endif
+ // if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+ // //if (FLAGS_use_fpga ) {
+ //   // Freed one by one in chain2reg stage
+ //   read_batch = new std::list<SWRead*>;
+ //   // Allocate here and it will be freed after SWRead is destroyed
+ //   //chainrefs = (mem_chainref_t**)malloc(batch_num*sizeof(mem_chainref_t*));
+ //   // Freed in reg2sam stage
+ //   chains_idxes = new std::vector<int>[batch_num];
+ // }
 
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(aux, &seqs[i]);
     kv_init(alnreg[i]);
 
-#ifdef BUILD_FPGA
-    uint64_t start_ts = getNs();
-    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      prepareChainRef(aux, &seqs[i], &chains[i], chainrefs[i]);
+   // uint64_t start_ts = getNs();
+   // if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+   //   //prepareChainRef(aux, &seqs[i], &chains[i], chainrefs[i]);
 
-      SWRead *read_ptr = new SWRead(start_idx, i, aux, 
-          seqs+i, chains+i, alnreg+i, chainrefs[i], chains_idxes+i);
+   //   SWRead *read_ptr = new SWRead(start_idx, i, aux, 
+   //       seqs+i, chains+i, alnreg+i, 0, chains_idxes+i);
 
-      read_batch->push_back(read_ptr); 
-    }
-    ref_time += getNs() - start_ts;
-#endif
+   //   read_batch->push_back(read_ptr); 
+   // }
+   // ref_time += getNs() - start_ts;
   }
 
   ChainsRecord ret;
@@ -628,23 +627,24 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.seqs         = seqs;
   ret.chains       = chains;
   ret.alnreg       = alnreg;
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    ret.read_batch = read_batch;
-    ret.chains_idxes = chains_idxes;
-  }
-  else 
-#endif
-  {
-    ret.read_batch   = NULL;
-    ret.chains_idxes = NULL;
-  }
+ // if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+ //   ret.read_batch = read_batch;
+ //   ret.chains_idxes = chains_idxes;
+ //   ret.chainrefs = chainrefs;
+ // }
+ // else {
+ //   ret.read_batch   = NULL;
+ //   ret.chains_idxes = NULL;
+ //   ret.chainrefs = NULL;
+ // }
 
-  VLOG(1) << "Produced a chain batch in " << getUs() - start_ts << " us";
-  VLOG_IF(2, FLAGS_use_fpga) << "prepareChainRef takes " << ref_time/1e3 << " us";
+  VLOG(1) << "Finished SeqToChains() in " << getUs() - start_ts << " us";
+  //VLOG(2) << "prepareChainRef takes " << ref_time/1e3 << " us";
+  //VLOG(1) << "There are "<< this->getNumThreads()<<" CPU threads in seq2chain stage now";
 
   return ret;
 }
+
 
 inline bool ChainsToRegions::addBatch(
     std::list<SWRead*> &read_batch,
@@ -660,7 +660,7 @@ inline bool ChainsToRegions::addBatch(
     boost::this_thread::sleep_for(boost::chrono::microseconds(100));
     ready = this->getInput(record);
   }
-  VLOG(2) << "Wait for input takes " << getUs() - start_ts << " us";
+  VLOG(2) << "Wait for input for FPGA takes " << getUs() - start_ts << " us";
   if (!ready) { 
     // this means isFinal() is true and input queue is empty
     return false; 
@@ -673,6 +673,8 @@ inline bool ChainsToRegions::addBatch(
   mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
   std::vector<int>* chains_idxes = record.chains_idxes;
+  mem_chainref_t** chainrefs;
+  chainrefs = (mem_chainref_t**)malloc(batch_num*sizeof(mem_chainref_t*));
   std::list<SWRead*>* new_reads  = record.read_batch;
 
   input_buf[start_idx] = record;
@@ -685,6 +687,8 @@ inline bool ChainsToRegions::addBatch(
   output.chains = chains;
   output.alnreg = alnreg;
   output.chains_idxes = chains_idxes;
+  output.chainrefs = chainrefs;
+ // output.chainrefs = record.chainrefs;
 
   output_buf[start_idx] = output;
   tasks_remain[start_idx] = batch_num;
@@ -699,10 +703,9 @@ inline bool ChainsToRegions::addBatch(
 
 void ChainsToRegions::compute(int wid) {
 
-#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && wid < FLAGS_max_fpga_thread) {
 
-    VLOG(1) << "Worker " << wid << " is working on FPGA";
+    //VLOG(1) << "Worker " << wid << " is working on FPGA";
 
     int chunk_size = FLAGS_chunk_size;
 
@@ -714,22 +717,32 @@ void ChainsToRegions::compute(int wid) {
 
     int task_num = 0;
 
-    // Batch of SWTasks
-    ExtParam** task_batch[stage_num];
-
-    for (int i = 0; i < stage_num; i++) {
-      task_batch[i] = new ExtParam*[chunk_size];
-    }
-
-    // Batch of SWReads
-    std::list<SWRead*> read_batch;
+    // Batch of regions
+   mem_alnreg_t** region_batch[stage_num];
+   int stage_task_num[stage_num];
+   for (int i = 0; i < stage_num; i++) {
+     region_batch[i] = new mem_alnreg_t*[2*chunk_size];
+     stage_task_num[i] = 0;
+   } 
 
     // Table to keep track of each record
     std::unordered_map<uint64_t, int> tasks_remain;
     std::unordered_map<uint64_t, ChainsRecord> input_buf;
     std::unordered_map<uint64_t, RegionsRecord> output_buf;
 
+    // elements of the Regions record
+    bseq1_t* seqs        ;
+    mem_chain_v* chains  ;
+    mem_alnreg_v* alnreg ;
+    std::vector<int>* chains_idxes ;
+    mem_chainref_t** chainrefs;
+
+    // kernel_buffer 
+    char* kernel_buffer = new char [100000*chunk_size];
+    short* kernel_buffer_out = new short [40 * chunk_size];
+    int kernel_buffer_idx = 0;
     // For statistics
+    uint64_t start_ts;
     uint64_t last_batch_ts;
     uint64_t last_output_ts;
     uint64_t last_read_ts;
@@ -738,193 +751,107 @@ void ChainsToRegions::compute(int wid) {
     uint64_t pending_time  = 0;
     uint64_t finish_time   = 0;
     uint64_t nextTask_time = 0;
+    get_task_time = 0; 
     uint64_t batch_time    = 0;
     uint64_t output_time   = 0;
 
     uint64_t nextTask_num = 0;
+    int      start_idx    = 0;
     int      batch_num    = 0;
     int      read_num     = 0;
 
+    int batch_idx = 0;
+
     bool flag_need_reads = false;
     bool flag_more_reads = true;
-
-    while (flag_more_reads || !read_batch.empty()) { 
-
-      if (read_batch.empty()) {
-        // get initial input batch
-        if (!addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
-          flag_more_reads = false;
-        }
-
-        last_batch_ts  = getUs();
-        last_output_ts = last_batch_ts;
-        last_read_ts  = last_batch_ts;
+    ChainsRecord record; 
+    while (flag_more_reads) { 
+      // get one Chains record
+      bool ready = this->getInput(record);
+      start_ts = getUs();
+      while (!this->isFinal() && !ready) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+        ready = this->getInput(record);
       }
-      else {
-        std::list<SWRead*>::iterator iter = read_batch.begin();
+      VLOG(2) << "Wait for input for FPGA takes " << getUs() - start_ts << " us";
+      if(!ready) {
+        flag_more_reads = false;
+        break;
+      }
+      VLOG(1) << "Start ChainsToRegions() on FPGA";
+      //start_ts = getUs();
 
-        while (iter != read_batch.end()) {
-
-          uint64_t start_ts;
-          uint64_t wait_ts;
-          uint64_t start_idx;
-
-          ExtParam* param_task;
-          start_ts = getNs();
-          SWRead::TaskStatus status = (*iter)->nextTask(param_task);
-          nextTask_time += getNs() - start_ts; 
-          nextTask_num ++;
-
-          int curr_size = 0;
-
-          switch (status) {
-
-            case SWRead::TaskStatus::Successful:
-
-              task_batch[stage_cnt][task_num] = param_task;
-              task_num++;
-              if (task_num >= chunk_size) {
-                VLOG(3) << "nextTask takes " << nextTask_time/1e3 << " us in " 
-                        << nextTask_num << " calls";
-
-                nextTask_time = 0;
-                nextTask_num = 0;
-
-                extendOnFPGAPackInput(
-                    &agent,
-                    stage_cnt,
-                    task_batch[stage_cnt],
-                    chunk_size,
-                    aux->opt);
-
-                stage_cnt = 1 - stage_cnt;
-
-                // Wait for last batch to finish if valid
-                if (agent.pending(stage_cnt)) {
-                  extendOnFPGAProcessOutput(
-                      &agent,
-                      stage_cnt,
-                      task_batch[stage_cnt],
-                      chunk_size,
-                      aux->opt);
-                }
-
-                VLOG(3) << "Process SWRead::Pending takes " << pending_time/1e3 << " us";
-                VLOG(3) << "Process SWRead::Finish takes " << finish_time/1e3 << " us";
-                VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
-
-                pending_time = 0;
-                finish_time  = 0;
-
-                if (batch_num < 100) {
-                  batch_num ++;
-                  batch_time += getUs() - last_batch_ts;
-                }
-                else {
-                  VLOG(2) << "Extension task time is "
-                    << (double)batch_time / batch_num
-                    << " us/chunk";
-                  batch_num = 0;
-                  batch_time = 0;
-                }
-                last_batch_ts = getUs();
-
-                task_num = 0;
-              }
-              iter ++;
-              break;
-
-            case SWRead::TaskStatus::Pending:
-              start_ts = getNs();
-              if (flag_more_reads) {
-                // Try to get a new batch
-                curr_size = read_batch.size(); 
-
-                if (addBatch(read_batch, tasks_remain, input_buf, output_buf)) {
-                  iter = read_batch.begin();
-                  std::advance(iter, curr_size);
-                }
-                else {
-                  flag_more_reads = false;
-                }
-              }
-              else {
-                // No more new tasks, must do extend before proceeding
-                if (agent.pending(stage_cnt)) {
-                  extendOnFPGAProcessOutput(
-                      &agent,
-                      stage_cnt,
-                      task_batch[stage_cnt],
-                      chunk_size,
-                      aux->opt);
-                }
-                else {
-                  extendOnCPU(task_batch[stage_cnt], task_num, aux->opt);
-                  stage_cnt = 1 - stage_cnt;
-
-                  task_num = 0;
-                  iter++;
-                }
-              }
-              pending_time += getNs() - start_ts;
-              break;
-
-            case SWRead::TaskStatus::Finished:
-              start_ts = getNs();
-              // Read is finished, remove from batch
-              start_idx = (*iter)->start_idx();
-              tasks_remain[start_idx]--;
-
-              // Free SWRead
-              delete *iter;
-
-              iter = read_batch.erase(iter);
-
-              // Collecting throughput for reads
-              if (read_num < 10000) {
-                read_num ++;
-              }
-              else {
-                VLOG(2) << "Finished read throughput is "
-                  << (double)(getUs() - last_read_ts)/read_num
-                  << " us/read";
-                read_num = 0;
-                last_read_ts = getUs();
-              }
-
-              // Check if corresponding batch is finished
-              if (tasks_remain[start_idx] == 0) {
-                pushOutput(output_buf[start_idx]);
-
-
-                tasks_remain.erase(start_idx);
-                input_buf.erase(start_idx);
-                output_buf.erase(start_idx);
-
-                VLOG(1) << "Produced a region batch in "
-                  << getUs() - last_output_ts << " us";
-                VLOG(1) << "Currently there are " << tasks_remain.size()
-                  << " active batches";
-
-                last_output_ts = getUs();
-              }
-              finish_time += getNs() - start_ts;
-              break;
-
-            default: ;
+      last_batch_ts  = getUs();
+      last_output_ts = last_batch_ts;
+      last_read_ts  = last_batch_ts;
+      start_idx = record.start_idx;
+      batch_num = record.batch_num;
+      seqs = record.seqs;
+      chains = record.chains;
+      alnreg = record.alnreg;
+      chains_idxes = new std::vector<int>[batch_num];
+      chainrefs = new mem_chainref_t*[batch_num];
+      
+      // start processing this batch
+      for (int i =0; i< batch_num; i++) {
+        start_ts = getNs();
+        SWRead *read_ptr = new SWRead(start_idx, i, aux,
+            seqs+i, chains+i, alnreg+i, chainrefs[i], chains_idxes+i);
+        read_ptr->packRead(kernel_buffer, kernel_buffer_idx, task_num, read_num, 
+              region_batch[stage_cnt],chainrefs[i]);
+        nextTask_time += getNs() - start_ts;
+        nextTask_num ++;
+        if (task_num >= chunk_size) {
+          VLOG(3) << "nextTask "<< stage_cnt << " takes " << nextTask_time/1e3 << " us in " 
+                   << nextTask_num << " calls and generated "<< kernel_buffer_idx << " byte of data for "
+                   << task_num << " tasks";
+          stage_task_num[stage_cnt] = task_num;
+          extendOnFPGA(&agent, kernel_buffer, kernel_buffer_idx, stage_cnt);
+          stage_cnt = 1 - stage_cnt;
+          // wait for last batch to finish if any
+          if (agent.pending(stage_cnt)){
+            FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num[stage_cnt], 
+                region_batch[stage_cnt], stage_cnt );
           }
-        }
-      }
-    }
+          VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
+          last_batch_ts = getUs();
+          nextTask_time = 0;
+          get_task_time = 0;
+          nextTask_num = 0;
+          read_num = 0;
+          task_num = 0;
+          kernel_buffer_idx = 0;
+        } 
 
-    for (int i = 0; i < stage_num; i++) {
-      delete [] task_batch[i];
+      }
+      if (agent.pending(1 - stage_cnt)){
+        FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num[1 - stage_cnt], 
+            region_batch[1 - stage_cnt], 1 - stage_cnt );
+      }
+      // finish the remain reads even with small task number 
+      extendOnFPGA(&agent, kernel_buffer, kernel_buffer_idx, stage_cnt);
+      FPGAPostProcess(&agent, kernel_buffer_out, task_num, 
+            region_batch[stage_cnt], stage_cnt );
+      task_num = 0;
+      read_num = 0;
+      kernel_buffer_idx = 0;
+
+      RegionsRecord outputRecord;
+      outputRecord.start_idx = start_idx;
+      outputRecord.batch_num = batch_num;
+      outputRecord.seqs = seqs;
+      outputRecord.chains = chains;
+      outputRecord.alnreg = alnreg;
+      outputRecord.chains_idxes = chains_idxes;
+      outputRecord.chainrefs = chainrefs;
+      pushOutput(outputRecord);
+      VLOG(1) << "Finished ChainsToRegions() on FPGA for "
+        << getUs() - last_output_ts << " us ";
+      last_output_ts = getUs();
     }
   }
-  else 
-#endif
-  {
-    VLOG(1) << "Worker " << wid << " is working on CPU";
+  else {
+    //VLOG(1) << "Worker " << wid << " is working on CPU";
 
     uint64_t last_output_ts;
     uint64_t last_read_ts;
@@ -937,6 +864,7 @@ void ChainsToRegions::compute(int wid) {
       // this means isFinal() is true or timeout
       return; 
     }
+    VLOG(1) << "Start ChainsToRegions() on CPU";
     VLOG(2) << "Wait for input takes " << getUs() - start_ts << " us";
 
     last_output_ts = getUs();
@@ -945,20 +873,6 @@ void ChainsToRegions::compute(int wid) {
     bseq1_t* seqs       = record.seqs;
     mem_chain_v* chains = record.chains;
     int batch_num       = record.batch_num;
-
-#ifdef BUILD_FPGA
-    // Free all read batches
-    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      std::list<SWRead*>* read_batch = record.read_batch;
-      for (std::list<SWRead*>::iterator iter = read_batch->begin();
-          iter != read_batch->end();
-          iter ++)
-      {
-        delete *iter;
-      }
-      delete read_batch;
-    }
-#endif
 
     mem_alnreg_v* alnreg = record.alnreg;
 
@@ -984,20 +898,88 @@ void ChainsToRegions::compute(int wid) {
     output.alnreg = alnreg;
     output.chains = NULL;
     output.chains_idxes = NULL;
+    output.chainrefs = NULL;
 
     freeChains(chains, batch_num);
-    delete [] record.chains_idxes;
 
-    VLOG(1) << "Produced a region batch in "
+    VLOG(1) << "Finished ChainsToRegions() on CPU for "
       << getUs() - last_output_ts << " us";
+    //VLOG(1) << "There are "<< this->getNumThreads()<<" CPU threads in chain2reg stage now";
 
     pushOutput(output);
   }
 }
 
+void printRegionbatch(mem_alnreg_t** &region_batch, int region_num)
+{    std::ofstream regionfile("region_batch_new.txt");
+    for (int i =0;i < region_num; i++){
+          mem_alnreg_t* p = region_batch[i];
+          regionfile <<"i="<<i<<"\n";
+          regionfile <<"rb="<<p->rb<<"\n";
+          regionfile <<"re="<<p->re<<"\n";
+          regionfile <<"qb="<<p->qb<<"\n";
+          regionfile <<"qe="<<p->qe<<"\n";
+          regionfile <<"rid="<<p->rid<<"\n";
+          regionfile <<"score="<<p->score<<"\n";
+          regionfile <<"truesc="<<p->truesc<<"\n";
+          regionfile <<"sub="<<p->sub<<"\n";
+          regionfile <<"altsc="<<p->alt_sc<<"\n";
+          regionfile <<"csub="<<p->csub<<"\n";
+          regionfile <<"sub_n="<<p->sub_n<<"\n";
+          regionfile <<"w="<<p->w<<"\n";
+          regionfile <<"seedcov="<<p->seedcov<<"\n";
+          regionfile <<"secondary="<<p->secondary<<"\n";
+          regionfile <<"secondary_all="<<p->secondary_all<<"\n";
+          regionfile <<"seedlen0="<<p->seedlen0<<"\n";
+          regionfile <<"fracrep="<<p->frac_rep<<"\n";
+          regionfile <<"hash="<<p->hash<<"\n";
+    }
+   regionfile.close(); 
+}
+
+void printReg(mem_alnreg_v* alnreg, int batch_num){
+    std::ofstream regionfile("region_new.txt");
+    for (int i =0;i < batch_num; i++){
+       for (int j=0; j<alnreg[i].n;j++){
+          mem_alnreg_t *p = &(alnreg[i].a[j]);
+          regionfile <<"i="<<i<<"\n";
+          regionfile <<"j="<<j<<"\n";
+          regionfile <<"rb="<<p->rb<<"\n";
+          regionfile <<"re="<<p->re<<"\n";
+          regionfile <<"qb="<<p->qb<<"\n";
+          regionfile <<"qe="<<p->qe<<"\n";
+          regionfile <<"rid="<<p->rid<<"\n";
+          regionfile <<"score="<<p->score<<"\n";
+          regionfile <<"truesc="<<p->truesc<<"\n";
+          regionfile <<"sub="<<p->sub<<"\n";
+          regionfile <<"altsc="<<p->alt_sc<<"\n";
+          regionfile <<"csub="<<p->csub<<"\n";
+          regionfile <<"sub_n="<<p->sub_n<<"\n";
+          regionfile <<"w="<<p->w<<"\n";
+          regionfile <<"seedcov="<<p->seedcov<<"\n";
+          regionfile <<"secondary="<<p->secondary<<"\n";
+          regionfile <<"secondary_all="<<p->secondary_all<<"\n";
+          regionfile <<"seedlen0="<<p->seedlen0<<"\n";
+          regionfile <<"fracrep="<<p->frac_rep<<"\n";
+          regionfile <<"hash="<<p->hash<<"\n";
+       }
+    }
+   regionfile.close(); 
+}
+
+inline void RegionsToSam::freeRef( mem_chainref_t* &chainref, mem_chain_v* chain)
+{
+ for ( int i=0; i< chain->n; i++) {
+   free(chainref[i].srt);
+   free(chainref[i].rseq);
+ }
+ free(chainref);
+}
+
+
 SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
-  VLOG(2) << "Started RegionsToSam() for one input";
+  VLOG(1) << "Started RegionsToSam() for one input";
 
   uint64_t start_ts = getUs();
   uint64_t seedcov_time = 0;
@@ -1008,66 +990,99 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   mem_alnreg_v* alnreg = record.alnreg;
   bseq1_t* seqs        = record.seqs;
   std::vector<int>* chains_idxes = record.chains_idxes;
+  mem_chainref_t** chainrefs = record.chainrefs;
 
-  for (int i = 0; i < batch_num; i++) {
-#ifdef BUILD_FPGA
-    uint64_t start_ts = getNs();
-    if (chains_idxes) {
-      // Calculate seed coverage
-      for (int j = 0; j < alnreg[i].n; j++) {
-        mem_alnreg_t *newreg = &alnreg[i].a[j];
-        int chain_idx = chains_idxes[i][j];
+  if (chainrefs) {
+    //mem_alnreg_v* alnreg_short = new mem_alnreg_v[batch_num];
+    mem_alnreg_v* alnreg_short = alnreg;
+    for (int i = 0; i < batch_num; i++) {
+      uint64_t start_ts = getNs();
+      freeRef(chainrefs[i], &chains[i]);
+        //regionFilter(alnreg[i],alnreg_short[i],chainrefs[i],&chains[i],chains_idxes[i],&seqs[i]);
+        // Calculate seed coverage
+        for (int j = 0; j < alnreg_short[i].n; j++) {
+          mem_alnreg_t *newreg = &alnreg_short[i].a[j];
+          int chain_idx = chains_idxes[i][j];
 
-        int seedcov = 0;
-        for (int k = 0; k < chains[i].a[chain_idx].n; k++) {
-          const mem_seed_t *seed = &chains[i].a[chain_idx].seeds[k];
-          if (seed->qbeg >= newreg->qb && 
-              seed->qbeg + seed->len <= newreg->qe && 
-              seed->rbeg >= newreg->rb && 
-              seed->rbeg + seed->len <= newreg->re){
-            seedcov += seed->len; 
+          int seedcov = 0;
+          for (int k = 0; k < chains[i].a[chain_idx].n; k++) {
+            const mem_seed_t *seed = &chains[i].a[chain_idx].seeds[k];
+            if (seed->qbeg >= newreg->qb && 
+                seed->qbeg + seed->len <= newreg->qe && 
+                seed->rbeg >= newreg->rb && 
+                seed->rbeg + seed->len <= newreg->re){
+              seedcov += seed->len; 
+            }
           }
+          newreg->seedcov = seedcov;  
         }
-        newreg->seedcov = seedcov;  
+      seedcov_time += getNs() - start_ts;
+      
+      // Post-process each chain before output
+      alnreg_short[i].n = mem_sort_dedup_patch(
+          aux->opt, 
+          aux->idx->bns, 
+          aux->idx->pac, 
+          (uint8_t*)seqs[i].seq, 
+          alnreg_short[i].n, 
+          alnreg_short[i].a);
+
+      for (int j = 0; j < alnreg_short[i].n; j++) {
+        mem_alnreg_t *p = &alnreg_short[i].a[j];
+        if (p->rid >= 0 && aux->idx->bns->anns[p->rid].is_alt)
+          p->is_alt = 1;
       }
     }
-    seedcov_time += getNs() - start_ts;
-#endif
-    
-    // Post-process each chain before output
-    alnreg[i].n = mem_sort_dedup_patch(
-        aux->opt, 
-        aux->idx->bns, 
-        aux->idx->pac, 
-        (uint8_t*)seqs[i].seq, 
-        alnreg[i].n, 
-        alnreg[i].a);
+    if (chains_idxes) {
+      delete [] chains_idxes;
+      freeChains(chains, batch_num);
+    }
+    //printReg(alnreg_short,batch_num);
+    VLOG(2) << "Seed coverage time is " << seedcov_time/1e3 << " us";
 
-    for (int j = 0; j < alnreg[i].n; j++) {
-      mem_alnreg_t *p = &alnreg[i].a[j];
-      if (p->rid >= 0 && aux->idx->bns->anns[p->rid].is_alt)
-        p->is_alt = 1;
+    mem_pestat_t pes[4];
+    mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg_short, pes);
+    for (int i = 0; i < batch_num/2; i++) {
+      mem_sam_pe(
+          aux->opt,
+          aux->idx->bns,
+          aux->idx->pac,
+          pes,
+          (start_idx>>1)+i,
+          &seqs[i<<1],
+          &alnreg_short[i<<1]);
     }
   }
-#ifdef BUILD_FPGA
-  if (chains_idxes) {
-    delete [] chains_idxes;
-    freeChains(chains, batch_num);
-  }
-  VLOG(2) << "Seed coverage time is " << seedcov_time/1e3 << " us";
-#endif
+  else {
+    for (int i = 0; i < batch_num; i++) {
+      // Post-process each chain before output
+      alnreg[i].n = mem_sort_dedup_patch(
+          aux->opt, 
+          aux->idx->bns, 
+          aux->idx->pac, 
+          (uint8_t*)seqs[i].seq, 
+          alnreg[i].n, 
+          alnreg[i].a);
 
-  mem_pestat_t pes[4];
-  mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
-  for (int i = 0; i < batch_num/2; i++) {
-    mem_sam_pe(
-        aux->opt,
-        aux->idx->bns,
-        aux->idx->pac,
-        pes,
-        (start_idx>>1)+i,
-        &seqs[i<<1],
-        &alnreg[i<<1]);
+      for (int j = 0; j < alnreg[i].n; j++) {
+        mem_alnreg_t *p = &alnreg[i].a[j];
+        if (p->rid >= 0 && aux->idx->bns->anns[p->rid].is_alt)
+          p->is_alt = 1;
+      }
+    }
+
+    mem_pestat_t pes[4];
+    mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
+    for (int i = 0; i < batch_num/2; i++) {
+      mem_sam_pe(
+          aux->opt,
+          aux->idx->bns,
+          aux->idx->pac,
+          pes,
+          (start_idx>>1)+i,
+          &seqs[i<<1],
+          &alnreg[i<<1]);
+    }
   }
   freeAligns(alnreg, batch_num);
 
@@ -1084,8 +1099,8 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   output.batch_num = batch_num;
   output.seqs = seqs;
 
-  VLOG(1) << "Produced a sam batch in "
-    << getUs() - start_ts << " us";
+  VLOG(1) << "Finished RegionsToSam() in " << getUs() - start_ts << " us";
+  //VLOG(1) << "There are "<< this->getNumThreads()<<" CPU threads in reg2sam stage now";
 
   return output;
 }
