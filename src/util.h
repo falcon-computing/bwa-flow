@@ -35,5 +35,4 @@ inline uint64_t getNs() {
   return (uint64_t)tr.tv_sec*1e9 + tr.tv_nsec;
 }
 
-extern uint64_t get_task_time;
 #endif

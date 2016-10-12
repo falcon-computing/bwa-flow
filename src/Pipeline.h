@@ -47,9 +47,6 @@ struct ChainsRecord {
   bseq1_t* seqs;
   mem_chain_v* chains;
   mem_alnreg_v* alnreg;
-  std::list<SWRead*>* read_batch;
-  std::vector<int>* chains_idxes;
-  mem_chainref_t** chainrefs;
 };
 
 struct RegionsRecord {
@@ -58,8 +55,6 @@ struct RegionsRecord {
   bseq1_t* seqs;
   mem_chain_v* chains;
   mem_alnreg_v* alnreg;
-  std::vector<int>* chains_idxes;
-  mem_chainref_t** chainrefs;
 };
 
 #ifdef SCALE_OUT
@@ -120,12 +115,6 @@ class SeqsToChains
           SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n)
   {;}
   ChainsRecord compute(SeqsRecord const & record);
- private:
-  static inline void prepareChainRef(
-      const ktp_aux_t* aux,
-      const bseq1_t* seq,
-      const mem_chain_v* chain,
-      mem_chainref_t* &ref);
 };
 
 class ChainsToRegions
@@ -137,13 +126,6 @@ class ChainsToRegions
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n) {;}
 
   void compute(int wid);
- private:
-  inline bool addBatch(
-      std::list<SWRead*> &read_batch,
-      std::unordered_map<uint64_t, int> &tasks_remain,
-      std::unordered_map<uint64_t, ChainsRecord> &input_buf,
-      std::unordered_map<uint64_t, RegionsRecord> &output_buf);
-
 };
 
 class RegionsToSam
@@ -156,23 +138,6 @@ class RegionsToSam
   {;}
 
   SeqsRecord compute(RegionsRecord const & record);
-  
-  inline int testExtension(
-    mem_opt_t *opt,
-    mem_seed_t& seed,
-    mem_alnreg_v& alnregv, 
-    int l_query); 
-  inline int checkOverlap(
-    int startidx,
-    mem_seed_t& seed,
-    mem_chain_t& chain,
-    uint64_t *srt);
-  inline void regionFilter(mem_alnreg_v alnreg,mem_alnreg_v &alnreg_short,
-                mem_chainref_t* &chainref,mem_chain_v* chain,
-                std::vector<int> &chain_idxes,
-                bseq1_t* seq);
-  inline void freeRef( mem_chainref_t* &chainref, mem_chain_v* chain);
-  
 };
 
 class SamsPrint
@@ -181,7 +146,5 @@ class SamsPrint
   SamsPrint(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
   void compute();
 };
-
-void printRegionbatch(mem_alnreg_t** &region_batch, int region_num);
 
 #endif
