@@ -15,7 +15,6 @@
 #include "kflow/SinkStage.h"
 
 #include "bwa_wrapper.h"
-#include "SWRead.h"
 
 #define INPUT_DEPTH   4
 #define OUTPUT_DEPTH  16

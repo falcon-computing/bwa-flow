@@ -551,6 +551,17 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   return ret;
 }
 
+inline int cal_max_gap(
+    const mem_opt_t *opt, 
+    int qlen
+) {
+	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
+	int l_ins = (int)((double)(qlen * opt->a - opt->o_ins) / opt->e_ins + 1.);
+	int l = l_del > l_ins? l_del : l_ins;
+	l = l > 1? l : 1;
+	return l < opt->w<<1? l : opt->w<<1;
+}
+
 inline void getChainRef(
       const ktp_aux_t* aux,
       const bseq1_t* seq,
