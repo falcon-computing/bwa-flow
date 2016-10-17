@@ -44,10 +44,10 @@ template <
   int IN_DEPTH, int OUT_DEPTH
 >
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::getInput(U &item) {
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     return false; 
   }
-  return this->input_queue_->async_pop(item);
+  return this->getInputQueue()->async_pop(item);
 }
 
 template <
@@ -55,10 +55,10 @@ template <
   int IN_DEPTH, int OUT_DEPTH
 >
 void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::pushOutput(V const & item) {
-  if (!this->output_queue_) {
+  if (!this->getOutputQueue()) {
     return; 
   }
-  this->output_queue_->push(item);
+  this->getOutputQueue()->push(item);
 }
 
 template <
@@ -68,7 +68,7 @@ template <
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
   // Return false if input queue is empty or max num_worker_threads reached
-  if (this->input_queue_->empty() || 
+  if (this->getInputQueue()->empty() || 
       this->getNumThreads() >= this->getMaxNumThreads()) {
     return false;
   }
@@ -119,7 +119,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     return;
   }
     
-  if (!this->input_queue_ || !this->output_queue_) {
+  if (!this->getInputQueue() || !this->getOutputQueue()) {
     LOG(ERROR) << "Empty input/output queue is not allowed";
     return;
   }

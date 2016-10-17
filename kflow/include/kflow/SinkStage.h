@@ -40,17 +40,17 @@ SinkStage<U, IN_DEPTH>::SinkStage():
 template <typename U, int IN_DEPTH>
 bool SinkStage<U, IN_DEPTH>::getInput(U &item) 
 {
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     return false; 
   }
-  Queue<U, IN_DEPTH>* queue = this->input_queue_;
+  Queue<U, IN_DEPTH>* queue = this->getInputQueue();
   return queue->async_pop(item);
 }
 
 template <typename U, int IN_DEPTH>
 void SinkStage<U, IN_DEPTH>::worker_func(int wid) {
 
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     LOG(ERROR) << "Empty input queue is not allowed";
     return;
   }

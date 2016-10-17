@@ -51,7 +51,7 @@ bool MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
   // Try to get one input from the input queue
   U input;
-  bool ready = this->input_queue_->async_pop(input);
+  bool ready = this->getInputQueue()->async_pop(input);
 
   if (!ready) {
     // return false if input queue is empty
@@ -82,8 +82,8 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
     V output = compute(input); 
 
     // write result to output_queue
-    if (this->output_queue_) {
-      this->output_queue_->push(output);
+    if (this->getOutputQueue()) {
+      this->getOutputQueue()->push(output);
     }
 
     // free input if it is a pointer
@@ -109,7 +109,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     return;
   }
     
-  if (!this->input_queue_ || !this->output_queue_) {
+  if (!this->getInputQueue() || !this->getOutputQueue()) {
     throw std::runtime_error("Empty input/output queue is not allowed");
   }
 
@@ -117,11 +117,11 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     try {
       // first read input from input queue
       U input;
-      bool ready = this->input_queue_->async_pop(input);
+      bool ready = this->getInputQueue()->async_pop(input);
 
       while (!this->isFinal() && !ready) {
         boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-        ready = this->input_queue_->async_pop(input);
+        ready = this->getInputQueue()->async_pop(input);
       }
       if (!ready) { 
         // this means isFinal() is true and input queue is empty
@@ -132,7 +132,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
       V output = compute(input); 
 
       // write result to output_queue
-      this->output_queue_->push(output);
+      this->getOutputQueue()->push(output);
 
       // free input if it is a pointer
       deleteIfPtr(input, boost::is_pointer<U>());

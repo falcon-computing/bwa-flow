@@ -37,15 +37,15 @@ SourceStage<V, OUT_DEPTH>::SourceStage():
 
 template <typename V, int OUT_DEPTH>
 void SourceStage<V, OUT_DEPTH>::pushOutput(V const & item) {
-  if (!this->output_queue_) {
+  if (!this->getOutputQueue()) {
     return; 
   }
-  this->output_queue_->push(item);
+  this->getOutputQueue()->push(item);
 }
 
 template <typename V, int OUT_DEPTH>
 void SourceStage<V, OUT_DEPTH>::worker_func(int wid) {
-  if (!this->output_queue_) {
+  if (!this->getOutputQueue()) {
     LOG(ERROR) << "Empty output queue is not allowed";
     return;
   }

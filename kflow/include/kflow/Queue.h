@@ -59,7 +59,8 @@ class Queue<void, 0> : public QueueBase {
    bool empty() { return true;}
 };
 
-const boost::shared_ptr<QueueBase> NULL_QUEUE_PTR;
+typedef boost::shared_ptr<QueueBase> Queue_ptr;
+const Queue_ptr NULL_QUEUE_PTR;
 
 } // namespace kestrelFlow
 

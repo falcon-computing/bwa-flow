@@ -7,10 +7,11 @@ namespace kestrelFlow {
 StageBase::StageBase(int num_workers, bool is_dyn): 
   is_dynamic_(is_dyn),
   num_workers_(num_workers),
-  next_stage_(NULL),
   pipeline_(NULL),
+  num_upstream_stages_(0),
   num_active_threads_(0),
-  num_finalized_(0),
+  num_finalized_workers_(0),
+  num_finalized_upstream_stages_(0),
   is_final_(false)
 {
   if (num_workers<1) {
@@ -70,19 +71,31 @@ void StageBase::wait() {
 }
 
 void StageBase::final() {
-  is_final_.store(true);   
-  DLOG(INFO) << "Stage is finalized";
+  if (!is_final_.load()) {
+    num_finalized_upstream_stages_.fetch_add(1) ;
+    DLOG(INFO) << "Current finalized upstream stages: " << num_finalized_upstream_stages_;
+    if (num_finalized_upstream_stages_.load() >= num_upstream_stages_) {
+      is_final_.store(true);   
+      DLOG(INFO) << "Stage is finalized";
+    }
+  }
 }
 
 void StageBase::finalize() {
-  if (!next_stage_) return;
-  if (is_dynamic_) {
-    next_stage_->final();
+  if (downstream_stages_.empty()) return;
+  if (is_dynamic_) { 
+    // if dynamic this function will be called by pipeline
+    for (int i = 0; i < downstream_stages_.size(); i++) {
+      downstream_stages_[i]->final();
+    }
   }
   else {
-    num_finalized_.fetch_add(1);
-    if (num_finalized_.load() == num_workers_) {
-      next_stage_->final();
+    // otherwise this will be called by compute()
+    num_finalized_workers_.fetch_add(1);
+    if (num_finalized_workers_.load() == num_workers_) {
+      for (int i = 0; i < downstream_stages_.size(); i++) {
+        downstream_stages_[i]->final();
+      }
     }
   }
 }
@@ -112,24 +125,8 @@ int StageBase::getMaxNumThreads() {
   return num_workers_;
 }
 
-/*
-std::string StageBase::printPerf() {
-  using namespace std;
-  stringstream ss;
-  ss << "Stage total time: " << (double)(end_ts - start_ts)/1e3 << "ms\n";
-  ss << "===============================================================\n";
-  ss << "| worker | load time | compute time | store time | total time |\n";
-  for (int i=0; i<num_workers; i++) {
-    ss <<  "| " << setw(4)  << setfill(' ') << i << "  ";
-    ss << " | " << setw(7)  << setfill(' ') << perf_meters[i][0] << "us";
-    ss << " | " << setw(10) << setfill(' ') << perf_meters[i][1] << "us";
-    ss << " | " << setw(8)  << setfill(' ') << perf_meters[i][2] << "us";
-    ss << " | " << setw(8)  << setfill(' ') << perf_meters[i][3] << "us";
-    ss << " |\n";
-  }
-  ss << "===============================================================\n";
-  return ss.str();
+void StageBase::linkStage(StageBase* next_stage) {
+  downstream_stages_.push_back(next_stage);
+  next_stage->num_upstream_stages_++;
 }
-*/
-
 } // namepsace kestrelFlow

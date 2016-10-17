@@ -31,6 +31,21 @@ Pipeline::~Pipeline() {
   workers_.join_all();
 }
 
+void Pipeline::branch(Pipeline& pipeline, int idx) {
+  // first link the output queue for pipeline.stage[idx-1] 
+  // and then link the input queue for pipeline.stage[idx+1]
+  queues_[0] = pipeline.queues_[idx];
+  queues_[num_stages_] = pipeline.queues_[idx+1];
+
+  stages_[0]->input_queue_ = queues_[0];
+  stages_[num_stages_-1]->output_queue_ = queues_[num_stages_];
+
+  // then add first stage to the downstream of pipeline.stage[idx-1]
+  // and add pipeline.stage[idx] to the downstream of last stage
+  pipeline.stages_[idx-1]->linkStage(stages_[0]);
+  stages_[num_stages_-1]->linkStage(pipeline.stages_[idx+1]);
+}
+
 void Pipeline::finalize() {
   stages_[0]->final();
   DLOG(INFO) << "Finalized first stage";
@@ -127,6 +142,7 @@ void Pipeline::schedule() {
       if (!dispatched) {
         StageBase* stage = pending_stages_.front();
         if (stage->isFinal() && stage->getNumThreads()==0) {
+          // send final signal to downstream stages
           stage->finalize();
           pending_stages_.pop_front();
 
@@ -150,12 +166,19 @@ void Pipeline::schedule() {
   }
 }
 
-QueueBase* Pipeline::getInputQueue() {
-  return queues_[0].get();
+boost::shared_ptr<QueueBase> Pipeline::getQueue(int idx) {
+  if (idx >= queues_.size()) {
+    return boost::shared_ptr<QueueBase>();
+  }
+  return queues_[idx];
 }
 
-QueueBase* Pipeline::getOutputQueue() {
-  return queues_[num_stages_].get();
+boost::shared_ptr<QueueBase> Pipeline::getInputQueue() {
+  return queues_[0];
+}
+
+boost::shared_ptr<QueueBase> Pipeline::getOutputQueue() {
+  return queues_[num_stages_];
 }
 
 } // namepspace kestrelFlow

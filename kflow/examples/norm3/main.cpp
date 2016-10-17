@@ -44,7 +44,7 @@ class NormStage :
 {
 public:
   NormStage(bool is_dyn, int n):
-    MapPartitionStage<std::vector<double>*, double>(is_dyn, n) {;}
+    MapPartitionStage<std::vector<double>*, double>(n, is_dyn) {;}
 
   void compute(int wid) {
     if (this->isDynamic()) {
@@ -135,9 +135,9 @@ int main(int argc, char** argv) {
   norm_pipeline.start();
 
   Queue<int>* input_queue = static_cast<Queue<int>*>(
-                              norm_pipeline.getInputQueue());
+                              norm_pipeline.getInputQueue().get());
   Queue<double>* output_queue = static_cast<Queue<double>*>(
-                              norm_pipeline.getOutputQueue());
+                              norm_pipeline.getOutputQueue().get());
 
   for (int i = 0; i < n; i++) {
     for (int k = 0; k < 32; k++) {
