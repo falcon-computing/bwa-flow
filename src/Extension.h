@@ -5,7 +5,6 @@
 #include <boost/thread/thread.hpp>
 
 #include "FPGAAgent.h"
-#include "SWTask.h"
 
 extern OpenCLEnv* opencl_env;
 

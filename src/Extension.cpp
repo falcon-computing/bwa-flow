@@ -16,8 +16,6 @@
 #include "config.h"
 #include "Extension.h"
 #include "FPGAAgent.h"
-#include "SWTask.h"
-#include "SWRead.h"
 #include "util.h"
 
 #define MAX_BAND_TRY  2

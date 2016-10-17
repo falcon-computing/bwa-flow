@@ -18,7 +18,7 @@
 
 #define INPUT_DEPTH   4
 #define OUTPUT_DEPTH  16
-#define COMPUTE_DEPTH 64
+#define COMPUTE_DEPTH 16
 
 #define MASTER_RANK   0
 
@@ -117,12 +117,37 @@ class SeqsToChains
 };
 
 class ChainsToRegions
-: public kestrelFlow::MapPartitionStage<
+: public kestrelFlow::MapStage<
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
 {
  public:
-  ChainsToRegions(int n=1): kestrelFlow::MapPartitionStage<
+  ChainsToRegions(int n=1): kestrelFlow::MapStage<
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n) {;}
+
+  RegionsRecord compute(ChainsRecord const & record);
+};
+
+class ChainsPipeFPGA
+: public kestrelFlow::MapStage<
+      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>
+{
+ public:
+  ChainsPipeFPGA(int n=1): kestrelFlow::MapStage<
+      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n) {;}
+
+  ChainsRecord compute(ChainsRecord const & record) {
+    ChainsRecord output = record;
+    return output; 
+  }
+};
+
+class ChainsToRegionsFPGA
+: public kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>
+{
+ public:
+  ChainsToRegionsFPGA(int n=1): kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>(n) {;}
 
   void compute(int wid);
 };

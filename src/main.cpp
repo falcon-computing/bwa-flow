@@ -231,7 +231,9 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, 
+                                     FLAGS_t-FLAGS_max_fpga_thread);
+  kestrelFlow::Pipeline fpga_flow(2, FLAGS_max_fpga_thread+1);
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
@@ -243,10 +245,14 @@ int main(int argc, char *argv[]) {
   SamsReceive     sam_recv_stage;
 #endif
   // Stages for bwa computation
-  SeqsToSams      seq2sam_stage(FLAGS_t);
-  SeqsToChains    seq2chain_stage(FLAGS_stage_1_nt);
-  ChainsToRegions chain2reg_stage(FLAGS_stage_2_nt);
-  RegionsToSam    reg2sam_stage(FLAGS_stage_3_nt);
+  SeqsToSams       seq2sam_stage(FLAGS_t);
+  SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
+  ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
+  RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
+
+  // Stages for FPGA acceleration of stage_2
+  ChainsPipeFPGA      chainpipe_fpga_stage; // push through
+  ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
 
 #ifdef SCALE_OUT
   SeqsReceive* input_stage = &seq_recv_stage;
@@ -288,12 +294,23 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(2, &chain2reg_stage);
     compute_flow.addStage(3, &reg2sam_stage);
     compute_flow.addStage(4, output_stage);
+
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      fpga_flow.addStage(0, &chainpipe_fpga_stage);
+      fpga_flow.addStage(1, &chain2reg_fpga_stage);
+
+      // bind the input/output queue of stage_2 in compute_flow
+      fpga_flow.branch(compute_flow, 2);
+    }
   }
   else {
     compute_flow.addStage(1, &seq2sam_stage);
     compute_flow.addStage(2, output_stage);
   }
   
+	t_real = realtime();
+  compute_flow.start();
+
   // Start FPGA context
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
@@ -306,15 +323,15 @@ int main(int argc, char *argv[]) {
         << " because: " << e.what();
       return 1;
     }
+    fpga_flow.start();
   }
-	t_real = realtime();
-  compute_flow.start();
   compute_flow.wait();
 
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+    fpga_flow.finalize();
+    fpga_flow.wait();
     delete opencl_env;
   }
-
 
 #ifdef SCALE_OUT
   MPI::COMM_WORLD.Barrier();
