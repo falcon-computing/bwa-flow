@@ -15,6 +15,7 @@
 #include "kflow/SinkStage.h"
 
 #include "bwa_wrapper.h"
+#include "FPGAAgent.h"
 
 #define INPUT_DEPTH   4
 #define OUTPUT_DEPTH  16
@@ -133,7 +134,7 @@ class ChainsPipeFPGA
 {
  public:
   ChainsPipeFPGA(int n=1): kestrelFlow::MapStage<
-      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n) {;}
+      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n, false) {;}
 
   ChainsRecord compute(ChainsRecord const & record) {
     ChainsRecord output = record;
@@ -147,9 +148,25 @@ class ChainsToRegionsFPGA
 {
  public:
   ChainsToRegionsFPGA(int n=1): kestrelFlow::MapPartitionStage<
-      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>(n) {;}
+      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>(n, false) {;}
 
   void compute(int wid);
+  void extendOnFPGA(
+      FPGAAgent* agent,
+      char* &kernel_buffer,
+      int data_size_a,
+      int data_size_b,
+      int stage_cnt
+      );
+  void FPGAPostProcess(
+      FPGAAgent* agent,
+      short* kernel_output,
+      int task_num_a,
+      int task_num_b,
+      mem_alnreg_t** &region_batch,
+      mem_chain_t** &chain_batch,
+      int stage_cnt
+      );
 };
 
 class RegionsToSam

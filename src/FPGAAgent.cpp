@@ -16,13 +16,21 @@ FPGAAgent::FPGAAgent(
 
   for (int i=0; i<2; i++) {
     // Allocate maximum OpenCL input buffer
-    input_buf_[i] = clCreateBuffer(context,
+    input_buf_a[i] = clCreateBuffer(context,
+        CL_MEM_READ_ONLY,
+        buf_size,
+        NULL, NULL);
+    input_buf_b[i] = clCreateBuffer(context,
         CL_MEM_READ_ONLY,
         buf_size,
         NULL, NULL);
 
     // Allocate maximum OpenCL output buffer
-    output_buf_[i] = clCreateBuffer(context,
+    output_buf_a[i] = clCreateBuffer(context,
+        CL_MEM_WRITE_ONLY, 
+        2*chunk_size*FPGA_RET_PARAM_NUM*sizeof(int),
+        NULL, NULL);
+    output_buf_b[i] = clCreateBuffer(context,
         CL_MEM_WRITE_ONLY, 
         2*chunk_size*FPGA_RET_PARAM_NUM*sizeof(int),
         NULL, NULL);
@@ -30,17 +38,18 @@ FPGAAgent::FPGAAgent(
     fpga_task_[i] = NULL;
   }
 
-  // Skip error handling at this point
 }
 
 FPGAAgent::~FPGAAgent() {
   for (int i = 0; i < 2; i++) {
-    clReleaseMemObject(input_buf_[i]);
-    clReleaseMemObject(output_buf_[i]);
+    clReleaseMemObject(input_buf_a[i]);
+    clReleaseMemObject(input_buf_b[i]);
+    clReleaseMemObject(output_buf_a[i]);
+    clReleaseMemObject(output_buf_b[i]);
   }
 }
 
-void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
+void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt, int bank) {
 
   if (size > max_buf_size_) {
     throw std::runtime_error("Input buffer size too big");
@@ -48,43 +57,56 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt) {
 
   cl_command_queue cmd = env_->getCmdQueue();
 
-  //boost::lock_guard<OpenCLEnv> guard(*env_);
+  cl_int err = 0;
+  if (size > 0 ) {
+    if (bank == 0)
+      err = clEnqueueWriteBuffer(cmd, 
+          input_buf_a[cnt], CL_TRUE, 0, size, 
+          host_ptr, 0, NULL, NULL);
+    else
+      err = clEnqueueWriteBuffer(cmd, 
+          input_buf_b[cnt], CL_TRUE, 0, size, 
+          host_ptr, 0, NULL, NULL);
 
-  cl_int err = clEnqueueWriteBuffer(cmd, 
-      input_buf_[cnt], CL_TRUE, 0, size, 
-      host_ptr, 0, NULL, NULL);
-
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to write to input buffer");
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to write to input buffer");
+    }
   }
 }
 
-void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt) {
+void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt, int bank) {
   if (size > 2*chunk_size_*FPGA_RET_PARAM_NUM*sizeof(int)) {
     throw std::runtime_error("Output buffer size too big");
   }
   cl_command_queue cmd = env_->getCmdQueue();
   
   //boost::lock_guard<OpenCLEnv> guard(*env_);
+  cl_int err = 0;
+  if (size > 0 ) {
+    if (bank == 0)
+    err = clEnqueueReadBuffer(cmd,
+        output_buf_a[cnt], CL_TRUE, 0, size,
+        host_ptr, 0, NULL, NULL);  
+    else
+    err = clEnqueueReadBuffer(cmd,
+        output_buf_b[cnt], CL_TRUE, 0, size,
+        host_ptr, 0, NULL, NULL);  
 
-  cl_int err = clEnqueueReadBuffer(cmd,
-      output_buf_[cnt], CL_TRUE, 0, size,
-      host_ptr, 0, NULL, NULL);  
-
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Cannot read output buffer\n");
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Cannot read output buffer\n");
+    }
   }
 }
 
-void FPGAAgent::start(int task_num, int cnt) {
- // if (task_num > 2*chunk_size_) {
- //   throw std::runtime_error("Too many tasks\n");
- // }
+void FPGAAgent::start(int size_a, int size_b, int cnt) {
 
   fpga_task_[cnt] = new FPGATask;
-  fpga_task_[cnt]->task_num = task_num;
-  fpga_task_[cnt]->input    = &input_buf_[cnt];
-  fpga_task_[cnt]->output   = &output_buf_[cnt];
+  fpga_task_[cnt]->size_a = size_a;
+  fpga_task_[cnt]->size_b = size_b;
+  fpga_task_[cnt]->input_a    = &input_buf_a[cnt];
+  fpga_task_[cnt]->input_b    = &input_buf_b[cnt];
+  fpga_task_[cnt]->output_a   = &output_buf_a[cnt];
+  fpga_task_[cnt]->output_b   = &output_buf_b[cnt];
 
   env_->post_task(fpga_task_[cnt]);
 }

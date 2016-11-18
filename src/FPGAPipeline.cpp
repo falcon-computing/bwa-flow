@@ -14,9 +14,9 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "Extension.h"
 #include "FPGAAgent.h"
 #include "util.h"
+#include "Pipeline.h"
 
 #define MAX_BAND_TRY  2
 //#define SMITHWATERMAN_SIM
@@ -28,21 +28,24 @@ void sw_top (int *a, int *output_a, int __inc);
 }
 #endif
 
-void extendOnFPGA(
+void ChainsToRegionsFPGA::extendOnFPGA(
     FPGAAgent* agent,
     char* &kernel_buffer,
-    int data_size,
+    int data_size_a,
+    int data_size_b,
     int stage_cnt
     )
 {
-  agent->writeInput( (int*)kernel_buffer, data_size, stage_cnt);
-  agent->start (data_size/4, stage_cnt);
+  agent->writeInput((int*)kernel_buffer, data_size_a, stage_cnt, 0);
+  agent->writeInput((int*)(&kernel_buffer[data_size_a]), data_size_b, stage_cnt, 1);
+  agent->start(data_size_a/4, data_size_b/4, stage_cnt);
 }
 
-void FPGAPostProcess(
+void ChainsToRegionsFPGA::FPGAPostProcess(
     FPGAAgent* agent,
     short* kernel_output,
-    int task_num,
+    int task_num_a,
+    int task_num_b,
     mem_alnreg_t** &region_batch,
     mem_chain_t** &chain_batch,
     int stage_cnt
@@ -55,8 +58,10 @@ void FPGAPostProcess(
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
-  agent->readOutput(kernel_output, FPGA_RET_PARAM_NUM*task_num*4, stage_cnt);
-  for (int i = 0; i < task_num; i++) {
+  agent->readOutput(kernel_output, FPGA_RET_PARAM_NUM*task_num_a*4, stage_cnt, 0);
+  agent->readOutput(&kernel_output[FPGA_RET_PARAM_NUM*task_num_a*2],
+      FPGA_RET_PARAM_NUM*task_num_b*4, stage_cnt, 1);
+  for (int i = 0; i < task_num_a + task_num_b; i++) {
     int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
                     kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
     mem_alnreg_t *newreg = region_batch[seed_idx];
@@ -86,5 +91,3 @@ void FPGAPostProcess(
   VLOG(3) << "Process output takes " 
     << getUs() - start_ts << " us";
 }
-
-

@@ -8,6 +8,8 @@
 
 #define FPGA_RET_PARAM_NUM 5
 
+extern OpenCLEnv* opencl_env;
+
 class FPGAAgent {
  public:
   FPGAAgent(OpenCLEnv* env, 
@@ -16,9 +18,9 @@ class FPGAAgent {
 
   ~FPGAAgent();
 
-  void writeInput(void* host_ptr, uint64_t size, int cnt);
-  void readOutput(void* host_ptr, uint64_t size, int cnt);
-  void start(int task_num, int cnt);
+  void writeInput(void* host_ptr, uint64_t size, int cnt, int bank);
+  void readOutput(void* host_ptr, uint64_t size, int cnt, int bank);
+  void start(int size_a, int size_b, int cnt);
   void wait(int cnt);
   bool pending(int cnt);
 
@@ -26,8 +28,10 @@ class FPGAAgent {
   OpenCLEnv*     env_;
   const uint64_t max_buf_size_;
   const int      chunk_size_;
-  cl_mem         input_buf_[2];
-  cl_mem         output_buf_[2];
+  cl_mem         input_buf_a[2];
+  cl_mem         input_buf_b[2];
+  cl_mem         output_buf_a[2];
+  cl_mem         output_buf_b[2];
   FPGATask*      fpga_task_[2];
 };
 

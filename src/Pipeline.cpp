@@ -14,7 +14,6 @@
 
 #include "bwa/utils.h"
 #include "config.h"
-#include "Extension.h"
 #include "Pipeline.h"  
 #include "util.h"
 
@@ -769,11 +768,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
   // Batch of regions
   mem_alnreg_t** region_batch[stage_num];
   mem_chain_t** chain_batch[stage_num];
-  int stage_task_num[stage_num];
+  int stage_task_num_a[stage_num];
+  int stage_task_num_b[stage_num];
   for (int i = 0; i < stage_num; i++) {
     region_batch[i] = new mem_alnreg_t*[2*chunk_size];
     chain_batch[i] = new mem_chain_t*[2*chunk_size];
-    stage_task_num[i] = 0;
+    stage_task_num_a[i] = 0;
+    stage_task_num_b[i] = 0;
   } 
   // elements of the Regions record
   bseq1_t* seqs        ;
@@ -781,7 +782,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
   mem_alnreg_v* alnreg ;
 
   // kernel_buffer 
-  char* kernel_buffer = new char [100000*chunk_size];
+  char* kernel_buffer = new char [10000*chunk_size];
   short* kernel_buffer_out = new short [40 * chunk_size];
   int kernel_buffer_idx = 0;
   // For statistics
@@ -817,7 +818,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       flag_more_reads = false;
       break;
     }
-    VLOG(1) << "Started ChainsToRegions() on FPGA";
+    VLOG(1) << "Started ChainsToRegions() on FPGA ";
 
     last_batch_ts  = getUs();
     last_output_ts = last_batch_ts;
@@ -827,45 +828,81 @@ void ChainsToRegionsFPGA::compute(int wid) {
     seqs = record.seqs;
     chains = record.chains;
     alnreg = record.alnreg;
-    // start processing this batch
-    for (int i =0; i< batch_num; i++) {
-      start_ts = getNs();
-      // pack data for one read
-      packReadData(aux, seqs+i, chains+i,
-          alnreg+i, kernel_buffer, kernel_buffer_idx, task_num,
-          region_batch[stage_cnt], chain_batch[stage_cnt]);
-      nextTask_time += getNs() - start_ts;
-      nextTask_num ++;
-      if (task_num >= chunk_size) {
-        VLOG(3) << "nextTask "<< stage_cnt << " takes " << nextTask_time/1e3 << " us in " 
-          << nextTask_num << " calls and generated "<< kernel_buffer_idx << " byte of data for "
-          << task_num << " tasks";
-        stage_task_num[stage_cnt] = task_num;
-        extendOnFPGA(&agent, kernel_buffer, kernel_buffer_idx, stage_cnt);
+
+    int i = 0;
+    uint64_t last_prepare_ts = getUs();
+    uint64_t last_batch_ts = getUs();
+    int kernel_task_num_a = 0;
+    int kernel_task_num_b = 0;
+    int kernel_size_a = 0;
+    int kernel_size_b = 0;
+    bool reach_half = false;
+    while (i < batch_num) {
+      if (task_num < chunk_size/2) {
+        packReadData(aux, seqs+i, chains+i,
+            alnreg+i, kernel_buffer, kernel_buffer_idx, task_num,
+            region_batch[stage_cnt], chain_batch[stage_cnt]);
+        i++;
+      }
+      else if (task_num >= chunk_size/2 && reach_half == false) {
+        kernel_size_a = kernel_buffer_idx;
+        kernel_task_num_a = task_num;
+        kernel_buffer_idx = 0;
+        reach_half = true;
+      }
+      else if (task_num < chunk_size) {
+        packReadData(aux, seqs+i, chains+i,
+            alnreg+i, &kernel_buffer[kernel_size_a], kernel_buffer_idx, task_num,
+            region_batch[stage_cnt], chain_batch[stage_cnt]);
+        i++;
+      }
+      else if (task_num >= chunk_size) {
+        kernel_size_b = kernel_buffer_idx;
+        kernel_task_num_b = task_num - kernel_task_num_a;
+        VLOG(3) << "Prepare data for FPGA  "<< stage_cnt << " takes " << getUs()- last_prepare_ts << " us " ;
+        stage_task_num_a[stage_cnt] = kernel_task_num_a ;
+        stage_task_num_b[stage_cnt] = kernel_task_num_b ;
+        //extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
+        //stage_cnt = 1 - stage_cnt;
+        //if (agent.pending(stage_cnt)){
+        //  FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[stage_cnt], 
+        //      stage_task_num_b[stage_cnt],region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
+        //}
         stage_cnt = 1 - stage_cnt;
-        // wait for last batch to finish if any
         if (agent.pending(stage_cnt)){
-          FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num[stage_cnt], 
-              region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
+          FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[stage_cnt], 
+              stage_task_num_b[stage_cnt],region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
         }
-        VLOG(3) << "Batch takes " << getUs() - last_batch_ts << " us";
+        extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, 1 - stage_cnt);
+        last_prepare_ts = getUs();
+        VLOG(3) << "This chunk of FPGA takes " << getUs()- last_batch_ts<< " us " ;
         last_batch_ts = getUs();
-        nextTask_time = 0;
-        nextTask_num = 0;
         task_num = 0;
         kernel_buffer_idx = 0;
-      } 
+        kernel_size_a = 0;
+        kernel_size_b = 0;
+        kernel_task_num_a = 0;
+        kernel_task_num_b = 0;
+        reach_half = false;
+      }
     }
     if (agent.pending(1 - stage_cnt)){
-      FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num[1 - stage_cnt], 
-          region_batch[1 - stage_cnt], chain_batch[1 - stage_cnt], 1 - stage_cnt );
+      FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[1 - stage_cnt], 
+          stage_task_num_b[1 - stage_cnt], region_batch[1 - stage_cnt],
+          chain_batch[1 - stage_cnt], 1 - stage_cnt );
     }
     // finish the remain reads even with small task number 
-    extendOnFPGA(&agent, kernel_buffer, kernel_buffer_idx, stage_cnt);
-    FPGAPostProcess(&agent, kernel_buffer_out, task_num, 
+    extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
+    FPGAPostProcess(&agent, kernel_buffer_out, kernel_task_num_a, kernel_task_num_b,
         region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
     task_num = 0;
     kernel_buffer_idx = 0;
+    kernel_size_a = 0;
+    kernel_size_b = 0;
+    kernel_task_num_a = 0;
+    kernel_task_num_b = 0;
+    reach_half = false;
+    i = 0;
 
     RegionsRecord outputRecord;
     outputRecord.start_idx = start_idx;

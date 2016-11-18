@@ -15,9 +15,12 @@
 #include "util.h"
 
 struct FPGATask {
-  int     task_num;
-  cl_mem* input;
-  cl_mem* output;
+  int     size_a;
+  int     size_b;
+  cl_mem* input_a;
+  cl_mem* input_b;
+  cl_mem* output_a;
+  cl_mem* output_b;
   boost::promise<bool> ready;
 };
 
@@ -76,6 +79,7 @@ class OpenCLEnv
 
     // Create a command commands
     commands_ = clCreateCommandQueue(context_, device_id, 0, &err);
+    //commands_ = clCreateCommandQueue(context_, device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
 
     if (!commands_) {
         throw std::runtime_error("Failed to create a command queue context!");
@@ -173,14 +177,23 @@ class OpenCLEnv
         start_ts = getNs();
 
         // Got new task and start execution
-        int task_num  = task->task_num;
-        cl_mem* input  = task->input;
-        cl_mem* output = task->output;
-
-        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input);
-        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), output);
-        err |= clSetKernelArg(kernel_, 2, sizeof(int), &task_num);
-
+        int size_a = task->size_a;
+        int size_b = task->size_b;
+        cl_mem* input_a  = task->input_a;
+        cl_mem* output_a = task->output_a;
+        cl_mem* input_b  = task->input_b;
+        cl_mem* output_b = task->output_b;
+        // to make sure the fpga works
+        if (size_b == 0) {
+          input_b = input_a;
+        }
+          
+        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input_a);
+        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), input_b);
+        err |= clSetKernelArg(kernel_, 2, sizeof(cl_mem), output_a);
+        err |= clSetKernelArg(kernel_, 3, sizeof(cl_mem), output_b);
+        err |= clSetKernelArg(kernel_, 4, sizeof(int), &size_a);
+        err |= clSetKernelArg(kernel_, 5, sizeof(int), &size_b);
         err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
         if (err) {
           LOG(ERROR) << "Failed to execute kernel.";

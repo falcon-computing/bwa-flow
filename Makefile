@@ -42,7 +42,7 @@ endif
 ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
-	    $(SRC_DIR)/Extension.o \
+	    $(SRC_DIR)/FPGAPipeline.o \
             $(SRC_DIR)/FPGAAgent.o 
 INCLUDES := $(INCLUDES) \
 	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
