@@ -243,6 +243,10 @@ int main(int argc, char *argv[]) {
 	double t_real = realtime();
 
   int num_compute_stages = 3;
+  int num_fpga_threads = 0;
+  if (FLAGS_use_fpga) {
+    num_fpga_threads = FLAGS_max_fpga_thread + 3;
+  }
   if (FLAGS_offload) {
     num_compute_stages = 5;
   }
@@ -252,8 +256,8 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, 
-                                     FLAGS_t-FLAGS_max_fpga_thread);
-  kestrelFlow::Pipeline fpga_flow(2, FLAGS_max_fpga_thread+1);
+                                     FLAGS_t - num_fpga_threads);
+  kestrelFlow::Pipeline fpga_flow(2, 1);
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;

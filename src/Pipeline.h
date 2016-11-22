@@ -17,9 +17,9 @@
 #include "bwa_wrapper.h"
 #include "FPGAAgent.h"
 
-#define INPUT_DEPTH   4
-#define OUTPUT_DEPTH  16
-#define COMPUTE_DEPTH 16
+#define INPUT_DEPTH   16
+#define OUTPUT_DEPTH  96
+#define COMPUTE_DEPTH 96
 
 #define MASTER_RANK   0
 

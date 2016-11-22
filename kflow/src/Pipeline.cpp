@@ -125,18 +125,16 @@ void Pipeline::schedule() {
     while (!pending_stages_.empty()) {
 
       bool dispatched = false;
-      // Check if there is idle thread
-      if (num_active_threads_.load() < num_threads_) {
-        // Always try to start execute from later stages
-        // if the corresponding input queue is not empty
-        for (std::deque<StageBase*>::reverse_iterator 
-             iter  = pending_stages_.rbegin();
-             iter != pending_stages_.rend();
-             iter ++) {
-          if ((*iter)->execute()) {
-            dispatched = true;
-            break; 
-          }
+      // Always try to start execute from later stages
+      // if the corresponding input queue is not empty
+      for (std::deque<StageBase*>::reverse_iterator 
+          iter  = pending_stages_.rbegin();
+          iter != pending_stages_.rend();
+          iter ++) {
+        // Check if there is idle thread
+        if (num_active_threads_.load() < num_threads_ &&
+            (*iter)->execute()) {
+          dispatched = true;
         }
       }
       if (!dispatched) {
@@ -152,11 +150,11 @@ void Pipeline::schedule() {
           boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
         }
       }
-      else {
-        // Sleep a little while to avoid contentions
-        // TODO: verify
-        boost::this_thread::sleep_for(boost::chrono::microseconds(10));
-      }
+      //else {
+      //  // Sleep a little while to avoid contentions
+      //  // TODO: verify
+      //  boost::this_thread::sleep_for(boost::chrono::microseconds(10));
+      //}
     }
     DLOG(INFO) << "Scheduler is finished";
   }

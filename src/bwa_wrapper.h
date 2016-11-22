@@ -21,7 +21,7 @@
 #include "bwa/utils.h"
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "0.7.13-r1126-wrappered"
+#define PACKAGE_VERSION "0.7.13-r1126-fcs"
 #endif
 
 #ifdef USE_HTSLIB

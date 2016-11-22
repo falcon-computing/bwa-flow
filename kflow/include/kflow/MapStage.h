@@ -45,7 +45,8 @@ template <
 bool MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
   // Return false if input queue is empty or max num_worker_threads reached
-  if (this->getNumThreads() >= this->getMaxNumThreads()) {
+  if (this->getNumThreads() >= this->getMaxNumThreads() || 
+      this->getOutputQueue()->almost_full()) {
     return false;
   }
 
@@ -83,7 +84,13 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
 
     // write result to output_queue
     if (this->getOutputQueue()) {
+      uint64_t start_ts = getUs();
       this->getOutputQueue()->push(output);
+      uint64_t end_ts = getUs();
+      if (end_ts - start_ts >= 2000) {
+        LOG(WARNING) << "Output queue is full for " << end_ts - start_ts
+                     << " us, blocking progress";
+      }
     }
 
     // free input if it is a pointer
