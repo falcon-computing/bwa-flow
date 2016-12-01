@@ -88,7 +88,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
       this->getOutputQueue()->push(output);
       uint64_t end_ts = getUs();
       if (end_ts - start_ts >= 2000) {
-        LOG(WARNING) << "Output queue is full for " << end_ts - start_ts
+        DLOG(WARNING) << "Output queue is full for " << end_ts - start_ts
                      << " us, blocking progress";
       }
     }

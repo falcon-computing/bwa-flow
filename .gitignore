@@ -7,3 +7,5 @@ config.mk
 *.txt
 *.out
 *.log*
+*.png
+*.dat
