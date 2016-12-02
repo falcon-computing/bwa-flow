@@ -97,7 +97,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
     deleteIfPtr(input, boost::is_pointer<U>());
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
   }
   catch (std::runtime_error &e) {
     LOG(ERROR) << "Error in compute(): " << e.what();  
@@ -145,7 +145,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
       deleteIfPtr(input, boost::is_pointer<U>());
     } 
     catch (boost::thread_interrupted &e) {
-      VLOG(2) << "Worker thread is interrupted";
+      DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
       break;
     }
     catch (std::runtime_error &e) {

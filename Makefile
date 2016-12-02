@@ -4,7 +4,7 @@ BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3 -DNDEBUG -DUSE_HTSLIB
+CFLAGS 	:= -g -std=c++0x -fPIC -O3 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
@@ -40,6 +40,7 @@ LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 endif
 
 ifneq ($(HTSLIB_PATH),)
+CFLAGS	 := $(CFLAGS) -DUSE_HTSLIB
 INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
 LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
 endif 

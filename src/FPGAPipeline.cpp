@@ -54,7 +54,7 @@ void ChainsToRegionsFPGA::FPGAPostProcess(
   uint64_t start_ts = getUs();
   int seedcov = 0;
   agent->wait(stage_cnt);
-  VLOG(3) << "Wait for FPGA takes " 
+  DLOG_IF(INFO, FLAGS_v >= 3) << "Wait for FPGA takes " 
     << getUs() - start_ts << " us";
 
   start_ts = getUs();
@@ -88,6 +88,6 @@ void ChainsToRegionsFPGA::FPGAPostProcess(
     }
     newreg->seedcov = seedcov;
   }
-  VLOG(3) << "Process output takes " 
+  DLOG_IF(INFO, FLAGS_v >= 3) << "Process output takes " 
     << getUs() - start_ts << " us";
 }

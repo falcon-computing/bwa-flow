@@ -55,7 +55,7 @@ void SourceStage<V, OUT_DEPTH>::worker_func(int wid) {
     compute(); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
     return;
   }
   // inform the next Stage there will be no more

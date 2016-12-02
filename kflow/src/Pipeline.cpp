@@ -160,7 +160,7 @@ void Pipeline::schedule() {
   }
   catch (boost::thread_interrupted &e) {
     // TODO: stop io_service and join all threads
-    VLOG(2) << "Scheduler is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Scheduler is interrupted";
   }
 }
 

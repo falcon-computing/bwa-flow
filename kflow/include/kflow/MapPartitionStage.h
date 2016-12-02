@@ -99,7 +99,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func() {
     compute(n_workers-1); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
     return;
   }
   catch (std::runtime_error &e) {
@@ -129,7 +129,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     compute(wid); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
   }
   // inform the next Stage there will be no more
   // output records

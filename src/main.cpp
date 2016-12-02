@@ -89,6 +89,9 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
+DEFINE_int32(output_nt, 1,
+    "Total number of parallel threads to use for output stage");
+
 DEFINE_int32(output_flag, 0, 
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
@@ -142,7 +145,7 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
-    VLOG(1) << "Use FPGA in BWA-FLOW";
+    DLOG_IF(INFO, FLAGS_v >= 1) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
       LOG(ERROR) << "Cannot find FPGA bitstream at " 
@@ -168,15 +171,15 @@ int main(int argc, char *argv[]) {
         return 1;
       }
       if (FLAGS_sort) {
-        VLOG(1) << "Putting sorted BAM files to " << sam_dir;
+        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting sorted BAM files to " << sam_dir;
       }
       else {
-        VLOG(1) << "Putting output to " << sam_dir;
+        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting output to " << sam_dir;
       }
     }
   }
   else {
-    VLOG(1) << "Putting output to stdout";
+    DLOG_IF(INFO, FLAGS_v >= 1) << "Putting output to stdout";
   }
 
   // Produce original BWA arguments
@@ -210,8 +213,11 @@ int main(int argc, char *argv[]) {
     LOG(ERROR) << "Illegal argument of --output_flag";
     return 1;
   }
+
+#ifdef USE_HTSLIB
   bwa_args.push_back("-o");
   bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
+#endif
 
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
@@ -261,7 +267,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
-  SamsPrint       print_stage;
+  SamsPrint       print_stage(FLAGS_output_nt);
 #ifdef SCALE_OUT
   SeqsDispatch    seq_send_stage;
   SeqsReceive     seq_recv_stage;
@@ -340,7 +346,7 @@ int main(int argc, char *argv[]) {
     try {
       opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
       //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
-      VLOG(1) << "Configured FPGA bitstream from " << FLAGS_fpga_path;
+      DLOG_IF(INFO, FLAGS_v >= 1) << "Configured FPGA bitstream from " << FLAGS_fpga_path;
     }
     catch (std::runtime_error &e) {
       LOG(ERROR) << "Cannot configured FPGA bitstream from " << FLAGS_fpga_path
@@ -394,7 +400,9 @@ int main(int argc, char *argv[]) {
 
     free(bwa_pg);
   }
-
+#ifdef USE_HTSLIB
+  bam_hdr_destroy(aux->h);
+#endif
   free(aux->opt);
   bwa_idx_destroy(aux->idx);
   delete aux;
