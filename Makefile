@@ -4,7 +4,7 @@ BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3 -DNDEBUG -DUSE_HTSLIB
+CFLAGS 	:= -g -std=c++0x -fPIC -O3 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
@@ -29,7 +29,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -lpthread -lm -ldl -lz -lrt
 
-ifneq ($(NDEBUG),)
+ifneq ($(RELEASE),)
 CFLAGS   := $(CFLAGS) -DNDEBUG
 endif
 
@@ -40,6 +40,7 @@ LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 endif
 
 ifneq ($(HTSLIB_PATH),)
+CFLAGS   := $(CFLAGS) -DUSE_HTSLIB
 INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
 LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
 endif 
@@ -61,6 +62,9 @@ all:	$(PROG)
 
 scaleout:
 	$(MAKE) SCALEOUT=1 all
+
+release:
+	$(MAKE) RELEASE=1 all
 
 ./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) 
 	$(PP) $(OBJS) -o $@ $(LIBS)

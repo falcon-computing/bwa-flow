@@ -27,11 +27,14 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "FPGAAgent.h"
 #include "Pipeline.h"
 #include "util.h"
 
+#ifdef BUILD_FPGA
+#include "FPGAAgent.h"
+#include "FPGAPipeline.h"
 OpenCLEnv* opencl_env;
+#endif
 
 boost::mutex mpi_mutex;
 
@@ -141,8 +144,9 @@ int main(int argc, char *argv[]) {
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
 
+#ifdef BUILD_FPGA
   if (FLAGS_offload && FLAGS_use_fpga) {
-    VLOG(1) << "Use FPGA in BWA-FLOW";
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
       LOG(ERROR) << "Cannot find FPGA bitstream at " 
@@ -153,6 +157,7 @@ int main(int argc, char *argv[]) {
   else {
     FLAGS_use_fpga = false;
   }
+#endif
 
   // Get output file folder
   std::string sam_dir = FLAGS_output_dir;
@@ -244,9 +249,11 @@ int main(int argc, char *argv[]) {
 
   int num_compute_stages = 3;
   int num_fpga_threads = 0;
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga) {
     num_fpga_threads = FLAGS_max_fpga_thread + 3;
   }
+#endif
   if (FLAGS_offload) {
     num_compute_stages = 5;
   }
@@ -257,8 +264,7 @@ int main(int argc, char *argv[]) {
 #endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, 
                                      FLAGS_t - num_fpga_threads);
-  kestrelFlow::Pipeline fpga_flow(2, 1);
-
+  DLOG(INFO) << "Using " << FLAGS_t - num_fpga_threads << " threads in total";
   // Stages for bwa file in/out
   SeqsRead        read_stage;
   SamsPrint       print_stage;
@@ -274,9 +280,13 @@ int main(int argc, char *argv[]) {
   ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
 
+#ifdef BUILD_FPGA
+  kestrelFlow::Pipeline fpga_flow(2, 1);
+
   // Stages for FPGA acceleration of stage_2
   ChainsPipeFPGA      chainpipe_fpga_stage; // push through
   ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+#endif
 
 #ifdef SCALE_OUT
   SeqsReceive* input_stage = &seq_recv_stage;
@@ -319,6 +329,7 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(3, &reg2sam_stage);
     compute_flow.addStage(4, output_stage);
 
+#ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       fpga_flow.addStage(0, &chainpipe_fpga_stage);
       fpga_flow.addStage(1, &chain2reg_fpga_stage);
@@ -326,6 +337,7 @@ int main(int argc, char *argv[]) {
       // bind the input/output queue of stage_2 in compute_flow
       fpga_flow.branch(compute_flow, 2);
     }
+#endif
   }
   else {
     compute_flow.addStage(1, &seq2sam_stage);
@@ -336,26 +348,32 @@ int main(int argc, char *argv[]) {
   compute_flow.start();
 
   // Start FPGA context
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
       opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
       //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
-      VLOG(1) << "Configured FPGA bitstream from " << FLAGS_fpga_path;
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+        << FLAGS_fpga_path;
     }
     catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot configured FPGA bitstream from " << FLAGS_fpga_path
-        << " because: " << e.what();
+      LOG(ERROR) << "Cannot configure FPGA bitstream";
+      DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
+      DLOG(ERROR) << "because: " << e.what();
       return 1;
     }
     fpga_flow.start();
   }
+#endif
   compute_flow.wait();
 
+#ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     fpga_flow.finalize();
     fpga_flow.wait();
     delete opencl_env;
   }
+#endif
 
 #ifdef SCALE_OUT
   MPI::COMM_WORLD.Barrier();

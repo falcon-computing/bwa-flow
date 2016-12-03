@@ -99,7 +99,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func() {
     compute(n_workers-1); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG(WARNING) << "Worker thread is interrupted";
     return;
   }
   catch (std::runtime_error &e) {
@@ -114,13 +114,13 @@ template <
 void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
 
   if (this->isDynamic()) {
-    LOG(WARNING) << "Dynamic stages are not supposed to "
+    DLOG(WARNING) << "Dynamic stages are not supposed to "
       << "start worker threads, exiting.";
     return;
   }
     
   if (!this->getInputQueue() || !this->getOutputQueue()) {
-    LOG(ERROR) << "Empty input/output queue is not allowed";
+    DLOG(ERROR) << "Empty input/output queue is not allowed";
     return;
   }
 
@@ -129,7 +129,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     compute(wid); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG(WARNING) << "Worker thread is interrupted";
   }
   // inform the next Stage there will be no more
   // output records
