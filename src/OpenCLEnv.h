@@ -204,7 +204,7 @@ class OpenCLEnv
 
         uint64_t fpga_time = getNs() - start_ts;
 
-        VLOG(3) << "SW-FPGA kernel takes " 
+        DLOG_IF(INFO, FLAGS_v >= 3) << "SW-FPGA kernel takes " 
           << fpga_time/1e3 << " us";
 
         // Only measure middle part of execution
@@ -220,9 +220,9 @@ class OpenCLEnv
       }
     }
     catch (boost::thread_interrupted &e) {
-      VLOG(1) << "FPGA utilization is " 
+      DLOG_IF(INFO, FLAGS_v >= 1) << "FPGA utilization is " 
         << 100.0f*total_fpga_time/(total_fpga_time+total_wait_time) << " %";
-      VLOG(1) << "Percentage of tasks that FPGA util > 80\% is " 
+      DLOG_IF(INFO, FLAGS_v >= 1) << "Percentage of tasks that FPGA util > 80\% is " 
         << 100.0f*thresh_counter/counter << " %";
     }
   }

@@ -14,7 +14,10 @@
 #include <unistd.h>
 
 #include "bwa/utils.h"
+
+#ifdef USE_HTSLIB
 #include "htslib/ksort.h"
+#endif
 
 #include "bwa_wrapper.h"
 #include "config.h"
@@ -22,10 +25,12 @@
 #include "util.h"
 
 // Comparator function for bam1_t records
+#ifdef USE_HTSLIB
 bool bam1_lt(const bam1_t* a, const bam1_t* b) {
   return ((uint64_t)a->core.tid<<32|(a->core.pos+1)<<1|bam_is_rev(a)) 
        < ((uint64_t)b->core.tid<<32|(b->core.pos+1)<<1|bam_is_rev(b));
 }
+#endif
 
 #ifdef SCALE_OUT
 #include "mpi.h"
@@ -450,7 +455,7 @@ void SeqsRead::compute() {
 				free(seqs[i].comment);
 				seqs[i].comment = 0;
 			}
-      VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
+      DLOG_IF(INFO, FLAGS_v >= 2 && num_seqs_produced == 0) << "Do not append seq comment";
     }
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
@@ -704,10 +709,12 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+#ifdef USE_HTSLIB
 void SamsPrint::sortAndWriteBamBatch(
     bam1_t** buf,
     int n_elements,
-    std::string out_dir) 
+    std::string out_dir,
+    int wid) 
 {
   uint64_t start_ts = getUs();
 
@@ -727,14 +734,14 @@ void SamsPrint::sortAndWriteBamBatch(
     const char *modes[] = {"wb", "wb0", "w"};
 
     std::stringstream ss;
-    ss << out_dir << "/part-"
-       << std::setw(6) << std::setfill('0') << file_id_;
+    ss << out_dir << "/part-" << wid
+       << std::setw(6) << std::setfill('0') << file_id_[wid];
 
-    fout_ = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
-    if (!fout_) {
+    fout_[wid] = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+    if (!fout_[wid]) {
       throw std::runtime_error("Cannot open output file");
     }
-    int status = sam_hdr_write(fout_, aux->h);
+    int status = sam_hdr_write(fout_[wid], aux->h);
   }
   else {
     LOG(ERROR) << "Sorting only works with file output,"
@@ -744,20 +751,21 @@ void SamsPrint::sortAndWriteBamBatch(
 
   // start writing to file
   for (int i = 0; i < n_elements; ++i){
-    int status = sam_write1(fout_, aux->h, buf[i]); 
+    int status = sam_write1(fout_[wid], aux->h, buf[i]); 
     bam_destroy1(buf[i]);
   }
   if (use_file) {
-    sam_close(fout_);
-    file_id_++;
+    sam_close(fout_[wid]);
+    file_id_[wid]++;
   }
 
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << n_elements 
           << " records in "
           << getUs() - start_ts << " us";
 }
+#endif
 
-void SamsPrint::compute() {
+void SamsPrint::compute(int wid) {
 
   boost::any var = this->getConst("sam_dir");
   std::string out_dir = boost::any_cast<std::string>(var);
@@ -784,7 +792,7 @@ void SamsPrint::compute() {
   if (!FLAGS_sort) {
     if (use_file) {
       std::stringstream ss;
-      ss << out_dir << "/part-"
+      ss << out_dir  << "/part-" << wid 
         << std::setw(6) << std::setfill('0') << file_id;
 #ifdef USE_HTSLIB
       DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
@@ -820,11 +828,13 @@ void SamsPrint::compute() {
 
   // Buffer to sort output bam
   int      max_bam_records = FLAGS_max_num_records;
+#ifdef USE_HTSLIB
   bam1_t** bam_buffer;
   int      bam_buffer_idx = 0;
   if (FLAGS_sort) {
     bam_buffer = (bam1_t**)malloc(FLAGS_max_num_records*sizeof(bam1_t*));
   }
+#endif
 
   // NOTE: input may be out-of-order, use a reorder buffer if
   // the output needs to be in-order
@@ -881,6 +891,7 @@ void SamsPrint::compute() {
       }
     }
     else if (FLAGS_sort) {
+#ifdef USE_HTSLIB
       uint64_t start_ts = getUs();
       int batch_num = input.batch_num;
       bseq1_t* seqs = input.seqs;
@@ -890,7 +901,7 @@ void SamsPrint::compute() {
           for (int j = 0; j < seqs[i].bams->l; j++) {
             bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
             if (bam_buffer_idx >= max_bam_records) {
-              sortAndWriteBamBatch(bam_buffer, max_bam_records, out_dir);
+              sortAndWriteBamBatch(bam_buffer, max_bam_records, out_dir, wid);
               bam_buffer_idx = 0;
             }
           }  
@@ -899,6 +910,7 @@ void SamsPrint::compute() {
         }
       }
       free(seqs);
+#endif
     }
     else {
       uint64_t start_ts = getUs();
@@ -915,7 +927,7 @@ void SamsPrint::compute() {
 
           // Open a new file
           std::stringstream ss;
-          ss << out_dir << "/part-"
+          ss << out_dir << "/part-" << wid
             << std::setw(6) << std::setfill('0') << file_id;
 
 #ifdef USE_HTSLIB
@@ -952,15 +964,15 @@ void SamsPrint::compute() {
         << " to file in " << getUs() - start_ts << " us";
     }
   }
+#ifdef USE_HTSLIB    
   if (bam_buffer_idx > 0) {
-    sortAndWriteBamBatch(bam_buffer, bam_buffer_idx, out_dir);
+    sortAndWriteBamBatch(bam_buffer, bam_buffer_idx, out_dir, wid);
     free(bam_buffer);
   }
-#ifdef USE_HTSLIB    
   if(!FLAGS_sort) {
     sam_close(fout);
   }
-  bam_hdr_destroy(aux->h);
+  //bam_hdr_destroy(aux->h);
 #else
   if (use_file) {
     fclose(fout);
