@@ -23,6 +23,7 @@ DECLARE_int32(t);
 DECLARE_string(fpga_path);
 DECLARE_string(output_dir);
 DECLARE_string(R);
+DECLARE_int32(max_batch_records);
 
 // Global parameters
 extern ktp_aux_t* aux;

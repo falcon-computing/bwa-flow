@@ -99,6 +99,9 @@ DEFINE_int32(output_flag, 0,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
+DEFINE_int32(max_batch_records, 1, 
+    "Flag to specify how many batch to buffer before sort");
+
 int main(int argc, char *argv[]) {
 
   // Print arguments for records
@@ -261,7 +264,7 @@ int main(int argc, char *argv[]) {
   }
 #endif
   if (FLAGS_offload) {
-    num_compute_stages = 5;
+    num_compute_stages = 6;
   }
 
 #ifdef SCALE_OUT
@@ -274,6 +277,8 @@ int main(int argc, char *argv[]) {
   // Stages for bwa file in/out
   SeqsRead        read_stage;
   SamsPrint       print_stage(FLAGS_output_nt);
+  SamsReorder     reorder_stage;
+  WriteOutput     write_stage(FLAGS_output_nt);
 #ifdef SCALE_OUT
   SeqsDispatch    seq_send_stage;
   SeqsReceive     seq_recv_stage;
@@ -333,7 +338,9 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(1, &seq2chain_stage);
     compute_flow.addStage(2, &chain2reg_stage);
     compute_flow.addStage(3, &reg2sam_stage);
-    compute_flow.addStage(4, output_stage);
+    compute_flow.addStage(4, &reorder_stage);
+    compute_flow.addStage(5, &write_stage);
+   // compute_flow.addStage(4, output_stage);
 
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {

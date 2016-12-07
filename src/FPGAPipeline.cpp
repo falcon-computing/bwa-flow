@@ -436,6 +436,16 @@ void ChainsToRegionsFPGA::compute(int wid) {
           chain_batch[1 - stage_cnt], 1 - stage_cnt );
     }
     // finish the remain reads even with small task number 
+    if (task_num < chunk_size/2) {
+      kernel_size_a = kernel_buffer_idx;
+      kernel_size_b = 0;
+      kernel_task_num_a = task_num;
+      kernel_task_num_b = 0;
+    }
+    else if (task_num < chunk_size) {
+      kernel_size_b = kernel_buffer_idx;
+      kernel_task_num_b = task_num - kernel_task_num_a;
+    }
     extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
     FPGAPostProcess(&agent, kernel_buffer_out, kernel_task_num_a, kernel_task_num_b,
         region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );

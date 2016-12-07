@@ -56,6 +56,14 @@ struct RegionsRecord {
   mem_alnreg_v* alnreg;
 };
 
+#ifdef USE_HTSLIB
+struct BamsRecord {
+  int bam_buffer_order;
+  bam1_t** bam_buffer;
+  int bam_buffer_idx;
+};
+#endif
+
 #ifdef SCALE_OUT
 class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
  public:
@@ -137,6 +145,44 @@ class RegionsToSam
   {;}
 
   SeqsRecord compute(RegionsRecord const & record);
+};
+
+#ifdef USE_HTSLIB
+class SamsReorder
+: public kestrelFlow::MapPartitionStage<SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsReorder():kestrelFlow::MapPartitionStage
+                  <SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
+  {;}
+    void compute(int wid);
+};
+#else
+class SamsReorder
+: public kestrelFlow::MapPartitionStage<SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsReorder():kestrelFlow::MapPartitionStage
+                  <SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
+  {;}
+    void compute(int wid);
+};
+#endif
+
+class WriteOutput
+#ifdef USE_HTSLIB
+:public kestrelFlow::SinkStage<BamsRecord, OUTPUT_DEPTH> {
+#else
+:public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
+#endif
+  public:
+    WriteOutput(int n=1):
+#ifdef USE_HTSLIB
+      kestrelFlow::SinkStage<BamsRecord, OUTPUT_DEPTH>(n, false) {;}
+#else
+      kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>(n, false) {;}
+#endif
+    void compute(int wid);
 };
 
 class SamsPrint

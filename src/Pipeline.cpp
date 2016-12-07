@@ -709,6 +709,202 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+void SamsReorder::compute(int wid) {
+
+  uint64_t n_processed = 0;
+  std::unordered_map<uint64_t, SeqsRecord> record_buf;
+#ifdef USE_HTSLIB
+  int max_batch_records = FLAGS_max_batch_records;
+  bam1_t** bam_buffer = NULL;
+  int bam_buffer_idx = 0;
+  int batch_records = 0;
+  int bam_buffer_order = 0;
+  BamsRecord output;
+#else
+  SeqsRecord output;
+#endif
+  while (true) {
+    SeqsRecord input;
+    SeqsRecord record;
+    bool ready = this->getInput(input);
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(input);
+    }
+    if (!ready) { 
+      // this means isFinal() is true and input queue is empty
+      break; 
+    }
+    if (FLAGS_inorder_output) {
+      record_buf[input.start_idx] = input;
+
+      while (record_buf.count(n_processed)) {
+        record = record_buf[n_processed];
+        record_buf.erase(n_processed);
+        n_processed += record.batch_num;
+      }
+    }
+    else {
+      record = input;
+    }
+#ifdef USE_HTSLIB
+    int batch_num = record.batch_num;
+    bseq1_t* seqs = record.seqs;
+
+    if(!bam_buffer) {
+      bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
+    }
+    for(int i = 0; i < batch_num; i++) {
+      if (seqs[i].bams) {
+        for (int j =0; j < seqs[i].bams->l; j++) {
+          bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+        }
+      }
+      free(seqs[i].bams->bams);
+      free(seqs[i].bams); seqs[i].bams = NULL;    
+    }
+    free(seqs);
+    if (batch_records < max_batch_records) {
+      batch_records++;
+    }
+    else {
+      if(FLAGS_sort) {
+        uint64_t start_ts_st = getUs();
+        std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
+          getUs() - start_ts_st << " us";
+      }
+      output.bam_buffer = bam_buffer;
+      output.bam_buffer_idx = bam_buffer_idx;
+      output.bam_buffer_order = bam_buffer_order;
+      bam_buffer_idx = 0;
+      batch_records = 0;
+      bam_buffer_order = bam_buffer_order + 1;
+      pushOutput(output);
+      bam_buffer = NULL;
+    }
+#else
+    output = record;
+    pushOutput(output);
+#endif
+  }
+#ifdef USE_HTSLIB
+  //finish the remaining sam
+  if(batch_records > 0){
+    if(FLAGS_sort) {
+      uint64_t start_ts_st = getUs();
+      std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
+        getUs() - start_ts_st << " us";
+    }
+    output.bam_buffer = bam_buffer;
+    output.bam_buffer_idx = bam_buffer_idx;
+    output.bam_buffer_order = bam_buffer_order;
+    bam_buffer_idx = 0;
+    batch_records = 0;
+    bam_buffer_order = bam_buffer_order + 1;
+    pushOutput(output);
+    bam_buffer = NULL; 
+  }
+#endif
+}
+
+void WriteOutput::compute(int wid)
+{
+  boost::any var = this->getConst("sam_dir");
+  std::string out_dir = boost::any_cast<std::string>(var);
+  bool use_file = !out_dir.empty();
+#ifdef USE_HTSLIB
+  // write bam output
+  if (!use_file) {
+    LOG(ERROR) << "Bams output only works with file output,"
+      << " please specify --output_dir";
+    exit(1);
+  }
+  const char *modes[] = {"wb", "wb0", "w"};
+  samFile *fout = NULL;
+  while (true) {
+    BamsRecord input;
+    bool ready = this->getInput(input);
+
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(input);
+    }
+    if (!ready) { 
+      // this means isFinal() is true and input queue is empty
+      break; 
+    }
+    uint64_t start_ts = getUs();
+    int file_id = input.bam_buffer_order;
+    int bam_buffer_idx = input.bam_buffer_idx;
+    bam1_t** bam_buffer = input.bam_buffer;
+
+    std::stringstream ss;
+    ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << file_id;
+    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
+    fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+    if (!fout) {
+      throw std::runtime_error("Cannot open bam output file");
+    }
+    int status = sam_hdr_write(fout, aux->h);
+    if (status) {
+      LOG(ERROR) << "sam_hdr_write error: " << status;
+    }
+    // start writing to file
+    for (int i = 0; i < bam_buffer_idx; ++i){
+      sam_write1(fout, aux->h, bam_buffer[i]); 
+      bam_destroy1(bam_buffer[i]);
+    }
+    sam_close(fout);
+    free(bam_buffer);
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << bam_buffer_idx
+            << " records in "
+            << getUs() - start_ts << " us";
+  }
+#else
+  // write sam output
+  FILE* fout;
+  if (use_file) {
+    std::stringstream ss;
+    ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << ".sam";
+    fout = fopen(ss.str().c_str(), "w+");
+    if (!fout) {
+      throw std::runtime_error("Cannot open sam output file");
+    }
+    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
+  }
+  else {
+    fout = stdout;
+  }
+  while (true) {
+    SeqsRecord input;
+    bool ready = this->getInput(input);
+
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(input);
+    }
+    if (!ready) { 
+      // this means isFinal() is true and input queue is empty
+      break; 
+    }
+    uint64_t start_ts = getUs();
+    int batch_num = input.batch_num;
+    bseq1_t* seqs = input.seqs;
+    for (int i = 0; i < batch_num; ++i) {
+      if (seqs[i].sam) fputs(seqs[i].sam, fout);
+      free(seqs[i].sam);
+    }
+    free(seqs);
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
+      << " to file in " << getUs() - start_ts << " us";
+  }
+  fclose(fout);
+#endif
+}
+
+
 #ifdef USE_HTSLIB
 void SamsPrint::sortAndWriteBamBatch(
     bam1_t** buf,
