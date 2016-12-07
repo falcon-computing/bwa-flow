@@ -742,51 +742,91 @@ void SamsReorder::compute(int wid) {
         record = record_buf[n_processed];
         record_buf.erase(n_processed);
         n_processed += record.batch_num;
+#ifdef USE_HTSLIB
+        int batch_num = record.batch_num;
+        bseq1_t* seqs = record.seqs;
+    
+        if(!bam_buffer) {
+          bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
+        }
+        for(int i = 0; i < batch_num; i++) {
+          if (seqs[i].bams) {
+            for (int j =0; j < seqs[i].bams->l; j++) {
+              bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+            }
+          }
+          free(seqs[i].bams->bams);
+          free(seqs[i].bams); seqs[i].bams = NULL;    
+        }
+        free(seqs);
+        if (batch_records < max_batch_records) {
+          batch_records++;
+        }
+        else {
+          if(FLAGS_sort) {
+            uint64_t start_ts_st = getUs();
+            std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+            DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
+              getUs() - start_ts_st << " us";
+          }
+          output.bam_buffer = bam_buffer;
+          output.bam_buffer_idx = bam_buffer_idx;
+          output.bam_buffer_order = bam_buffer_order;
+          bam_buffer_idx = 0;
+          batch_records = 0;
+          bam_buffer_order = bam_buffer_order + 1;
+          pushOutput(output);
+          bam_buffer = NULL;
+        }
+#else
+        output = record;
+        pushOutput(output);
+#endif
       }
     }
     else {
       record = input;
-    }
 #ifdef USE_HTSLIB
-    int batch_num = record.batch_num;
-    bseq1_t* seqs = record.seqs;
-
-    if(!bam_buffer) {
-      bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
-    }
-    for(int i = 0; i < batch_num; i++) {
-      if (seqs[i].bams) {
-        for (int j =0; j < seqs[i].bams->l; j++) {
-          bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+      int batch_num = record.batch_num;
+      bseq1_t* seqs = record.seqs;
+  
+      if(!bam_buffer) {
+        bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
+      }
+      for(int i = 0; i < batch_num; i++) {
+        if (seqs[i].bams) {
+          for (int j =0; j < seqs[i].bams->l; j++) {
+            bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+          }
         }
+        free(seqs[i].bams->bams);
+        free(seqs[i].bams); seqs[i].bams = NULL;    
       }
-      free(seqs[i].bams->bams);
-      free(seqs[i].bams); seqs[i].bams = NULL;    
-    }
-    free(seqs);
-    if (batch_records < max_batch_records) {
-      batch_records++;
-    }
-    else {
-      if(FLAGS_sort) {
-        uint64_t start_ts_st = getUs();
-        std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
-          getUs() - start_ts_st << " us";
+      free(seqs);
+      if (batch_records < max_batch_records) {
+        batch_records++;
       }
-      output.bam_buffer = bam_buffer;
-      output.bam_buffer_idx = bam_buffer_idx;
-      output.bam_buffer_order = bam_buffer_order;
-      bam_buffer_idx = 0;
-      batch_records = 0;
-      bam_buffer_order = bam_buffer_order + 1;
-      pushOutput(output);
-      bam_buffer = NULL;
-    }
+      else {
+        if(FLAGS_sort) {
+          uint64_t start_ts_st = getUs();
+          std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+          DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
+            getUs() - start_ts_st << " us";
+        }
+        output.bam_buffer = bam_buffer;
+        output.bam_buffer_idx = bam_buffer_idx;
+        output.bam_buffer_order = bam_buffer_order;
+        bam_buffer_idx = 0;
+        batch_records = 0;
+        bam_buffer_order = bam_buffer_order + 1;
+        pushOutput(output);
+        bam_buffer = NULL;
+      }
 #else
-    output = record;
-    pushOutput(output);
+      output = record;
+      pushOutput(output);
 #endif
+    }
   }
 #ifdef USE_HTSLIB
   //finish the remaining sam
