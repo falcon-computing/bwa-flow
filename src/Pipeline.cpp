@@ -709,6 +709,9 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+typedef bam1_t *bam1_p;
+KSORT_INIT(sort, bam1_p, bam1_lt)
+
 void SamsReorder::compute(int wid) {
 
   uint64_t n_processed = 0;
@@ -759,13 +762,12 @@ void SamsReorder::compute(int wid) {
           free(seqs[i].bams); seqs[i].bams = NULL;    
         }
         free(seqs);
-        if (batch_records < max_batch_records) {
-          batch_records++;
-        }
-        else {
+ 
+        if (++batch_records >= max_batch_records) {
           if(FLAGS_sort) {
             uint64_t start_ts_st = getUs();
-            std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+            //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+            ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
             DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
               getUs() - start_ts_st << " us";
           }
@@ -791,7 +793,9 @@ void SamsReorder::compute(int wid) {
       bseq1_t* seqs = record.seqs;
   
       if(!bam_buffer) {
-        bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
+        // in case bams->l is not 1 
+        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num + 2000)
+            *sizeof(bam1_t*));
       }
       for(int i = 0; i < batch_num; i++) {
         if (seqs[i].bams) {
@@ -803,13 +807,11 @@ void SamsReorder::compute(int wid) {
         free(seqs[i].bams); seqs[i].bams = NULL;    
       }
       free(seqs);
-      if (batch_records < max_batch_records) {
-        batch_records++;
-      }
-      else {
+      if (++ batch_records >=  max_batch_records) {
         if(FLAGS_sort) {
           uint64_t start_ts_st = getUs();
-          std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+          //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+          ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
             getUs() - start_ts_st << " us";
         }
@@ -833,7 +835,8 @@ void SamsReorder::compute(int wid) {
   if(batch_records > 0){
     if(FLAGS_sort) {
       uint64_t start_ts_st = getUs();
-      std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+      //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+      ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
         getUs() - start_ts_st << " us";
     }
@@ -905,18 +908,19 @@ void WriteOutput::compute(int wid)
 #else
   // write sam output
   FILE* fout;
-  if (use_file) {
-    std::stringstream ss;
-    ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << ".sam";
-    fout = fopen(ss.str().c_str(), "w+");
-    if (!fout) {
-      throw std::runtime_error("Cannot open sam output file");
-    }
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
-  }
-  else {
-    fout = stdout;
-  }
+  //if (use_file) {
+  //  std::stringstream ss;
+  //  ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << ".sam";
+  //  fout = fopen(ss.str().c_str(), "w+");
+  //  if (!fout) {
+  //    throw std::runtime_error("Cannot open sam output file");
+  //  }
+  //  DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
+  //}
+  //else {
+  //  fout = stdout;
+  //}
+  fout = stdout;
   while (true) {
     SeqsRecord input;
     bool ready = this->getInput(input);
@@ -940,10 +944,9 @@ void WriteOutput::compute(int wid)
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
       << " to file in " << getUs() - start_ts << " us";
   }
-  fclose(fout);
+  //fclose(fout);
 #endif
 }
-
 
 #ifdef USE_HTSLIB
 void SamsPrint::sortAndWriteBamBatch(
