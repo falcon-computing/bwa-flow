@@ -169,20 +169,21 @@ class SamsReorder
 };
 #endif
 
+
 class WriteOutput
 #ifdef USE_HTSLIB
-:public kestrelFlow::SinkStage<BamsRecord, OUTPUT_DEPTH> {
-#else
-:public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
-#endif
+:public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
   public:
     WriteOutput(int n=1):
-#ifdef USE_HTSLIB
-      kestrelFlow::SinkStage<BamsRecord, OUTPUT_DEPTH>(n, false) {;}
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+    int compute(BamsRecord const &input);
 #else
-      kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>(n, false) {;}
+:public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
+  public:
+    WriteOutput(int n=1):
+      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+    int compute(SeqsRecord const &input);
 #endif
-    void compute(int wid);
 };
 
 class SamsPrint

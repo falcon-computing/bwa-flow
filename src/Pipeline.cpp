@@ -750,7 +750,8 @@ void SamsReorder::compute(int wid) {
         bseq1_t* seqs = record.seqs;
     
         if(!bam_buffer) {
-          bam_buffer = (bam1_t**)malloc(max_batch_records*batch_num*sizeof(bam1_t*)*100);
+          bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num + batch_num )
+              *sizeof(bam1_t*));
         }
         for(int i = 0; i < batch_num; i++) {
           if (seqs[i].bams) {
@@ -794,7 +795,7 @@ void SamsReorder::compute(int wid) {
   
       if(!bam_buffer) {
         // in case bams->l is not 1 
-        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num + 2000)
+        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num + batch_num )
             *sizeof(bam1_t*));
       }
       for(int i = 0; i < batch_num; i++) {
@@ -852,7 +853,11 @@ void SamsReorder::compute(int wid) {
 #endif
 }
 
-void WriteOutput::compute(int wid)
+#ifdef USE_HTSLIB
+int WriteOutput::compute(BamsRecord const &input)
+#else
+int WriteOutput::compute(SeqsRecord const &input)
+#endif
 {
   boost::any var = this->getConst("sam_dir");
   std::string out_dir = boost::any_cast<std::string>(var);
@@ -866,85 +871,48 @@ void WriteOutput::compute(int wid)
   }
   const char *modes[] = {"wb", "wb0", "w"};
   samFile *fout = NULL;
-  while (true) {
-    BamsRecord input;
-    bool ready = this->getInput(input);
 
-    while (!this->isFinal() && !ready) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      ready = this->getInput(input);
-    }
-    if (!ready) { 
-      // this means isFinal() is true and input queue is empty
-      break; 
-    }
-    uint64_t start_ts = getUs();
-    int file_id = input.bam_buffer_order;
-    int bam_buffer_idx = input.bam_buffer_idx;
-    bam1_t** bam_buffer = input.bam_buffer;
+  uint64_t start_ts = getUs();
+  int file_id = input.bam_buffer_order;
+  int bam_buffer_idx = input.bam_buffer_idx;
+  bam1_t** bam_buffer = input.bam_buffer;
 
-    std::stringstream ss;
-    ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << file_id;
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
-    fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
-    if (!fout) {
-      throw std::runtime_error("Cannot open bam output file");
-    }
-    int status = sam_hdr_write(fout, aux->h);
-    if (status) {
-      LOG(ERROR) << "sam_hdr_write error: " << status;
-    }
-    // start writing to file
-    for (int i = 0; i < bam_buffer_idx; ++i){
-      sam_write1(fout, aux->h, bam_buffer[i]); 
-      bam_destroy1(bam_buffer[i]);
-    }
-    sam_close(fout);
-    free(bam_buffer);
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << bam_buffer_idx
-            << " records in "
-            << getUs() - start_ts << " us";
+  std::stringstream ss;
+  ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << file_id;
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
+  fout = sam_open(ss.str().c_str(), modes[FLAGS_output_flag]); 
+  if (!fout) {
+    throw std::runtime_error("Cannot open bam output file");
   }
+  int status = sam_hdr_write(fout, aux->h);
+  if (status) {
+    LOG(ERROR) << "sam_hdr_write error: " << status;
+  }
+  // start writing to file
+  for (int i = 0; i < bam_buffer_idx; ++i){
+    sam_write1(fout, aux->h, bam_buffer[i]); 
+    bam_destroy1(bam_buffer[i]);
+  }
+  sam_close(fout);
+  free(bam_buffer);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << bam_buffer_idx
+          << " records in "
+          << getUs() - start_ts << " us";
+  return 0;
 #else
   // write sam output
   FILE* fout;
-  //if (use_file) {
-  //  std::stringstream ss;
-  //  ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << ".sam";
-  //  fout = fopen(ss.str().c_str(), "w+");
-  //  if (!fout) {
-  //    throw std::runtime_error("Cannot open sam output file");
-  //  }
-  //  DLOG_IF(INFO, VLOG_IS_ON(2)) << "Writting to " << ss.str();
-  //}
-  //else {
-  //  fout = stdout;
-  //}
   fout = stdout;
-  while (true) {
-    SeqsRecord input;
-    bool ready = this->getInput(input);
-
-    while (!this->isFinal() && !ready) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      ready = this->getInput(input);
-    }
-    if (!ready) { 
-      // this means isFinal() is true and input queue is empty
-      break; 
-    }
-    uint64_t start_ts = getUs();
-    int batch_num = input.batch_num;
-    bseq1_t* seqs = input.seqs;
-    for (int i = 0; i < batch_num; ++i) {
-      if (seqs[i].sam) fputs(seqs[i].sam, fout);
-      free(seqs[i].sam);
-    }
-    free(seqs);
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
-      << " to file in " << getUs() - start_ts << " us";
+  uint64_t start_ts = getUs();
+  int batch_num = input.batch_num;
+  bseq1_t* seqs = input.seqs;
+  for (int i = 0; i < batch_num; ++i) {
+    if (seqs[i].sam) fputs(seqs[i].sam, fout);
+    free(seqs[i].sam);
   }
-  //fclose(fout);
+  free(seqs);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
+    << " to file in " << getUs() - start_ts << " us";
 #endif
 }
 
