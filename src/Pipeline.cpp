@@ -478,7 +478,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   uint64_t start_ts = getUs();
 
   bseq1_t* seqs = input.seqs;
-  int start_idx = input.start_idx;
+  uint64_t start_idx = input.start_idx;
   int batch_num = input.batch_num;
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
@@ -568,7 +568,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   uint64_t ref_time = 0;
 
   bseq1_t* seqs = seqs_record.seqs;
-  int start_idx = seqs_record.start_idx;
+  uint64_t start_idx = seqs_record.start_idx;
   int batch_num = seqs_record.batch_num;
 
   mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
@@ -638,7 +638,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   uint64_t start_ts = getUs();
   uint64_t seedcov_time = 0;
 
-  int start_idx        = record.start_idx;
+  uint64_t start_idx        = record.start_idx;
   int batch_num        = record.batch_num;
   mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
