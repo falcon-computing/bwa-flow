@@ -438,7 +438,7 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
 
 void SeqsRead::compute() {
 
-  int num_seqs_produced = 0;
+  uint64_t num_seqs_produced = 0;
 
   while (true) {
     uint64_t start_ts = getUs();
