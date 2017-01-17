@@ -14,9 +14,9 @@ StageBase::StageBase(int num_workers, bool is_dyn):
   num_finalized_upstream_stages_(0),
   is_final_(false)
 {
-  if (num_workers<1) {
-    throw paramError("Invalid parameters");
-  }
+ // if (num_workers<1) {
+ //   throw paramError("Invalid parameters");
+ // }
 
   if (is_dynamic_) {
     DLOG(INFO) << "Created stage of maximum " << num_workers << " workers";
