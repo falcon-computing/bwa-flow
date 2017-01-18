@@ -41,6 +41,7 @@ class StageBase {
   void finalize();
 
   bool isFinal();
+  virtual bool inputQueueEmpty() = 0;
 
   // Get the number of current active worker threads
   int getNumThreads();
@@ -130,6 +131,14 @@ class Stage : public StageBase {
     }
 
     return queue;
+  }
+  bool inputQueueEmpty() {
+    if (this->getInputQueue()) {
+      return this->getInputQueue()->empty();
+    }
+    else {
+      return false;
+    }
   }
 };
 
