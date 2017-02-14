@@ -661,34 +661,59 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
     }
   }
 
-  mem_pestat_t pes[4];
-  mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
+  if(aux->opt->flag&MEM_F_PE) {
+    mem_pestat_t pes[4];
+    mem_pestat(aux->opt, aux->idx->bns->l_pac, batch_num, alnreg, pes);
 #ifdef USE_HTSLIB
-  for (int i =0; i< batch_num/2; i++) {
-    seqs[i<<1].bams = bams_init();
-    seqs[1+(i<<1)].bams = bams_init();
-    mem_sam_pe(
-        aux->opt,
-        aux->idx->bns,
-        aux->idx->pac,
-        pes,
-        (start_idx>>1)+i,
-        &seqs[i<<1],
-        &alnreg[i<<1],
-        aux->h);
-     }
+    for (int i =0; i< batch_num/2; i++) {
+      seqs[i<<1].bams = bams_init();
+      seqs[1+(i<<1)].bams = bams_init();
+      mem_sam_pe(
+          aux->opt,
+          aux->idx->bns,
+          aux->idx->pac,
+          pes,
+          (start_idx>>1)+i,
+          &seqs[i<<1],
+          &alnreg[i<<1],
+          aux->h);
+       }
 #else
-  for (int i = 0; i < batch_num/2; i++) {
-    mem_sam_pe(
-        aux->opt,
-        aux->idx->bns,
-        aux->idx->pac,
-        pes,
-        (start_idx>>1)+i,
-        &seqs[i<<1],
-        &alnreg[i<<1]);
-  }
+    for (int i = 0; i < batch_num/2; i++) {
+      mem_sam_pe(
+          aux->opt,
+          aux->idx->bns,
+          aux->idx->pac,
+          pes,
+          (start_idx>>1)+i,
+          &seqs[i<<1],
+          &alnreg[i<<1]);
+    }
 #endif
+  }
+  else {
+    for (int i=0; i<batch_num; i++) {
+#ifdef USE_HTSLIB
+      seqs[i].bams = bams_init();
+#endif
+      mem_mark_primary_se(
+          aux->opt,
+          alnreg[i].n,
+          alnreg[i].a,
+          start_idx+i
+          );
+      mem_reg2sam(
+          aux->opt,
+          aux->idx->bns,
+          aux->idx->pac,
+          &seqs[i],
+          &alnreg[i],
+          0,
+          0,
+          aux->h
+          );
+    }
+  }
 
   freeAligns(alnreg, batch_num);
 
@@ -709,8 +734,10 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
+#ifdef USE_HTSLIB
 typedef bam1_t *bam1_p;
 KSORT_INIT(sort, bam1_p, bam1_lt)
+#endif
 
 void SamsReorder::compute(int wid) {
 
