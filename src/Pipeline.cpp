@@ -777,7 +777,7 @@ void SamsReorder::compute(int wid) {
         bseq1_t* seqs = record.seqs;
     
         if(!bam_buffer) {
-          bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*2 )
+          bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*3 )
               *sizeof(bam1_t*));
         }
         for(int i = 0; i < batch_num; i++) {
@@ -822,7 +822,7 @@ void SamsReorder::compute(int wid) {
   
       if(!bam_buffer) {
         // in case bams->l is not 1 
-        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*2 )
+        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*3 )
             *sizeof(bam1_t*));
       }
       for(int i = 0; i < batch_num; i++) {
