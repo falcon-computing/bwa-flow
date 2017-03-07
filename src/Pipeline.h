@@ -98,6 +98,10 @@ class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
   SeqsRead(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute();
+  void kseq2bseq1_batch( kseq_new_t *ks_buffer,
+      int batch_num,
+      uint64_t num_seqs_produced,
+      kestrelFlow::Queue<kseq_new_t*, 8> *kseq_queue);
 };
 
 // One stage for the entire BWA-MEM computation

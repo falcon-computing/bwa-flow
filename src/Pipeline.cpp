@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "bwa/utils.h"
+#include "kflow/Queue.h"
 
 #ifdef USE_HTSLIB
 #include "htslib/ksort.h"
@@ -436,38 +437,229 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
 }
 #endif
 
+static inline void trim_readno(kstring_t *s)
+{
+	if (s->l > 2 && s->s[s->l-2] == '/' && isdigit(s->s[s->l-1]))
+		s->l -= 2, s->s[s->l] = 0;
+}
+
+//void kseq2bseq1_new(kseq_new_t *ks, bseq1_t *s,
+//    kestrelFlow::Queue<kseq_new_t*, 4> *kseq_queue)
+//{
+//  s->name = strdup(ks->name.s);
+//  s->comment = ks->comment.l? strdup(ks->comment.s) :0;
+//  s->seq = strdup(ks->seq.s);
+//  s->qual = ks->qual.l? strdup(ks->qual.s) : 0;
+//  s->l_seq = strlen(s->seq);
+//  kseq_queue->push(ks);
+//}
+
+//bseq1_t *bseq_read_new1(int chunk_size, int *n_, void *ks1_, void *ks2_,
+//    boost::shared_ptr<boost::asio::io_service> k2b_ios,
+//    kestrelFlow::Queue<kseq_new_t*, 4> *kseq_queue
+//    ) {
+//  kseq_t *ks = (kseq_t*)ks1_, *ks2 = (kseq_t*)ks2_;
+//  int size = 0, m, n, t;
+//  bseq1_t *seqs;
+//  m = n = t =0; seqs = 0;
+//  kseq_new_t *ks_new_1;
+//  kseq_new_t *ks_new_2;
+//  seqs = (bseq1_t *)calloc(105000, sizeof(bseq1_t));
+//  while (true) {
+//    kseq_queue->pop(ks_new_1);
+//    if (kseq_read_new(ks_new_1, ks) <0) {
+//      kseq_queue->push(ks_new_1);
+//      break;
+//    }
+//    trim_readno(&ks_new_1->name);
+//    // post work to io_service
+//    seqs[n].id = n;
+//    size += strlen(ks_new_1->seq.s);
+//    k2b_ios->post(boost::bind(
+//          &kseq2bseq1_new, ks_new_1, &seqs[n], kseq_queue));
+//    n++;
+//    if(ks2) {
+//      kseq_queue->pop(ks_new_2);
+//      if(kseq_read_new(ks_new_2, ks2) < 0) {
+//        fprintf(stderr,"[W::%s] the 2nd file has fewer sequences.\n", __func__);
+//        kseq_queue->push(ks_new_2);
+//        break;
+//      }
+//      trim_readno(&ks_new_2->name);
+//      seqs[n].id = n;
+//      size += strlen(ks_new_1->seq.s);
+//      k2b_ios->post(boost::bind(
+//            &kseq2bseq1_new, ks_new_2, &seqs[n], kseq_queue));
+//      n++;
+//      if (size >= chunk_size && (n&1) ==0) break;
+//    }
+//  }
+//  if (size == 0) {
+//    if (ks2 && kseq_read(ks2) >= 0)
+//      fprintf(stderr, "[W::%s] the 1st file has fewer sequences.\n", __func__);
+//  }
+//  *n_ = n;
+//  return seqs;
+//}
+
+void SeqsRead::kseq2bseq1_batch( kseq_new_t *ks_buffer,
+    int batch_num,
+    uint64_t num_seqs_produced,
+    kestrelFlow::Queue<kseq_new_t*, 8> *kseq_queue
+    )
+{
+  uint64_t start_ts = getUs();
+  
+  bseq1_t *seqs = new bseq1_t[batch_num];
+  for (int i=0; i<batch_num; i++) { 
+    trim_readno(&ks_buffer[i].name);
+    seqs[i].name = strdup(ks_buffer[i].name.s);
+    seqs[i].comment = 0;
+    seqs[i].comment = ks_buffer[i].comment.l? strdup(ks_buffer[i].comment.s) :0;
+    seqs[i].seq = strdup(ks_buffer[i].seq.s);
+    seqs[i].qual = ks_buffer[i].qual.l? strdup(ks_buffer[i].qual.s) : 0;
+    seqs[i].l_seq = strlen(seqs[i].seq);
+  }
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Strdup takes " << getUs()-start_ts << " us";
+  // return the ks_buffer to the queue
+  kseq_queue->push(ks_buffer);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Return buffer takes " << getUs()-start_ts << " us";
+  // Finish the remain steps
+	if (!aux->copy_comment) {
+		for (int i = 0; i < batch_num; i++) {
+			free(seqs[i].comment);
+			seqs[i].comment = 0;
+		}
+    DLOG_IF(INFO, FLAGS_v >= 2 && num_seqs_produced == 0) << "Do not append seq comment";
+  }
+  SeqsRecord record;
+  record.start_idx = num_seqs_produced;
+  record.batch_num = batch_num;
+  record.seqs = seqs;
+  pushOutput(record);
+}
+
+//bseq1_t *bseq_read_new(int chunk_size, int *n_, void *ks1_, void *ks2_,
+//    boost::shared_ptr<boost::asio::io_service> k2b_ios,
+//    kestrelFlow::Queue<kseq_new_t*, 4> *kseq_queue_orig,
+//    kestrelFlow::Queue<kseq_new_t*, 4> *kseq_queue_proced
+//    )
+//{
+//  kseq_t *ks = (kseq_t*)ks1_, *ks2 = (kseq_t*)ks2_;
+//  int size = 0, m, n, t;
+//  bseq1_t *seqs;
+//  m = n = t =0; seqs = 0;
+//  kseq_new_t *ks_new_1;
+//  kseq_new_t *ks_new_2;
+//  seqs = (bseq1_t *)calloc(105000, sizeof(bseq1_t));
+//  // start the kseq2bseq loop
+//  k2b_ios->post(boost::bind(
+//        &kseq2bseq1_batch, kseq_queue_proced, 
+//        kseq_queue_orig, seqs));
+//  while (true) {
+//    kseq_queue_orig->pop(ks_new_1);
+//    if (kseq_read_new(ks_new_1, ks) <0) {
+//      kseq_queue_orig->push(ks_new_1);
+//      break;
+//    }
+//   // trim_readno(&ks_new_1->name);
+//   // // post work to io_service
+//    seqs[n].id = n;
+//    size += strlen(ks_new_1->seq.s);
+//    kseq_queue_proced->push(ks_new_1);
+//   // k2b_ios->post(boost::bind(
+//   //       &kseq2bseq1_new, ks_new_1, &seqs[n], kseq_queue));
+//    n++;
+//    if(ks2) {
+//      kseq_queue_orig->pop(ks_new_2);
+//      if(kseq_read_new(ks_new_2, ks2) < 0) {
+//        fprintf(stderr,"[W::%s] the 2nd file has fewer sequences.\n", __func__);
+//        kseq_queue_orig->push(ks_new_2);
+//        break;
+//      }
+//     // trim_readno(&ks_new_2->name);
+//      seqs[n].id = n;
+//      size += strlen(ks_new_1->seq.s);
+//      kseq_queue_proced->push(ks_new_2);
+//     // k2b_ios->post(boost::bind(
+//     //       &kseq2bseq1_new, ks_new_2, &seqs[n], kseq_queue));
+//      n++;
+//      if (size >= chunk_size && (n&1) ==0) break;
+//    }
+//  }
+//  if (size == 0) {
+//    if (ks2 && kseq_read(ks2) >= 0)
+//      fprintf(stderr, "[W::%s] the 1st file has fewer sequences.\n", __func__);
+//  }
+//  *n_ = n;
+//  return seqs;
+//}
+
+void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
+    kseq_new_t *ks_buffer
+    )
+{
+  kseq_t *ks = (kseq_t*)ks1_, *ks2 = (kseq_t*)ks2_;
+  int size = 0, t = 0;
+  while (true) {
+    if (kseq_read_new(&ks_buffer[t], ks) <0) {
+      break;
+    }
+    size += strlen(ks_buffer[t++].seq.s);
+    if(ks2) {
+      if(kseq_read_new(&ks_buffer[t], ks2) < 0) {
+        fprintf(stderr,"[W::%s] the 2nd file has fewer sequences.\n", __func__);
+        break;
+      }
+      size += strlen(ks_buffer[t++].seq.s);
+      if (size >= chunk_size && (t&1) ==0) break;
+    }
+  }
+  if (size == 0) {
+    if (ks2 && kseq_read(ks2) >= 0)
+      fprintf(stderr, "[W::%s] the 1st file has fewer sequences.\n", __func__);
+  }
+  *n_ = t;
+}
+
+
+
 void SeqsRead::compute() {
 
   uint64_t num_seqs_produced = 0;
-
+  // initialize a kseq_new_t queue
+  kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
+  for (int i =0; i < 8; i++) {
+    kseq_new_t *ks_new = (kseq_new_t*)calloc(105000, sizeof(kseq_new_t));
+    kseq_queue.push(ks_new);
+  }
+  // initialize an io_service
+  boost::shared_ptr<boost::asio::io_service> k2b_ios(new boost::asio::io_service);
+  boost::shared_ptr<boost::asio::io_service::work> work(
+      new boost::asio::io_service::work(*k2b_ios));
+  boost::thread_group workers;
+  workers.create_thread(
+      boost::bind(&boost::asio::io_service::run, k2b_ios.get()));
   while (true) {
     uint64_t start_ts = getUs();
 
-    // Read from file input, get mem_chains
     int batch_num = 0;
-    bseq1_t *seqs = bseq_read(10000000, 
-        &batch_num, aux->ks, aux->ks2);
-
-    if (!seqs) break;
-
-		if (!aux->copy_comment) {
-			for (int i = 0; i < batch_num; i++) {
-				free(seqs[i].comment);
-				seqs[i].comment = 0;
-			}
-      DLOG_IF(INFO, FLAGS_v >= 2 && num_seqs_produced == 0) << "Do not append seq comment";
-    }
+    kseq_new_t *ks_buffer ;
+    kseq_queue.pop(ks_buffer);
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Pop ks_buffer used " 
+      << getUs() - start_ts << " us";
+    // Get the kseq batch
+    getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Get kseq batch used " 
+      << getUs() - start_ts << " us";
+    if (batch_num == 0) break;
+    // Post the kseq2bseq and later work to io_service
+    k2b_ios->post(boost::bind(
+          &SeqsRead::kseq2bseq1_batch, this, ks_buffer, batch_num,
+          num_seqs_produced, &kseq_queue ));
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
-
-    // Construct output record
-    SeqsRecord record;
-    record.start_idx = num_seqs_produced;
-    record.batch_num = batch_num;
-    record.seqs = seqs;
-
-    pushOutput(record);
     num_seqs_produced += batch_num;
   }
 }
@@ -720,7 +912,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   // Free fields in seq except sam
   for (int i = 0; i < batch_num; i++) {
     free(seqs[i].name);
-    free(seqs[i].comment);
+    //free(seqs[i].comment);
     free(seqs[i].seq);
     free(seqs[i].qual);
   }
