@@ -443,43 +443,6 @@ static inline void trim_readno(kstring_t *s)
 		s->l -= 2, s->s[s->l] = 0;
 }
 
-void SeqsRead::kseq2bseq1_batch( kseq_new_t *ks_buffer,
-    int batch_num,
-    uint64_t num_seqs_produced,
-    kestrelFlow::Queue<kseq_new_t*, 8> *kseq_queue
-    )
-{
-  uint64_t start_ts = getUs();
-  
-  bseq1_t *seqs = new bseq1_t[batch_num];
-  for (int i=0; i<batch_num; i++) { 
-    trim_readno(&ks_buffer[i].name);
-    seqs[i].name = strdup(ks_buffer[i].name.s);
-    //seqs[i].comment = 0;
-    seqs[i].comment = ks_buffer[i].comment.l? strdup(ks_buffer[i].comment.s) :0;
-    seqs[i].seq = strdup(ks_buffer[i].seq.s);
-    seqs[i].qual = ks_buffer[i].qual.l? strdup(ks_buffer[i].qual.s) : 0;
-    seqs[i].l_seq = strlen(seqs[i].seq);
-  }
-  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Strdup takes " << getUs()-start_ts << " us";
-  // return the ks_buffer to the queue
-  kseq_queue->push(ks_buffer);
-  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Return buffer takes " << getUs()-start_ts << " us";
-  // Finish the remain steps
-	if (!aux->copy_comment) {
-		for (int i = 0; i < batch_num; i++) {
-			free(seqs[i].comment);
-			seqs[i].comment = 0;
-		}
-    DLOG_IF(INFO, FLAGS_v >= 2 && num_seqs_produced == 0) << "Do not append seq comment";
-  }
-  SeqsRecord record;
-  record.start_idx = num_seqs_produced;
-  record.batch_num = batch_num;
-  record.seqs = seqs;
-  pushOutput(record);
-}
-
 void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
     kseq_new_t *ks_buffer
     )
@@ -507,48 +470,102 @@ void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
   *n_ = t;
 }
 
-void SeqsRead::compute() {
+kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
 
+void KseqsRead::compute() {
   uint64_t num_seqs_produced = 0;
-  // initialize a kseq_new_t queue
-  kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
+  // initialize kseq_queue, TODO calculate the size instead of the magic number
   for (int i =0; i < 8; i++) {
     kseq_new_t *ks_new = (kseq_new_t*)calloc(105000, sizeof(kseq_new_t));
     kseq_queue.push(ks_new);
   }
-  // initialize an io_service
-  boost::shared_ptr<boost::asio::io_service> k2b_ios(new boost::asio::io_service);
-  boost::shared_ptr<boost::asio::io_service::work> work(
-      new boost::asio::io_service::work(*k2b_ios));
-  boost::thread_group workers;
-  workers.create_thread(
-      boost::bind(&boost::asio::io_service::run, k2b_ios.get()));
   while (true) {
     uint64_t start_ts = getUs();
 
     int batch_num = 0;
     kseq_new_t *ks_buffer ;
     kseq_queue.pop(ks_buffer);
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Pop ks_buffer used " 
-      << getUs() - start_ts << " us";
     // Get the kseq batch
     getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Get kseq batch used " 
-      << getUs() - start_ts << " us";
     if (batch_num == 0) break;
-    // Post the kseq2bseq and later work to io_service
-    k2b_ios->post(boost::bind(
-          &SeqsRead::kseq2bseq1_batch, this, ks_buffer, batch_num,
-          num_seqs_produced, &kseq_queue ));
-
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
+    KseqsRecord record;
+    record.ks_buffer = ks_buffer;
+    record.batch_num = batch_num;
+    record.start_idx = num_seqs_produced;
+    pushOutput(record);
     num_seqs_produced += batch_num;
   }
-  // TODO make clear how would the io_service finish
-  k2b_ios->poll();
-  k2b_ios->stop();
-  workers.join_all();
+}
+
+SeqsRecord KseqsToBseqs::compute(KseqsRecord const & input) {
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started KseqsToBseqs() for one input";
+  uint64_t start_ts = getUs();
+  
+  int batch_num = input.batch_num;
+  kseq_new_t *ks_buffer = input.ks_buffer;
+  bseq1_t* seqs = new bseq1_t[batch_num];
+  for (int i=0; i<batch_num; i++) { 
+    trim_readno(&ks_buffer[i].name);
+    seqs[i].name = strdup(ks_buffer[i].name.s);
+    seqs[i].comment = ks_buffer[i].comment.l? strdup(ks_buffer[i].comment.s) :0;
+    seqs[i].seq = strdup(ks_buffer[i].seq.s);
+    seqs[i].qual = ks_buffer[i].qual.l? strdup(ks_buffer[i].qual.s) : 0;
+    seqs[i].l_seq = strlen(seqs[i].seq);
+  }
+  // return the ks_buffer to the queue
+  kseq_queue.push(ks_buffer);
+  // Finish the remain steps
+	if (!aux->copy_comment) {
+		for (int i = 0; i < batch_num; i++) {
+			free(seqs[i].comment);
+			seqs[i].comment = 0;
+		}
+    DLOG_IF(INFO, FLAGS_v >= 2 && input.start_idx == 0) << "Do not append seq comment";
+  }
+  SeqsRecord record;
+  record.start_idx = input.start_idx;
+  record.batch_num = batch_num;
+  record.seqs = seqs;
+  DLOG_IF(INFO, VLOG_IS_ON(1))<<"Finished KseqsToBseqs() in " << getUs()-start_ts << " us";
+  return record;
+}
+
+void SeqsRead::compute() {
+
+  int num_seqs_produced = 0;
+
+  while (true) {
+    uint64_t start_ts = getUs();
+
+    // Read from file input, get mem_chains
+    int batch_num = 0;
+    bseq1_t *seqs = bseq_read(10000000, 
+        &batch_num, aux->ks, aux->ks2);
+
+    if (!seqs) break;
+
+		if (!aux->copy_comment) {
+			for (int i = 0; i < batch_num; i++) {
+				free(seqs[i].comment);
+				seqs[i].comment = 0;
+			}
+      VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
+    }
+
+    VLOG(1) << "Read " << batch_num << " seqs in "
+            << getUs() - start_ts << " us";
+
+    // Construct output record
+    SeqsRecord record;
+    record.start_idx = num_seqs_produced;
+    record.batch_num = batch_num;
+    record.seqs = seqs;
+
+    pushOutput(record);
+    num_seqs_produced += batch_num;
+  }
 }
 
 SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
