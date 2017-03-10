@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "bwa/utils.h"
+#include "kflow/Queue.h"
 
 #ifdef USE_HTSLIB
 #include "htslib/ksort.h"
@@ -436,9 +437,104 @@ SeqsRecord SamsReceive::deserialize(const char* data, size_t length) {
 }
 #endif
 
+static inline void trim_readno(kstring_t *s)
+{
+	if (s->l > 2 && s->s[s->l-2] == '/' && isdigit(s->s[s->l-1]))
+		s->l -= 2, s->s[s->l] = 0;
+}
+
+void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
+    kseq_new_t *ks_buffer
+    )
+{
+  kseq_t *ks = (kseq_t*)ks1_, *ks2 = (kseq_t*)ks2_;
+  int size = 0, t = 0;
+  while (true) {
+    if (kseq_read_new(&ks_buffer[t], ks) <0) {
+      break;
+    }
+    size += strlen(ks_buffer[t++].seq.s);
+    if(ks2) {
+      if(kseq_read_new(&ks_buffer[t], ks2) < 0) {
+        fprintf(stderr,"[W::%s] the 2nd file has fewer sequences.\n", __func__);
+        break;
+      }
+      size += strlen(ks_buffer[t++].seq.s);
+      if (size >= chunk_size && (t&1) ==0) break;
+    }
+  }
+  if (size == 0) {
+    if (ks2 && kseq_read(ks2) >= 0)
+      fprintf(stderr, "[W::%s] the 1st file has fewer sequences.\n", __func__);
+  }
+  *n_ = t;
+}
+
+kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
+
+void KseqsRead::compute() {
+  uint64_t num_seqs_produced = 0;
+  // initialize kseq_queue, TODO calculate the size instead of the magic number
+  for (int i =0; i < 8; i++) {
+    kseq_new_t *ks_new = (kseq_new_t*)calloc(105000, sizeof(kseq_new_t));
+    kseq_queue.push(ks_new);
+  }
+  while (true) {
+    uint64_t start_ts = getUs();
+
+    int batch_num = 0;
+    kseq_new_t *ks_buffer ;
+    kseq_queue.pop(ks_buffer);
+    // Get the kseq batch
+    getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
+    if (batch_num == 0) break;
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
+            << getUs() - start_ts << " us";
+    KseqsRecord record;
+    record.ks_buffer = ks_buffer;
+    record.batch_num = batch_num;
+    record.start_idx = num_seqs_produced;
+    pushOutput(record);
+    num_seqs_produced += batch_num;
+  }
+}
+
+SeqsRecord KseqsToBseqs::compute(KseqsRecord const & input) {
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started KseqsToBseqs() for one input";
+  uint64_t start_ts = getUs();
+  
+  int batch_num = input.batch_num;
+  kseq_new_t *ks_buffer = input.ks_buffer;
+  bseq1_t* seqs = new bseq1_t[batch_num];
+  for (int i=0; i<batch_num; i++) { 
+    trim_readno(&ks_buffer[i].name);
+    seqs[i].name = strdup(ks_buffer[i].name.s);
+    seqs[i].comment = ks_buffer[i].comment.l? strdup(ks_buffer[i].comment.s) :0;
+    seqs[i].seq = strdup(ks_buffer[i].seq.s);
+    seqs[i].qual = ks_buffer[i].qual.l? strdup(ks_buffer[i].qual.s) : 0;
+    seqs[i].l_seq = strlen(seqs[i].seq);
+  }
+  // return the ks_buffer to the queue
+  kseq_queue.push(ks_buffer);
+  // Finish the remain steps
+	if (!aux->copy_comment) {
+		for (int i = 0; i < batch_num; i++) {
+			free(seqs[i].comment);
+			seqs[i].comment = 0;
+		}
+    DLOG_IF(INFO, FLAGS_v >= 2 && input.start_idx == 0) << "Do not append seq comment";
+  }
+  SeqsRecord record;
+  record.start_idx = input.start_idx;
+  record.batch_num = batch_num;
+  record.seqs = seqs;
+  DLOG_IF(INFO, VLOG_IS_ON(1))<<"Finished KseqsToBseqs() in " << getUs()-start_ts << " us";
+  return record;
+}
+
 void SeqsRead::compute() {
 
-  uint64_t num_seqs_produced = 0;
+  int num_seqs_produced = 0;
 
   while (true) {
     uint64_t start_ts = getUs();
@@ -455,10 +551,10 @@ void SeqsRead::compute() {
 				free(seqs[i].comment);
 				seqs[i].comment = 0;
 			}
-      DLOG_IF(INFO, FLAGS_v >= 2 && num_seqs_produced == 0) << "Do not append seq comment";
+      VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
     }
 
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
+    VLOG(1) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
 
     // Construct output record
@@ -720,7 +816,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   // Free fields in seq except sam
   for (int i = 0; i < batch_num; i++) {
     free(seqs[i].name);
-    free(seqs[i].comment);
+    //free(seqs[i].comment);
     free(seqs[i].seq);
     free(seqs[i].qual);
   }

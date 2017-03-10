@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
   }
 #endif
   if (FLAGS_offload) {
-    num_compute_stages = 6;
+    num_compute_stages = 7;
   }
 
 #ifdef SCALE_OUT
@@ -276,6 +276,8 @@ int main(int argc, char *argv[]) {
   DLOG(INFO) << "Using " << FLAGS_t - num_fpga_threads << " threads in total";
   // Stages for bwa file in/out
   SeqsRead        read_stage;
+  KseqsRead       kread_stage;
+  KseqsToBseqs    k2b_stage;
   SamsPrint       print_stage(FLAGS_output_nt);
   SamsReorder     reorder_stage;
   WriteOutput     write_stage(FLAGS_output_nt);
@@ -309,7 +311,7 @@ int main(int argc, char *argv[]) {
     output_stage = &print_stage;
   }
 #else
-  SeqsRead*  input_stage  = &read_stage;
+  SeqsRead*  input_stage = &read_stage;
   SamsPrint* output_stage = &print_stage;
 #endif
 
@@ -332,14 +334,15 @@ int main(int argc, char *argv[]) {
   }
 #endif
   
-  compute_flow.addStage(0, input_stage);
 
   if (FLAGS_offload) {
-    compute_flow.addStage(1, &seq2chain_stage);
-    compute_flow.addStage(2, &chain2reg_stage);
-    compute_flow.addStage(3, &reg2sam_stage);
-    compute_flow.addStage(4, &reorder_stage);
-    compute_flow.addStage(5, &write_stage);
+    compute_flow.addStage(0, &kread_stage);
+    compute_flow.addStage(1, &k2b_stage);
+    compute_flow.addStage(2, &seq2chain_stage);
+    compute_flow.addStage(3, &chain2reg_stage);
+    compute_flow.addStage(4, &reg2sam_stage);
+    compute_flow.addStage(5, &reorder_stage);
+    compute_flow.addStage(6, &write_stage);
    // compute_flow.addStage(4, output_stage);
 
 #ifdef BUILD_FPGA
@@ -348,11 +351,12 @@ int main(int argc, char *argv[]) {
       fpga_flow.addStage(1, &chain2reg_fpga_stage);
 
       // bind the input/output queue of stage_2 in compute_flow
-      fpga_flow.branch(compute_flow, 2);
+      fpga_flow.branch(compute_flow, 3);
     }
 #endif
   }
   else {
+    compute_flow.addStage(0, input_stage);
     compute_flow.addStage(1, &seq2sam_stage);
     compute_flow.addStage(2, output_stage);
   }

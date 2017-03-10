@@ -34,6 +34,12 @@
 extern boost::mutex mpi_mutex;
 
 // Common data structures
+struct KseqsRecord {
+  uint64_t start_idx;
+  int batch_num;
+  kseq_new_t* ks_buffer;
+};
+
 struct SeqsRecord {
   uint64_t start_idx;
   int batch_num;
@@ -100,6 +106,18 @@ class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
   void compute();
 };
 
+class KseqsRead : public kestrelFlow::SourceStage<KseqsRecord, INPUT_DEPTH> {
+ public:
+  KseqsRead(): kestrelFlow::SourceStage<KseqsRecord, INPUT_DEPTH>() {;}
+  void compute();
+};
+
+class KseqsToBseqs : public kestrelFlow::MapStage<KseqsRecord, SeqsRecord, INPUT_DEPTH, INPUT_DEPTH> {
+ public:
+   KseqsToBseqs(int n=1):
+     kestrelFlow::MapStage<KseqsRecord, SeqsRecord, INPUT_DEPTH, INPUT_DEPTH>(n) {;}
+   SeqsRecord compute(KseqsRecord const &input);
+};
 // One stage for the entire BWA-MEM computation
 class SeqsToSams
 : public kestrelFlow::MapStage<
