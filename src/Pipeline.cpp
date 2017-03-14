@@ -460,8 +460,8 @@ void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
         break;
       }
       size += strlen(ks_buffer[t++].seq.s);
-      if (size >= chunk_size && (t&1) ==0) break;
     }
+    if (size >= chunk_size && (t&1) ==0) break;
   }
   if (size == 0) {
     if (ks2 && kseq_read(ks2) >= 0)
@@ -476,7 +476,7 @@ void KseqsRead::compute() {
   uint64_t num_seqs_produced = 0;
   // initialize kseq_queue, TODO calculate the size instead of the magic number
   for (int i =0; i < 8; i++) {
-    kseq_new_t *ks_new = (kseq_new_t*)calloc(105000, sizeof(kseq_new_t));
+    kseq_new_t *ks_new = (kseq_new_t*)calloc(140000, sizeof(kseq_new_t));
     kseq_queue.push(ks_new);
   }
   while (true) {
