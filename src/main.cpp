@@ -92,14 +92,14 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 1,
+DEFINE_int32(output_nt, 3,
     "Total number of parallel threads to use for output stage");
 
 DEFINE_int32(output_flag, 1, 
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 40, 
+DEFINE_int32(max_batch_records, 10, 
     "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {

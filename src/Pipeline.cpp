@@ -470,12 +470,13 @@ void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
   *n_ = t;
 }
 
-kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
+const int kseq_buffer_size = 8;
+kestrelFlow::Queue<kseq_new_t*, kseq_buffer_size+1> kseq_queue;
 
 void KseqsRead::compute() {
   uint64_t num_seqs_produced = 0;
   // initialize kseq_queue, TODO calculate the size instead of the magic number
-  for (int i =0; i < 8; i++) {
+  for (int i = 0; i < kseq_buffer_size; i++) {
     kseq_new_t *ks_new = (kseq_new_t*)calloc(140000, sizeof(kseq_new_t));
     kseq_queue.push(ks_new);
   }
@@ -485,11 +486,14 @@ void KseqsRead::compute() {
     int batch_num = 0;
     kseq_new_t *ks_buffer ;
     kseq_queue.pop(ks_buffer);
+
     // Get the kseq batch
     getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
     if (batch_num == 0) break;
+
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
+
     KseqsRecord record;
     record.ks_buffer = ks_buffer;
     record.batch_num = batch_num;
