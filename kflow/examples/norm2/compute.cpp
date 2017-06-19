@@ -128,7 +128,7 @@ public:
     MapStage<
       Record<std::vector<double> >*, 
       Record<double>* 
-    >(is_dyn, n_workers) {}
+    >(n_workers, is_dyn) {}
 
   Record<double>* compute(
       Record<std::vector<double> >* const & input) 

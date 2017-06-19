@@ -25,6 +25,10 @@
 #include "mpi.h"
 #endif
 
+#ifndef VERSION
+#define VERSION "untracked"
+#endif
+
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "Pipeline.h"
@@ -120,6 +124,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Initialize Google Flags
+  gflags::SetVersionString(VERSION);
   gflags::SetUsageMessage(argv[0]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -142,6 +147,8 @@ int main(int argc, char *argv[]) {
 
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
+
+  LOG(INFO) << "Falcon BWA-MEM Version: " << VERSION;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
 #ifdef BUILD_FPGA

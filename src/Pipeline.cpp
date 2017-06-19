@@ -1195,7 +1195,7 @@ void SamsPrint::sortAndWriteBamBatch(
           << getUs() - start_ts << " us";
 }
 
-void SamsPrint::compute() {
+void SamsPrint::compute(int wid) {
 
   boost::any var = this->getConst("sam_dir");
   std::string out_dir = boost::any_cast<std::string>(var);

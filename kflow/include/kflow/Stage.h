@@ -41,6 +41,7 @@ class StageBase {
   void finalize();
 
   bool isFinal();
+  virtual bool inputQueueEmpty() = 0;
 
   // Get the number of current active worker threads
   int getNumThreads();
@@ -57,6 +58,9 @@ class StageBase {
   uint64_t  start_ts_;
   uint64_t  end_ts_;
 
+  Queue_ptr input_queue_;
+  Queue_ptr output_queue_;
+
  private:
   // Execute one task from this stage, if the input_queue is empty
   // or the output_queue is full, no work will be posted and 
@@ -66,15 +70,20 @@ class StageBase {
   // Function body of workers of static stage
   virtual void worker_func(int wid) = 0;
 
+  // add a downstreams stage
+  void linkStage(StageBase* next_stage);
+
   void addSeat() {num_active_threads_.fetch_add(1);}
   void removeSeat() {num_active_threads_.fetch_sub(1);}
 
-  bool        is_dynamic_;
-  int         num_workers_;
-  StageBase*  next_stage_;
+  bool is_dynamic_;
+  int  num_workers_;
+  int  num_upstream_stages_; 
+  std::vector<StageBase*> downstream_stages_;
 
   mutable boost::atomic<int>  num_active_threads_;
-  mutable boost::atomic<int>  num_finalized_;
+  mutable boost::atomic<int>  num_finalized_workers_;
+  mutable boost::atomic<int>  num_finalized_upstream_stages_;
   mutable boost::atomic<bool> is_final_;
   boost::thread_group         worker_threads_;
 };
@@ -94,8 +103,43 @@ class Stage : public StageBase {
       StageBase(num_workers, is_dyn) {}
 
  protected:
-  Queue<U, IN_DEPTH>*  input_queue_;
-  Queue<V, OUT_DEPTH>* output_queue_;
+  Queue<U, IN_DEPTH>* getInputQueue() {
+    if (IN_DEPTH == 0) return NULL;
+    if (!input_queue_) {
+      throw internalError("input queue is uninitialized");
+    }
+    Queue<U, IN_DEPTH>* queue = 
+      dynamic_cast<Queue<U, IN_DEPTH>*>(input_queue_.get());
+
+    if (!queue) {
+      throw internalError("failed to dynamic_cast input queue");
+    }
+
+    return queue;
+  }
+
+  Queue<V, OUT_DEPTH>* getOutputQueue() {
+    if (OUT_DEPTH == 0) return NULL;
+    if (!output_queue_) {
+      throw internalError("output queue is uninitialized");
+    }
+    Queue<V, OUT_DEPTH>* queue = 
+      dynamic_cast<Queue<V, OUT_DEPTH>*>(output_queue_.get());
+
+    if (!queue) {
+      throw internalError("failed to dynamic_cast output queue");
+    }
+
+    return queue;
+  }
+  bool inputQueueEmpty() {
+    if (this->getInputQueue()) {
+      return this->getInputQueue()->empty();
+    }
+    else {
+      return false;
+    }
+  }
 };
 
 } // namespace kestrelFlow

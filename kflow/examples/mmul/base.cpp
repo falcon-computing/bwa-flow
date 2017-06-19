@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
   uint64_t compute_t = 0;
 
   uint64_t start_ts = getUs();
-  for (int b=0; b<batch; b++) {
+  for (int k=0; k<batch; k++) {
 
     uint64_t start_ts = getUs();
     double alpha = 1.0;

@@ -31,6 +31,21 @@ Pipeline::~Pipeline() {
   workers_.join_all();
 }
 
+void Pipeline::branch(Pipeline& pipeline, int idx) {
+  // first link the output queue for pipeline.stage[idx-1] 
+  // and then link the input queue for pipeline.stage[idx+1]
+  queues_[0] = pipeline.queues_[idx];
+  queues_[num_stages_] = pipeline.queues_[idx+1];
+
+  stages_[0]->input_queue_ = queues_[0];
+  stages_[num_stages_-1]->output_queue_ = queues_[num_stages_];
+
+  // then add first stage to the downstream of pipeline.stage[idx-1]
+  // and add pipeline.stage[idx] to the downstream of last stage
+  pipeline.stages_[idx-1]->linkStage(stages_[0]);
+  stages_[num_stages_-1]->linkStage(pipeline.stages_[idx+1]);
+}
+
 void Pipeline::finalize() {
   stages_[0]->final();
   DLOG(INFO) << "Finalized first stage";
@@ -110,23 +125,25 @@ void Pipeline::schedule() {
     while (!pending_stages_.empty()) {
 
       bool dispatched = false;
-      // Check if there is idle thread
-      if (num_active_threads_.load() < num_threads_) {
-        // Always try to start execute from later stages
-        // if the corresponding input queue is not empty
-        for (std::deque<StageBase*>::reverse_iterator 
-             iter  = pending_stages_.rbegin();
-             iter != pending_stages_.rend();
-             iter ++) {
-          if ((*iter)->execute()) {
-            dispatched = true;
-            break; 
-          }
+      // Always try to start execute from later stages
+      // if the corresponding input queue is not empty
+      for (std::deque<StageBase*>::reverse_iterator 
+          iter  = pending_stages_.rbegin();
+          iter != pending_stages_.rend();
+          iter ++) {
+        // Check if there is idle thread
+        if (num_active_threads_.load() < num_threads_ &&
+            (*iter)->execute()) {
+          dispatched = true;
         }
       }
       if (!dispatched) {
         StageBase* stage = pending_stages_.front();
-        if (stage->isFinal() && stage->getNumThreads()==0) {
+        // Wait for execute thread to start 
+        boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
+        if (stage->isFinal() && stage->getNumThreads()==0
+            &&stage->inputQueueEmpty()) {
+          // send final signal to downstream stages
           stage->finalize();
           pending_stages_.pop_front();
 
@@ -136,26 +153,33 @@ void Pipeline::schedule() {
           boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
         }
       }
-      else {
-        // Sleep a little while to avoid contentions
-        // TODO: verify
-        boost::this_thread::sleep_for(boost::chrono::microseconds(10));
-      }
+      //else {
+      //  // Sleep a little while to avoid contentions
+      //  // TODO: verify
+      //  boost::this_thread::sleep_for(boost::chrono::microseconds(10));
+      //}
     }
     DLOG(INFO) << "Scheduler is finished";
   }
   catch (boost::thread_interrupted &e) {
     // TODO: stop io_service and join all threads
-    VLOG(2) << "Scheduler is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Scheduler is interrupted";
   }
 }
 
-QueueBase* Pipeline::getInputQueue() {
-  return queues_[0].get();
+boost::shared_ptr<QueueBase> Pipeline::getQueue(int idx) {
+  if (idx >= queues_.size()) {
+    return boost::shared_ptr<QueueBase>();
+  }
+  return queues_[idx];
 }
 
-QueueBase* Pipeline::getOutputQueue() {
-  return queues_[num_stages_].get();
+boost::shared_ptr<QueueBase> Pipeline::getInputQueue() {
+  return queues_[0];
+}
+
+boost::shared_ptr<QueueBase> Pipeline::getOutputQueue() {
+  return queues_[num_stages_];
 }
 
 } // namepspace kestrelFlow

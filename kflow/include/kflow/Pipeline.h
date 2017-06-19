@@ -28,7 +28,10 @@ class Pipeline {
   template <typename U, typename V,
             int IN_DEPTH,  int OUT_DEPTH> 
   bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
-  
+
+  // branch stage[idx] of pipeline
+  void branch(Pipeline& pipeline, int idx); 
+
   template <typename T>
   bool addConst(std::string key, T val);
 
@@ -43,9 +46,11 @@ class Pipeline {
   template <typename CompletionHandler>
     void post(CompletionHandler handler); 
 
-  QueueBase* getInputQueue();
-  QueueBase* getOutputQueue();
+  // Experimental feature 
+  boost::shared_ptr<QueueBase> getQueue(int idx);
 
+  boost::shared_ptr<QueueBase> getInputQueue();
+  boost::shared_ptr<QueueBase> getOutputQueue();
 
  private:
   void schedule();
@@ -64,7 +69,7 @@ class Pipeline {
   mutable boost::atomic<int> num_active_threads_;
 
   std::vector<StageBase*> stages_;
-  std::vector<boost::shared_ptr<QueueBase> > queues_;
+  std::vector<Queue_ptr> queues_;
 
   std::map<std::string, boost::any> constants_;
 
@@ -87,31 +92,28 @@ bool Pipeline::addStage(int idx,
     LOG(WARNING) << "Overwritting existing stage at idx=" << idx;
   }
 
-  // bind input queue for stage if it exists
-  if (idx == 0 && IN_DEPTH > 0) {
-    boost::shared_ptr<QueueBase> queue(new Queue<U, IN_DEPTH>);
-    queues_[idx] = queue;
+  // bind input queue for stage if the stage requires it
+  if (idx > 0 && IN_DEPTH > 0) {
+    stage->input_queue_ = queues_[idx];
   }
-  Queue<U, IN_DEPTH>* input_queue = 
-    dynamic_cast<Queue<U, IN_DEPTH>*>(queues_[idx].get());
 
-  stage->input_queue_ = input_queue;
-
-  // create output queue for the stage
+  // create output queue for the stage if it requires it
   if (idx < num_stages_-1 && OUT_DEPTH <= 0) {
     LOG(ERROR) << "Intermediate stage must have an output queue";
     return false;
   }
   if (OUT_DEPTH > 0) {
-    boost::shared_ptr<QueueBase> output_queue(new Queue<V, OUT_DEPTH>);
-    queues_[idx+1] = output_queue;
+    // if the output queue is already set, skip creation 
+    if (!queues_[idx+1]) {
+      boost::shared_ptr<QueueBase> output_queue(new Queue<V, OUT_DEPTH>);
+      queues_[idx+1] = output_queue;
+    }
 
-    stage->output_queue_ = dynamic_cast<
-      Queue<V, OUT_DEPTH>*>(output_queue.get());
+    stage->output_queue_ = queues_[idx+1];
   }
   stages_[idx] = stage;
   if (idx > 0) {
-    stages_[idx-1]->next_stage_ = stage;
+    stages_[idx-1]->linkStage(stage);
   }
   stage->pipeline_ = this;
 
