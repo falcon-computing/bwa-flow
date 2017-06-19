@@ -56,6 +56,9 @@ LIBS	 := $(LIBS) \
 	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
 endif
 
+GIT_VERSION := $(shell git describe --abbrev=8 --dirty --always --tags)
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
+
 PROG	 := ./bin/bwa
 
 all:	$(PROG)

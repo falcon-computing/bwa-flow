@@ -25,6 +25,10 @@
 #include "mpi.h"
 #endif
 
+#ifndef VERSION
+#define VERSION "untracked"
+#endif
+
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "Pipeline.h"
@@ -74,9 +78,6 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
-DEFINE_int32(max_num_records, 100000,
-    "Max number of records per bam file");
-
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
 
@@ -92,14 +93,14 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 3,
+DEFINE_int32(output_nt, 2,
     "Total number of parallel threads to use for output stage");
 
 DEFINE_int32(output_flag, 1, 
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 10, 
+DEFINE_int32(max_batch_records, 20, 
     "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
@@ -110,7 +111,11 @@ int main(int argc, char *argv[]) {
     ss << argv[i] << " ";
   }
 
+  std::stringstream version_str;
+  version_str << "Falcon BWA-MEM Version: " << VERSION;
+
   // Initialize Google Flags
+  gflags::SetVersionString(version_str.str());
   gflags::SetUsageMessage(argv[0]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -278,9 +283,8 @@ int main(int argc, char *argv[]) {
   SeqsRead        read_stage;
   KseqsRead       kread_stage;
   KseqsToBseqs    k2b_stage;
-  SamsPrint       print_stage(FLAGS_output_nt);
   SamsReorder     reorder_stage;
-  WriteOutput     write_stage(FLAGS_output_nt);
+  WriteOutput     output_stage(FLAGS_output_nt);
 #ifdef SCALE_OUT
   SeqsDispatch    seq_send_stage;
   SeqsReceive     seq_recv_stage;
@@ -312,7 +316,7 @@ int main(int argc, char *argv[]) {
   }
 #else
   SeqsRead*  input_stage = &read_stage;
-  SamsPrint* output_stage = &print_stage;
+  //SamsPrint* output_stage = &print_stage;
 #endif
 
   // Bind global vars to each pipeline
@@ -334,34 +338,25 @@ int main(int argc, char *argv[]) {
   }
 #endif
   
-
-  if (FLAGS_offload) {
-    compute_flow.addStage(0, &kread_stage);
-    compute_flow.addStage(1, &k2b_stage);
-    compute_flow.addStage(2, &seq2chain_stage);
-    compute_flow.addStage(3, &chain2reg_stage);
-    compute_flow.addStage(4, &reg2sam_stage);
-    compute_flow.addStage(5, &reorder_stage);
-    compute_flow.addStage(6, &write_stage);
-   // compute_flow.addStage(4, output_stage);
+  compute_flow.addStage(0, &kread_stage);
+  compute_flow.addStage(1, &k2b_stage);
+  compute_flow.addStage(2, &seq2chain_stage);
+  compute_flow.addStage(3, &chain2reg_stage);
+  compute_flow.addStage(4, &reg2sam_stage);
+  compute_flow.addStage(5, &reorder_stage);
+  compute_flow.addStage(6, &output_stage);
 
 #ifdef BUILD_FPGA
-    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      fpga_flow.addStage(0, &chainpipe_fpga_stage);
-      fpga_flow.addStage(1, &chain2reg_fpga_stage);
+  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+    fpga_flow.addStage(0, &chainpipe_fpga_stage);
+    fpga_flow.addStage(1, &chain2reg_fpga_stage);
 
-      // bind the input/output queue of stage_2 in compute_flow
-      fpga_flow.branch(compute_flow, 3);
-    }
+    // bind the input/output queue of stage_2 in compute_flow
+    fpga_flow.branch(compute_flow, 3);
+  }
 #endif
-  }
-  else {
-    compute_flow.addStage(0, input_stage);
-    compute_flow.addStage(1, &seq2sam_stage);
-    compute_flow.addStage(2, output_stage);
-  }
-  
-	t_real = realtime();
+
+  t_real = realtime();
   compute_flow.start();
 
   // Start FPGA context
