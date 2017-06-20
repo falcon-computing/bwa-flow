@@ -25,6 +25,10 @@
 #include "mpi.h"
 #endif
 
+#ifndef VERSION
+#define VERSION "untracked"
+#endif
+
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "Pipeline.h"
@@ -40,7 +44,6 @@ boost::mutex mpi_mutex;
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
-
 int mpi_rank;
 int mpi_nprocs;
 ktp_aux_t* aux;
@@ -62,6 +65,9 @@ DEFINE_bool(offload, true,
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
 
+DEFINE_bool(sort, true,
+    "Enable in-memory sorting of output bam file");
+
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
 
@@ -70,6 +76,9 @@ DEFINE_int32(chunk_size, 2000,
 
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
+
+DEFINE_int32(max_num_records, 2000000,
+    "Max number of records per bam file");
 
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
@@ -85,6 +94,10 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
+
+DEFINE_int32(output_flag, 1, 
+    "Flag to specify output format: "
+    "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
 int main(int argc, char *argv[]) {
 
@@ -104,13 +117,14 @@ int main(int argc, char *argv[]) {
   const int rank = 0;
 #endif
 
- // Print arguments for records
+  // Print arguments for records
   std::stringstream ss;
   for (int i = 0; i < argc; i++) {
     ss << argv[i] << " ";
   }
 
   // Initialize Google Flags
+  gflags::SetVersionString(VERSION);
   gflags::SetUsageMessage(argv[0]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -133,6 +147,8 @@ int main(int argc, char *argv[]) {
 
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
+
+  std::cout << "Falcon BWA-MEM " << VERSION << std::endl;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
 #ifdef BUILD_FPGA
@@ -161,22 +177,25 @@ int main(int argc, char *argv[]) {
 #endif
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
-      if (boost::filesystem::create_directories(sam_dir)) {
-        VLOG(1) << "Putting sam output to " << sam_dir;
-      }
-      else {
+      if (!boost::filesystem::create_directories(sam_dir)) {
         LOG(ERROR) << "Cannot create output dir: " << sam_dir;
         return 1;
+      }
+      if (FLAGS_sort) {
+        VLOG(1) << "Putting sorted BAM files to " << sam_dir;
+      }
+      else {
+        VLOG(1) << "Putting output to " << sam_dir;
       }
     }
   }
   else {
-    VLOG(1) << "Putting sam output to stdout";
+    VLOG(1) << "Putting output to stdout";
   }
 
   // Produce original BWA arguments
   std::vector<const char*> bwa_args;
-  if (strcmp(argv[1], "mem")) {
+  if (argc > 1 && strcmp(argv[1], "mem")) {
     LOG(ERROR) << "Expecting 'mem' as the first argument.";
     return 1;
   }
@@ -201,6 +220,12 @@ int main(int argc, char *argv[]) {
     bwa_args.push_back("-R"); 
     bwa_args.push_back(FLAGS_R.c_str()); 
   }
+  if (FLAGS_output_flag < 0 || FLAGS_output_flag > 2) {
+    LOG(ERROR) << "Illegal argument of --output_flag";
+    return 1;
+  }
+  bwa_args.push_back("-o");
+  bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
 
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
@@ -356,8 +381,8 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "Real time: " << realtime() - t_real << " sec, "
               << "CPU time: " << cputime() << " sec";
 
-    err_fflush(stdout);
-    err_fclose(stdout);
+    //err_fflush(stdout);
+    //err_fclose(stdout);
 
     free(bwa_pg);
   }

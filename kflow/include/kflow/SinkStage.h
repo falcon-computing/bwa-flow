@@ -20,10 +20,10 @@ class SinkStage :
 {
   public:
     // force one worker for IO stages
-    SinkStage();
+    SinkStage(int n_workers, bool is_dyn);
 
   protected:
-    virtual void compute() = 0;
+    virtual void compute(int wid) = 0;
 
     bool getInput(U &item);
 
@@ -33,34 +33,34 @@ class SinkStage :
 };
 
 template <typename U, int IN_DEPTH>
-SinkStage<U, IN_DEPTH>::SinkStage(): 
-  Stage<U, void, IN_DEPTH, 0>(1, false) 
+SinkStage<U, IN_DEPTH>::SinkStage(int n_workers=1, bool is_dyn=false): 
+  Stage<U, void, IN_DEPTH, 0>(n_workers, is_dyn) 
 {}
 
 template <typename U, int IN_DEPTH>
 bool SinkStage<U, IN_DEPTH>::getInput(U &item) 
 {
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     return false; 
   }
-  Queue<U, IN_DEPTH>* queue = this->input_queue_;
+  Queue<U, IN_DEPTH>* queue = this->getInputQueue();
   return queue->async_pop(item);
 }
 
 template <typename U, int IN_DEPTH>
 void SinkStage<U, IN_DEPTH>::worker_func(int wid) {
 
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     LOG(ERROR) << "Empty input queue is not allowed";
     return;
   }
 
   try {
     // call user-defined compute function
-    compute(); 
+    compute(wid); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
     return;
   }
   // inform the next Stage there will be no more

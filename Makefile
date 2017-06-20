@@ -4,7 +4,7 @@ BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3 -DNDEBUG
+CFLAGS 	:= -g -std=c++0x -fPIC -O3 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
@@ -29,7 +29,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -lpthread -lm -ldl -lz -lrt
 
-ifneq ($(NDEBUG),)
+ifneq ($(RELEASE),)
 CFLAGS   := $(CFLAGS) -DNDEBUG
 endif
 
@@ -39,17 +39,25 @@ INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 endif
 
+ifneq ($(HTSLIB_PATH),)
+CFLAGS   := $(CFLAGS) -DUSE_HTSLIB
+INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
+LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
+endif 
+
 ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
-	    $(SRC_DIR)/Extension.o \
-            $(SRC_DIR)/FPGAAgent.o \
-	    $(SRC_DIR)/SWRead.o
+	    $(SRC_DIR)/FPGAPipeline.o \
+            $(SRC_DIR)/FPGAAgent.o 
 INCLUDES := $(INCLUDES) \
 	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
 LIBS	 := $(LIBS) \
 	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
 endif
+
+GIT_VERSION := $(shell git describe --abbrev=8 --dirty --always --tags)
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := ./bin/bwa
 
@@ -57,6 +65,9 @@ all:	$(PROG)
 
 scaleout:
 	$(MAKE) SCALEOUT=1 all
+
+release:
+	$(MAKE) RELEASE=1 all
 
 ./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) 
 	$(PP) $(OBJS) -o $@ $(LIBS)

@@ -44,10 +44,10 @@ template <
   int IN_DEPTH, int OUT_DEPTH
 >
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::getInput(U &item) {
-  if (!this->input_queue_) {
+  if (!this->getInputQueue()) {
     return false; 
   }
-  return this->input_queue_->async_pop(item);
+  return this->getInputQueue()->async_pop(item);
 }
 
 template <
@@ -55,10 +55,10 @@ template <
   int IN_DEPTH, int OUT_DEPTH
 >
 void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::pushOutput(V const & item) {
-  if (!this->output_queue_) {
+  if (!this->getOutputQueue()) {
     return; 
   }
-  this->output_queue_->push(item);
+  this->getOutputQueue()->push(item);
 }
 
 template <
@@ -68,7 +68,7 @@ template <
 bool MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute() {
 
   // Return false if input queue is empty or max num_worker_threads reached
-  if (this->input_queue_->empty() || 
+  if (this->getInputQueue()->empty() || 
       this->getNumThreads() >= this->getMaxNumThreads()) {
     return false;
   }
@@ -99,7 +99,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func() {
     compute(n_workers-1); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
     return;
   }
   catch (std::runtime_error &e) {
@@ -114,13 +114,13 @@ template <
 void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
 
   if (this->isDynamic()) {
-    LOG(WARNING) << "Dynamic stages are not supposed to "
+    DLOG(WARNING) << "Dynamic stages are not supposed to "
       << "start worker threads, exiting.";
     return;
   }
     
-  if (!this->input_queue_ || !this->output_queue_) {
-    LOG(ERROR) << "Empty input/output queue is not allowed";
+  if (!this->getInputQueue() || !this->getOutputQueue()) {
+    DLOG(ERROR) << "Empty input/output queue is not allowed";
     return;
   }
 
@@ -129,7 +129,7 @@ void MapPartitionStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     compute(wid); 
   } 
   catch (boost::thread_interrupted &e) {
-    VLOG(2) << "Worker thread is interrupted";
+    DLOG_IF(INFO, FLAGS_v >= 2) << "Worker thread is interrupted";
   }
   // inform the next Stage there will be no more
   // output records

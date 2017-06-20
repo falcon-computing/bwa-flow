@@ -19,7 +19,7 @@
 
 #define INPUT_DEPTH   4
 #define OUTPUT_DEPTH  16
-#define COMPUTE_DEPTH 64
+#define COMPUTE_DEPTH 16
 
 #define MASTER_RANK   0
 
@@ -159,8 +159,20 @@ class RegionsToSam
 class SamsPrint
 : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsPrint(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  void compute();
+  SamsPrint():
+    kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>(),
+    file_id_(0), fout_(NULL)
+  {;}
+  void compute(int wid = 0);
+ private:
+  void sortAndWriteBamBatch(bam1_t** buf, int n_elements, std::string out_dir);
+
+  int file_id_;
+#ifdef USE_HTSLIB
+  samFile* fout_;
+#else
+  FILE* fout_
+#endif
 };
 
 #endif

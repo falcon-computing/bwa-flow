@@ -1,0 +1,12 @@
+#!/bin/bash
+source ../setup.sh
+
+./bwa \
+    --alsologtostderr=1 \
+    --log_dir=. \
+    --v=1 \
+    --offload \
+    --output_flag=1 \
+    --sort \
+    --max_num_records=2000000 \
+    $@
