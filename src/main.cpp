@@ -65,7 +65,7 @@ DEFINE_bool(offload, true,
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
 
-DEFINE_bool(sort, false,
+DEFINE_bool(sort, true,
     "Enable in-memory sorting of output bam file");
 
 DEFINE_string(fpga_path, "",
@@ -77,7 +77,7 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
-DEFINE_int32(max_num_records, 100000,
+DEFINE_int32(max_num_records, 2000000,
     "Max number of records per bam file");
 
 DEFINE_bool(inorder_output, false, 
@@ -95,7 +95,7 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_flag, 0, 
+DEFINE_int32(output_flag, 1, 
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
 
-  LOG(INFO) << "Falcon BWA-MEM Version: " << VERSION;
+  std::cout << "Falcon BWA-MEM " << VERSION << std::endl;
 
   if (FLAGS_offload && FLAGS_use_fpga) {
 #ifdef BUILD_FPGA
@@ -195,7 +195,7 @@ int main(int argc, char *argv[]) {
 
   // Produce original BWA arguments
   std::vector<const char*> bwa_args;
-  if (strcmp(argv[1], "mem")) {
+  if (argc > 1 && strcmp(argv[1], "mem")) {
     LOG(ERROR) << "Expecting 'mem' as the first argument.";
     return 1;
   }
