@@ -55,8 +55,9 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt, int bank) {
     throw std::runtime_error("Input buffer size too big");
   }
 
-  cl_command_queue cmd = env_->getCmdQueue();
+  cl_command_queue cmd = env_->getCmdQueue(2*bank+4);
 
+  //boost::lock_guard<OpenCLEnv> guard(*env_);
   cl_int err = 0;
   if (size > 0 ) {
     if (bank == 0)
@@ -71,6 +72,11 @@ void FPGAAgent::writeInput(void* host_ptr, uint64_t size, int cnt, int bank) {
     if (err != CL_SUCCESS) {
       throw std::runtime_error("Failed to write to input buffer");
     }
+
+    err = clFlush(cmd);
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to flush the command queue");
+    }
   }
 }
 
@@ -78,31 +84,41 @@ void FPGAAgent::readOutput(void* host_ptr, uint64_t size, int cnt, int bank) {
   if (size > 2*chunk_size_*FPGA_RET_PARAM_NUM*sizeof(int)) {
     throw std::runtime_error("Output buffer size too big");
   }
-  cl_command_queue cmd = env_->getCmdQueue();
+  cl_command_queue cmd = env_->getCmdQueue(2*bank+1+4);
   
   //boost::lock_guard<OpenCLEnv> guard(*env_);
   cl_int err = 0;
   if (size > 0 ) {
     if (bank == 0)
-    err = clEnqueueReadBuffer(cmd,
-        output_buf_a[cnt], CL_TRUE, 0, size,
-        host_ptr, 0, NULL, NULL);  
+      err = clEnqueueReadBuffer(cmd,
+          output_buf_a[cnt], CL_TRUE, 0, size,
+          host_ptr, 0, NULL, NULL);  
     else
-    err = clEnqueueReadBuffer(cmd,
-        output_buf_b[cnt], CL_TRUE, 0, size,
-        host_ptr, 0, NULL, NULL);  
+      err = clEnqueueReadBuffer(cmd,
+          output_buf_b[cnt], CL_TRUE, 0, size,
+          host_ptr, 0, NULL, NULL);  
 
     if (err != CL_SUCCESS) {
       throw std::runtime_error("Cannot read output buffer\n");
     }
+
+    err = clFlush(cmd);
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to flush the command queue");
+    }
   }
 }
 
-void FPGAAgent::start(int size_a, int size_b, int cnt) {
+void FPGAAgent::start(
+    int size_a, int size_b, 
+    int out_size_a, int out_size_b, 
+    int cnt) {
 
   fpga_task_[cnt] = new FPGATask;
   fpga_task_[cnt]->size_a = size_a;
   fpga_task_[cnt]->size_b = size_b;
+  fpga_task_[cnt]->out_size_a = out_size_a;
+  fpga_task_[cnt]->out_size_b = out_size_b;
   fpga_task_[cnt]->input_a    = &input_buf_a[cnt];
   fpga_task_[cnt]->input_b    = &input_buf_b[cnt];
   fpga_task_[cnt]->output_a   = &output_buf_a[cnt];

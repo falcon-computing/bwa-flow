@@ -1,16 +1,17 @@
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 #include <assert.h>
-#include <limits.h>
-#include <math.h>
-#include <vector>
-#include <queue>
-#include <list>
 #include <boost/asio.hpp>
 #include <boost/smart_ptr.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
+#include <limits.h>
+#include <list>
+#include <math.h>
+#include <queue>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <vector>
 
 #include "bwa_wrapper.h"
 #include "config.h"
@@ -20,6 +21,7 @@
 #include "FPGAPipeline.h"
 
 #define MAX_BAND_TRY  2
+#define AOCL_ALIGNMENT 64
 //#define SMITHWATERMAN_SIM
 
 #ifdef SMITHWATERMAN_SIM
@@ -29,17 +31,28 @@ void sw_top (int *a, int *output_a, int __inc);
 }
 #endif
 
+void *aligned_malloc(size_t size) {
+  void *result = NULL;
+  posix_memalign(&result, AOCL_ALIGNMENT, size);
+  return result;
+}
+
 void ChainsToRegionsFPGA::extendOnFPGA(
     FPGAAgent* agent,
     char* &kernel_buffer,
     int data_size_a,
     int data_size_b,
+    int task_num_a,
+    int task_num_b,
     int stage_cnt
     )
 {
+  uint64_t start_ts = getUs();
   agent->writeInput((int*)kernel_buffer, data_size_a, stage_cnt, 0);
   agent->writeInput((int*)(&kernel_buffer[data_size_a]), data_size_b, stage_cnt, 1);
-  agent->start(data_size_a/4, data_size_b/4, stage_cnt);
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Write OpenCL buffer takes  " << getUs() - start_ts << " us";
+
+  agent->start(data_size_a/4, data_size_b/4, task_num_a*5, task_num_b*5, stage_cnt);
 }
 
 void ChainsToRegionsFPGA::FPGAPostProcess(
@@ -62,6 +75,11 @@ void ChainsToRegionsFPGA::FPGAPostProcess(
   agent->readOutput(kernel_output, FPGA_RET_PARAM_NUM*task_num_a*4, stage_cnt, 0);
   agent->readOutput(&kernel_output[FPGA_RET_PARAM_NUM*task_num_a*2],
       FPGA_RET_PARAM_NUM*task_num_b*4, stage_cnt, 1);
+
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Read OpenCL buffer takes " 
+    << getUs() - start_ts << " us";
+
+  start_ts = getUs();
   for (int i = 0; i < task_num_a + task_num_b; i++) {
     int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
                     kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
@@ -313,21 +331,30 @@ void ChainsToRegionsFPGA::compute(int wid) {
   mem_chain_t** chain_batch[stage_num];
   int stage_task_num_a[stage_num];
   int stage_task_num_b[stage_num];
+
   for (int i = 0; i < stage_num; i++) {
     region_batch[i] = new mem_alnreg_t*[2*chunk_size];
     chain_batch[i] = new mem_chain_t*[2*chunk_size];
     stage_task_num_a[i] = 0;
     stage_task_num_b[i] = 0;
   } 
+
   // elements of the Regions record
-  bseq1_t* seqs        ;
-  mem_chain_v* chains  ;
-  mem_alnreg_v* alnreg ;
+  bseq1_t* seqs;
+  mem_chain_v* chains;
+  mem_alnreg_v* alnreg;
 
   // kernel_buffer 
-  char* kernel_buffer = new char [10000*chunk_size];
-  short* kernel_buffer_out = new short [40 * chunk_size];
+  int i_size = 10000*chunk_size;
+  int o_size = 40*chunk_size;
+  int a_i_size = sizeof(char)*((i_size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
+  int a_o_size = sizeof(short)*((o_size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
+
+  char* kernel_buffer = (char*)aligned_malloc(a_i_size);
+  short* kernel_buffer_out = (short*)aligned_malloc(a_o_size);
+
   int kernel_buffer_idx = 0;
+
   // For statistics
   uint64_t start_ts;
   uint64_t last_batch_ts;
@@ -402,9 +429,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
       else if (task_num >= chunk_size) {
         kernel_size_b = kernel_buffer_idx;
         kernel_task_num_b = task_num - kernel_task_num_a;
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Prepare data for FPGA  "<< stage_cnt << " takes " << getUs()- last_prepare_ts << " us " ;
-        stage_task_num_a[stage_cnt] = kernel_task_num_a ;
-        stage_task_num_b[stage_cnt] = kernel_task_num_b ;
+
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << 
+          "Prepare data for FPGA " << stage_cnt << 
+          " takes " << getUs()- last_prepare_ts << " us";
+
+        stage_task_num_a[stage_cnt] = kernel_task_num_a;
+        stage_task_num_b[stage_cnt] = kernel_task_num_b;
         //extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
         //stage_cnt = 1 - stage_cnt;
         //if (agent.pending(stage_cnt)){
@@ -416,10 +447,19 @@ void ChainsToRegionsFPGA::compute(int wid) {
           FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[stage_cnt], 
               stage_task_num_b[stage_cnt],region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
         }
-        extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, 1 - stage_cnt);
+
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "started task of next iteration";
+
+        extendOnFPGA(&agent, kernel_buffer, 
+            kernel_size_a, kernel_size_b, 
+            kernel_task_num_a, kernel_task_num_b,
+            1 - stage_cnt);
+
         last_prepare_ts = getUs();
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "This chunk of FPGA takes " 
-          << getUs()- last_batch_ts<< " us " ;
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << 
+          "This chunk of FPGA takes " << 
+          getUs()- last_batch_ts << " us";
+
         last_batch_ts = getUs();
         task_num = 0;
         kernel_buffer_idx = 0;
@@ -446,9 +486,14 @@ void ChainsToRegionsFPGA::compute(int wid) {
       kernel_size_b = kernel_buffer_idx;
       kernel_task_num_b = task_num - kernel_task_num_a;
     }
-    extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
+    extendOnFPGA(&agent, kernel_buffer, 
+        kernel_size_a, kernel_size_b, 
+        kernel_task_num_a, kernel_task_num_b,
+        stage_cnt);
+
     FPGAPostProcess(&agent, kernel_buffer_out, kernel_task_num_a, kernel_task_num_b,
         region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
+
     task_num = 0;
     kernel_buffer_idx = 0;
     kernel_size_a = 0;
@@ -471,4 +516,10 @@ void ChainsToRegionsFPGA::compute(int wid) {
       << getUs() - last_output_ts << " us";
     last_output_ts = getUs();
   }
+  for (int i = 0; i < stage_num; i++) {
+    delete region_batch[i];
+    delete chain_batch[i];
+  }
+  free(kernel_buffer);
+  free(kernel_buffer_out);
 }

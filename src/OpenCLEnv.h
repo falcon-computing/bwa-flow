@@ -17,6 +17,8 @@
 struct FPGATask {
   int     size_a;
   int     size_b;
+  int     out_size_a;
+  int     out_size_b;
   cl_mem* input_a;
   cl_mem* input_b;
   cl_mem* output_a;
@@ -46,25 +48,36 @@ class OpenCLEnv
         throw std::runtime_error(
             "Failed to find an OpenCL platform!");
     }
+    DLOG(INFO) << "Found " << num_platforms << " opencl platforms";
 
-    err = clGetPlatformInfo(
-        platform_id[1], 
-        CL_PLATFORM_VENDOR, 
-        1000, 
-        (void *)cl_platform_vendor,NULL);
+    int platform_idx;
+    for (int i = 0; i < num_platforms; i++) {
+        char cl_platform_name[1001];
 
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error(
-            "clGetPlatformInfo(CL_PLATFORM_VENDOR) failed!");
-    }
-    err = clGetPlatformInfo(platform_id[1],CL_PLATFORM_NAME,1000,(void *)cl_platform_name,NULL);
-    
-    if (err != CL_SUCCESS) {
-        throw std::runtime_error("clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
+        err = clGetPlatformInfo(
+            platform_id[i], 
+            CL_PLATFORM_NAME, 
+            1000, 
+            (void *)cl_platform_name,NULL);
+
+        DLOG(INFO) << "Found platform " << cl_platform_name;
+
+        if (err != CL_SUCCESS) {
+          throw std::runtime_error(
+              "clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
+        }
+
+        if (strstr(cl_platform_name, "Xilinx") != NULL || strstr(cl_platform_name, "Intel") != NULL) {
+            // found platform
+            //printf("Found Xilinx platform\n");
+            platform_idx = i;
+            DLOG(INFO) << "Selecting platform " << cl_platform_name;
+            break;
+        }
     }
 
     // Connect to a compute device
-    err = clGetDeviceIDs(platform_id[1], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
+    err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a device group!");
@@ -74,15 +87,20 @@ class OpenCLEnv
     context_ = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
 
     if (!context_) {
-        throw std::runtime_error("Failed to create a compute context!");
+      throw std::runtime_error("Failed to create a compute context!");
     }
 
-    // Create a command commands
-    commands_ = clCreateCommandQueue(context_, device_id, 0, &err);
-    //commands_ = clCreateCommandQueue(context_, device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+    // Create a command queues
+    for (int i = 0; i < 8; i++) {
+        commands_[i] = clCreateCommandQueue(context_, device_id, 0, &err);
+
+        if (err != CL_SUCCESS) {
+          throw std::runtime_error("Failed to create a command queue context!");
+        }
+    }
 
     if (!commands_) {
-        throw std::runtime_error("Failed to create a command queue context!");
+      throw std::runtime_error("Failed to create a command queue context!");
     }
 
     // Create Program Objects
@@ -119,10 +137,15 @@ class OpenCLEnv
     }
 
     // Create the compute kernel in the program we wish to run
-    kernel_ = clCreateKernel(program_, kernel_name, &err);
+    for (int i = 0; i < 2; i++) {
+      char kernel_in_name[100];
+      char kernel_out_name[100];
 
-    if (!kernel_ || err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create compute kernel!");
+      sprintf(kernel_in_name,"data_parse%d", i);
+      sprintf(kernel_out_name,"upload_results%d", i);
+
+      kernels_[2*i+0] = clCreateKernel(program_, kernel_in_name, &err);
+      kernels_[2*i+1] = clCreateKernel(program_, kernel_out_name, &err);
     }
 
     // Start executor
@@ -133,8 +156,13 @@ class OpenCLEnv
     task_workers_.interrupt_all();
     task_workers_.join_all();
 
-    clReleaseKernel(kernel_);
-    clReleaseCommandQueue(commands_);
+    for (int i = 0; i < 4; i++) {
+      clReleaseKernel(kernels_[i]);
+      clReleaseCommandQueue(commands_[i]);
+    }
+    for (int i = 4; i < 8; i++) {
+      clReleaseCommandQueue(commands_[i]);
+    }
     clReleaseProgram(program_);
     clReleaseContext(context_);
   }
@@ -143,13 +171,13 @@ class OpenCLEnv
     return context_;
   }
 
-  cl_command_queue& getCmdQueue() {
-    return commands_;
+  cl_command_queue& getCmdQueue(int idx) {
+    return commands_[idx];
   }
 
-  cl_kernel& getKernel() {
-    return kernel_;
-  }
+  //cl_kernel& getKernel() {
+  //  return kernel_;
+  //}
 
   void post_task(FPGATask* task) {
     task_queue_.push(task);   
@@ -166,6 +194,7 @@ class OpenCLEnv
     uint64_t total_wait_time = 0;
     uint64_t total_fpga_time = 0;
 
+    // setup kernels
     try {
       while (true) {
         uint64_t start_ts = getNs();
@@ -179,6 +208,8 @@ class OpenCLEnv
         // Got new task and start execution
         int size_a = task->size_a;
         int size_b = task->size_b;
+        int out_size_a = task->out_size_a;
+        int out_size_b = task->out_size_b;
         cl_mem* input_a  = task->input_a;
         cl_mem* output_a = task->output_a;
         cl_mem* input_b  = task->input_b;
@@ -188,17 +219,37 @@ class OpenCLEnv
           input_b = input_a;
         }
           
-        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input_a);
-        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), input_b);
-        err |= clSetKernelArg(kernel_, 2, sizeof(cl_mem), output_a);
-        err |= clSetKernelArg(kernel_, 3, sizeof(cl_mem), output_b);
-        err |= clSetKernelArg(kernel_, 4, sizeof(int), &size_a);
-        err |= clSetKernelArg(kernel_, 5, sizeof(int), &size_b);
-        err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
-        if (err) {
-          LOG(ERROR) << "Failed to execute kernel.";
+        // kernel execution
+        err  = clSetKernelArg(kernels_[0], 0, sizeof(cl_mem), input_a);
+        err |= clSetKernelArg(kernels_[0], 1, sizeof(int), &size_a);
+        err |= clSetKernelArg(kernels_[2], 0, sizeof(cl_mem), input_b);
+        err |= clSetKernelArg(kernels_[2], 1, sizeof(int), &size_b);
+
+        err |= clSetKernelArg(kernels_[1], 0, sizeof(cl_mem), output_a);
+        err |= clSetKernelArg(kernels_[1], 1, sizeof(int), &out_size_a);
+        err |= clSetKernelArg(kernels_[3], 0, sizeof(cl_mem), output_b);
+        err |= clSetKernelArg(kernels_[3], 1, sizeof(int), &out_size_b);
+
+        //boost::lock_guard<OpenCLEnv> guard(this);
+        cl_event kernel_events[4];
+        for (int i = 0; i < 4; i++) {
+          err = clEnqueueTask(commands_[i], kernels_[i], 0, NULL, 
+              &kernel_events[i]);
+
+          if (err) {
+            LOG(ERROR) << "Failed to execute kernel " << i;
+          }
         }
-        clWaitForEvents(1, &event);
+        //clWaitForEvents(1, &event);
+        err = clWaitForEvents(4, kernel_events);
+        if (err != CL_SUCCESS) {
+          LOG(ERROR) << "Failed to wait for events.";
+        }
+
+        // release cl_event
+        for (int i = 0; i < 4; i++) {
+          clReleaseEvent(kernel_events[i]);
+        }
 
         task->ready.set_value(true);
 
@@ -255,9 +306,9 @@ class OpenCLEnv
   boost::thread_group task_workers_;
   kestrelFlow::Queue<FPGATask*, 4> task_queue_;
 
-  cl_context       context_;   // compute context
-  cl_command_queue commands_;  // compute command queue
-  cl_program       program_;   // compute program
-  cl_kernel        kernel_;    // compute kernel
+  cl_context       context_;      // compute context
+  cl_command_queue commands_[8];  // compute command queue
+  cl_program       program_;      // compute program
+  cl_kernel        kernels_[4];   // compute kernel
 };
 #endif

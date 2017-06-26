@@ -35,8 +35,11 @@ class ChainsToRegionsFPGA
       char* &kernel_buffer,
       int data_size_a,
       int data_size_b,
+      int task_num_a,
+      int task_num_b,
       int stage_cnt
       );
+
   void FPGAPostProcess(
       FPGAAgent* agent,
       short* kernel_output,

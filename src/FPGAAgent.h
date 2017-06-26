@@ -20,7 +20,10 @@ class FPGAAgent {
 
   void writeInput(void* host_ptr, uint64_t size, int cnt, int bank);
   void readOutput(void* host_ptr, uint64_t size, int cnt, int bank);
-  void start(int size_a, int size_b, int cnt);
+  void start(
+      int size_a, int size_b, 
+      int out_size_a, int out_size_b, 
+      int cnt);
   void wait(int cnt);
   bool pending(int cnt);
 

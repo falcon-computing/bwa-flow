@@ -51,9 +51,11 @@ OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
             $(SRC_DIR)/FPGAAgent.o 
 INCLUDES := $(INCLUDES) \
-	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
+	    $(shell aocl compile-config )
+#-I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
 LIBS	 := $(LIBS) \
-	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
+	    $(shell aocl link-config )
+#-L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
 endif
 
 PROG	 := ./bin/bwa

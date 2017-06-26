@@ -36,6 +36,8 @@
 OpenCLEnv* opencl_env;
 #endif
 
+#define FPGA_TEST
+
 boost::mutex mpi_mutex;
 
 // global parameters
@@ -62,7 +64,7 @@ DEFINE_bool(offload, true,
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
 
-DEFINE_bool(sort, false,
+DEFINE_bool(sort, true,
     "Enable in-memory sorting of output bam file");
 
 DEFINE_string(fpga_path, "",
@@ -92,14 +94,14 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 1,
+DEFINE_int32(output_nt, 3,
     "Total number of parallel threads to use for output stage");
 
-DEFINE_int32(output_flag, 0, 
+DEFINE_int32(output_flag, 1, 
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 1, 
+DEFINE_int32(max_batch_records, 10, 
     "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
@@ -259,12 +261,16 @@ int main(int argc, char *argv[]) {
   int num_compute_stages = 3;
   int num_fpga_threads = 0;
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread + 3;
-  }
+  //if (FLAGS_use_fpga) {
+  //  num_fpga_threads = FLAGS_max_fpga_thread;
+  //}
 #endif
   if (FLAGS_offload) {
+#ifndef FPGA_TEST
     num_compute_stages = 7;
+#else
+    num_compute_stages = 8;
+#endif
   }
 
 #ifdef SCALE_OUT
@@ -339,13 +345,21 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(0, &kread_stage);
     compute_flow.addStage(1, &k2b_stage);
     compute_flow.addStage(2, &seq2chain_stage);
+#ifdef FPGA_TEST
+    compute_flow.addStage(3, &chainpipe_fpga_stage);
+    compute_flow.addStage(4, &chain2reg_fpga_stage);
+    compute_flow.addStage(5, &reg2sam_stage);
+    compute_flow.addStage(6, &reorder_stage);
+    compute_flow.addStage(7, &write_stage);
+#else
     compute_flow.addStage(3, &chain2reg_stage);
     compute_flow.addStage(4, &reg2sam_stage);
     compute_flow.addStage(5, &reorder_stage);
     compute_flow.addStage(6, &write_stage);
-   // compute_flow.addStage(4, output_stage);
+#endif
 
 #ifdef BUILD_FPGA
+#ifndef FPGA_TEST
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       fpga_flow.addStage(0, &chainpipe_fpga_stage);
       fpga_flow.addStage(1, &chain2reg_fpga_stage);
@@ -353,6 +367,7 @@ int main(int argc, char *argv[]) {
       // bind the input/output queue of stage_2 in compute_flow
       fpga_flow.branch(compute_flow, 3);
     }
+#endif
 #endif
   }
   else {
@@ -362,7 +377,6 @@ int main(int argc, char *argv[]) {
   }
   
 	t_real = realtime();
-  compute_flow.start();
 
   // Start FPGA context
 #ifdef BUILD_FPGA
@@ -379,15 +393,21 @@ int main(int argc, char *argv[]) {
       DLOG(ERROR) << "because: " << e.what();
       return 1;
     }
+#ifndef FPGA_TEST
     fpga_flow.start();
+#endif
   }
 #endif
+  compute_flow.start();
+  DLOG(INFO) << "Pipeline started";
   compute_flow.wait();
 
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+#ifndef FPGA_TEST
     fpga_flow.finalize();
     fpga_flow.wait();
+#endif
     delete opencl_env;
   }
 #endif

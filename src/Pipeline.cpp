@@ -470,7 +470,7 @@ void getKseqBatch(int chunk_size, int *n_, void *ks1_, void *ks2_,
   *n_ = t;
 }
 
-kestrelFlow::Queue<kseq_new_t*, 8> kseq_queue;
+kestrelFlow::Queue<kseq_new_t*, 9> kseq_queue;
 
 void KseqsRead::compute() {
   uint64_t num_seqs_produced = 0;
