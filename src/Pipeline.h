@@ -20,19 +20,6 @@
 #define OUTPUT_DEPTH  16
 #define COMPUTE_DEPTH 16
 
-#define MASTER_RANK   0
-
-// Tags for messages between master and child processes
-#define SEQ_DP_QUERY  0
-#define SEQ_DP_LENGTH 1
-#define SEQ_DP_DATA   2
-#define SAM_RV_QUERY  3
-#define SAM_RV_LENGTH 4
-#define SAM_RV_DATA   5
-
-// mutex for serializing MPI calls
-extern boost::mutex mpi_mutex;
-
 // Common data structures
 struct KseqsRecord {
   uint64_t start_idx;
@@ -67,36 +54,6 @@ struct BamsRecord {
   int bam_buffer_order;
   bam1_t** bam_buffer;
   int bam_buffer_idx;
-};
-#endif
-
-#ifdef SCALE_OUT
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
- public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute();
-  std::string serialize(SeqsRecord* data);
-};
-
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
- public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute();
-  SeqsRecord deserialize(const char* data, size_t length);
-};
-
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  void compute();
-  std::string serialize(SeqsRecord* data);
-};
-
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  SeqsRecord deserialize(const char* data, size_t length);
-  void compute();
 };
 #endif
 
