@@ -34,7 +34,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -lpthread -lm -ldl -lz -lrt
 
-GIT_VERSION := $(shell git describe --abbrev=8 --dirty --always --tags)
+GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := ./bin/bwa
