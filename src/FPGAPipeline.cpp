@@ -6,7 +6,7 @@
 #include <limits.h>
 #include <list>
 #include <math.h>
-#include <queue>
+#include <deque>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,98 +15,74 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "FPGAAgent.h"
 #include "util.h"
 #include "Pipeline.h"
 #include "FPGAPipeline.h"
+#include "SWTask.h"
 
 #define MAX_BAND_TRY  2
-#define AOCL_ALIGNMENT 64
-//#define SMITHWATERMAN_SIM
 
-#ifdef SMITHWATERMAN_SIM
-// hw data structures
-extern "C"{
-void sw_top (int *a, int *output_a, int __inc);
-}
-#endif
+void ChainsToRegionsFPGA::processOutput(SWTask* task) {
+  // finish task and get output buffers
+  task->finish();
 
-void *aligned_malloc(size_t size) {
-  void *result = NULL;
-  posix_memalign(&result, AOCL_ALIGNMENT, size);
-  return result;
-}
+  mem_alnreg_t** region_batch = task->region_batch;
+  mem_chain_t**  chain_batch = task->chain_batch;
 
-void ChainsToRegionsFPGA::extendOnFPGA(
-    FPGAAgent* agent,
-    char* &kernel_buffer,
-    int data_size_a,
-    int data_size_b,
-    int task_num_a,
-    int task_num_b,
-    int stage_cnt
-    )
-{
+  int total_task_num = (task->o_size[0]+task->o_size[1])/FPGA_RET_PARAM_NUM;
+  int actual_tasks = 0;
+
   uint64_t start_ts = getUs();
-  agent->writeInput((int*)kernel_buffer, data_size_a, stage_cnt, 0);
-  agent->writeInput((int*)(&kernel_buffer[data_size_a]), data_size_b, stage_cnt, 1);
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Write OpenCL buffer takes  " << getUs() - start_ts << " us";
+  for (int k = 0; k < 2; k++) {
+    int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
+    short* kernel_output = task->o_data[k];
 
-  agent->start(data_size_a/4, data_size_b/4, task_num_a*5, task_num_b*5, stage_cnt);
-}
+    //DLOG_IF(INFO, VLOG_IS_ON(3)) << "output " << k << " task num = " << task_num;
+    for (int i = 0; i < task_num; i++) {
+      int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+        kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
 
-void ChainsToRegionsFPGA::FPGAPostProcess(
-    FPGAAgent* agent,
-    short* kernel_output,
-    int task_num_a,
-    int task_num_b,
-    mem_alnreg_t** &region_batch,
-    mem_chain_t** &chain_batch,
-    int stage_cnt
-    )
-{
-  uint64_t start_ts = getUs();
-  int seedcov = 0;
-  agent->wait(stage_cnt);
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait for FPGA takes " 
-    << getUs() - start_ts << " us";
-
-  start_ts = getUs();
-  agent->readOutput(kernel_output, FPGA_RET_PARAM_NUM*task_num_a*4, stage_cnt, 0);
-  agent->readOutput(&kernel_output[FPGA_RET_PARAM_NUM*task_num_a*2],
-      FPGA_RET_PARAM_NUM*task_num_b*4, stage_cnt, 1);
-
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Read OpenCL buffer takes " 
-    << getUs() - start_ts << " us";
-
-  start_ts = getUs();
-  for (int i = 0; i < task_num_a + task_num_b; i++) {
-    int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
-                    kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
-    mem_alnreg_t *newreg = region_batch[seed_idx];
-
-    newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
-    newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
-    newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
-    newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
-    newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
-    newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
-    newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
-
-    // compute the seedcov here
-    mem_chain_t *chain = chain_batch[seed_idx];
-    seedcov = 0;
-    for (int k=0; k < chain->n; k++) {
-      const mem_seed_t *seed = &chain->seeds[k];
-      if (seed->qbeg >= newreg->qb && 
-          seed->qbeg + seed->len <= newreg->qe && 
-          seed->rbeg >= newreg->rb && 
-          seed->rbeg + seed->len <= newreg->re){
-        seedcov += seed->len; 
+      if (seed_idx > actual_tasks) {
+        actual_tasks = seed_idx;
       }
+      mem_alnreg_t *newreg = region_batch[seed_idx];
+      if (seed_idx > total_task_num || !newreg) {
+        DLOG(ERROR) << "task_num = " << i << " "
+                    << "seed_idx = " << seed_idx << " ";
+      }
+
+      newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
+      newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
+      newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
+      newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
+      newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
+      newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
+      newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
+
+      // compute the seedcov here
+      mem_chain_t *chain = chain_batch[seed_idx];
+      int seedcov = 0;
+      for (int k=0; k < chain->n; k++) {
+        const mem_seed_t *seed = &chain->seeds[k];
+        if (seed->qbeg >= newreg->qb && 
+            seed->qbeg + seed->len <= newreg->qe && 
+            seed->rbeg >= newreg->rb && 
+            seed->rbeg + seed->len <= newreg->re){
+          seedcov += seed->len; 
+        }
+      }
+      newreg->seedcov = seedcov;
     }
-    newreg->seedcov = seedcov;
+    // reset
+    task->i_size[k] = 0;
+    task->o_size[k] = 0;
   }
+
+  if (total_task_num != actual_tasks + 1) {
+    DLOG(ERROR) << "problem with seedindex";
+  }
+
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Total " << actual_tasks << " tasks in output";
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Process output takes " 
     << getUs() - start_ts << " us";
 }
@@ -190,12 +166,12 @@ inline void packReadData(ktp_aux_t* aux,
     mem_chain_t** &chain_batch) 
 {
   mem_chainref_t* ref;
-  int chain_idx = 0;
   int seed_idx = chains->a[0].n - 1;
   getChainRef(aux, seq, chains, ref);
 
-  for ( ; chain_idx < chains->n; 
-          seed_idx > 0 ? seed_idx-- : seed_idx = chains->a[++chain_idx].n-1)
+  for (int chain_idx = 0; 
+       chain_idx < chains->n; 
+       seed_idx > 0 ? seed_idx-- : seed_idx = chains->a[++chain_idx].n-1)
   {
       uint32_t sorted_idx = (uint32_t)(ref[chain_idx].srt[seed_idx]);
 
@@ -216,8 +192,6 @@ inline void packReadData(ktp_aux_t* aux,
       newreg->frac_rep = chains->a[chain_idx].frac_rep;
       newreg->w = aux->opt->w;
   }
-  chain_idx = 0;
-  seed_idx = 0;
   int counter8 = 0;
   int tmp_int = 0;
   int chain_num = 0;
@@ -233,12 +207,12 @@ inline void packReadData(ktp_aux_t* aux,
   for ( int i = 0; i < seq->l_seq; i++ ){
     counter8 += 1;
     tmp_int = tmp_int << 4 | seq->seq[i];
-    if ( counter8 % 8 ==0 ) {
+    if (counter8 % 8 ==0 ) {
       *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
       buffer_idx += 4 ;
     }
   }
-  if ( counter8 % 8 !=0 ) {
+  if (counter8 % 8 !=0 ) {
     tmp_int = tmp_int << (4*(8 - counter8 % 8));
     *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
     buffer_idx += 4 ;
@@ -249,7 +223,7 @@ inline void packReadData(ktp_aux_t* aux,
   buffer_idx += 4;
   int region_num = 0; // used to keep track of the current region
 
-  for ( chain_idx = 0; chain_idx < chains->n; chain_idx++) {
+  for (int chain_idx = 0; chain_idx < chains->n; chain_idx++) {
     // Pack the maxspan and rseq
     *((int64_t*)(&buffer[buffer_idx]))= ref[chain_idx].rmax[0];
     buffer_idx += 8;
@@ -263,7 +237,7 @@ inline void packReadData(ktp_aux_t* aux,
         buffer_idx += 4 ;
       }
     } 
-    if ( counter8 % 8 !=0 ) {
+    if (counter8 % 8 !=0 ) {
       tmp_int = tmp_int << (4*(8 - counter8 % 8));
       *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
       buffer_idx += 4 ;
@@ -274,14 +248,14 @@ inline void packReadData(ktp_aux_t* aux,
     seed_num = 0;
     buffer_idx += 4 ; 
     // pack the seed information
-    for ( seed_idx = chains->a[chain_idx].n -1 ; seed_idx >= 0 ; seed_idx--) {
+    for (int seed_idx = chains->a[chain_idx].n -1 ; seed_idx >= 0 ; seed_idx--) {
       uint32_t sorted_idx = (uint32_t)(ref[chain_idx].srt[seed_idx]);
       // get next available seed in the current read
       mem_seed_t* seed_array = &chains->a[chain_idx].seeds[sorted_idx];
      
       if (seed_array->qbeg > 0 ||
-          seed_array->qbeg + seed_array->len != seq->l_seq)
-      {
+          seed_array->qbeg + seed_array->len != seq->l_seq) {
+
         region_batch[task_num] = &(alnregs->a[region_num]) ;
         chain_batch[task_num] = &(chains->a[chain_idx]) ;
         *((int*)(&buffer[buffer_idx])) = task_num ; 
@@ -321,45 +295,25 @@ void ChainsToRegionsFPGA::compute(int wid) {
   const int stage_num = 2;
   int stage_cnt = 0;
 
-  // Create FPGAAgent
-  FPGAAgent agent(opencl_env, chunk_size);
+  // Create SWTasks
+  std::deque<SWTask*> task_queue;
 
-  int task_num = 0;
-
-  // Batch of regions
-  mem_alnreg_t** region_batch[stage_num];
-  mem_chain_t** chain_batch[stage_num];
-  int stage_task_num_a[stage_num];
-  int stage_task_num_b[stage_num];
-
-  for (int i = 0; i < stage_num; i++) {
-    region_batch[i] = new mem_alnreg_t*[2*chunk_size];
-    chain_batch[i] = new mem_chain_t*[2*chunk_size];
-    stage_task_num_a[i] = 0;
-    stage_task_num_b[i] = 0;
-  } 
+  for (int i = 0; i < 2; i++) {
+    SWTask* task = new SWTask(opencl_env, chunk_size);
+    task_queue.push_back(task);
+  }
 
   // elements of the Regions record
   bseq1_t* seqs;
   mem_chain_v* chains;
   mem_alnreg_v* alnreg;
 
-  // kernel_buffer 
-  int i_size = 10000*chunk_size;
-  int o_size = 40*chunk_size;
-  int a_i_size = sizeof(char)*((i_size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
-  int a_o_size = sizeof(short)*((o_size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
-
-  char* kernel_buffer = (char*)aligned_malloc(a_i_size);
-  short* kernel_buffer_out = (short*)aligned_malloc(a_o_size);
-
   int kernel_buffer_idx = 0;
+  int task_num = 0;
 
   // For statistics
   uint64_t start_ts;
-  uint64_t last_batch_ts;
   uint64_t last_output_ts;
-  uint64_t last_read_ts;
 
   uint64_t process_time  = 0;
   uint64_t pending_time  = 0;
@@ -374,6 +328,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
   bool flag_need_reads = false;
   bool flag_more_reads = true;
+
   ChainsRecord record; 
   while (flag_more_reads) { 
     // get one Chains record
@@ -390,116 +345,116 @@ void ChainsToRegionsFPGA::compute(int wid) {
     }
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
 
-    last_batch_ts  = getUs();
+    uint64_t last_prepare_ts = getUs();
+    uint64_t last_batch_ts = getUs();
+
     last_output_ts = last_batch_ts;
-    last_read_ts  = last_batch_ts;
     start_idx = record.start_idx;
     batch_num = record.batch_num;
     seqs = record.seqs;
     chains = record.chains;
     alnreg = record.alnreg;
 
+
     int i = 0;
-    uint64_t last_prepare_ts = getUs();
-    uint64_t last_batch_ts = getUs();
-    int kernel_task_num_a = 0;
-    int kernel_task_num_b = 0;
-    int kernel_size_a = 0;
-    int kernel_size_b = 0;
     bool reach_half = false;
     while (i < batch_num) {
+
       if (task_num < chunk_size/2) {
-        packReadData(aux, seqs+i, chains+i,
-            alnreg+i, kernel_buffer, kernel_buffer_idx, task_num,
-            region_batch[stage_cnt], chain_batch[stage_cnt]);
+        SWTask* task = task_queue.front();
+        packReadData(aux, seqs+i, chains+i, alnreg+i, 
+            task->i_data[0], 
+            kernel_buffer_idx, task_num,
+            task->region_batch,
+            task->chain_batch);
         i++;
       }
       else if (task_num >= chunk_size/2 && reach_half == false) {
-        kernel_size_a = kernel_buffer_idx;
-        kernel_task_num_a = task_num;
+        SWTask* task = task_queue.front();
+
+        task->i_size[0] = kernel_buffer_idx;
+        task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
+
         kernel_buffer_idx = 0;
         reach_half = true;
       }
       else if (task_num < chunk_size) {
-        packReadData(aux, seqs+i, chains+i,
-            alnreg+i, &kernel_buffer[kernel_size_a], kernel_buffer_idx, task_num,
-            region_batch[stage_cnt], chain_batch[stage_cnt]);
+        SWTask* task = task_queue.front();
+
+        packReadData(aux, seqs+i, chains+i, alnreg+i, 
+            task->i_data[1], 
+            kernel_buffer_idx, task_num,
+            task->region_batch,
+            task->chain_batch);
+
         i++;
       }
       else if (task_num >= chunk_size) {
-        kernel_size_b = kernel_buffer_idx;
-        kernel_task_num_b = task_num - kernel_task_num_a;
+        SWTask* task = task_queue.front();
+        task->i_size[1] = kernel_buffer_idx;
+        task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
 
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << 
-          "Prepare data for FPGA " << stage_cnt << 
-          " takes " << getUs()- last_prepare_ts << " us";
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Prepare data for " << 
+                task_num << " tasks takes " << 
+                getUs() - last_batch_ts << " us";
 
-        stage_task_num_a[stage_cnt] = kernel_task_num_a;
-        stage_task_num_b[stage_cnt] = kernel_task_num_b;
-        //extendOnFPGA(&agent, kernel_buffer, kernel_size_a, kernel_size_b, stage_cnt);
-        //stage_cnt = 1 - stage_cnt;
-        //if (agent.pending(stage_cnt)){
-        //  FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[stage_cnt], 
-        //      stage_task_num_b[stage_cnt],region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
-        //}
-        stage_cnt = 1 - stage_cnt;
-        if (agent.pending(stage_cnt)){
-          FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[stage_cnt], 
-              stage_task_num_b[stage_cnt],region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
+        uint64_t output_ts = getUs();
+
+        // start sending task to FPGA
+        task->start(task_queue[1]);
+
+        // circulate the task
+        task_queue.push_back(task);
+        task_queue.pop_front();
+
+        task = task_queue.front();
+        // if task is available
+        if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
+
+          processOutput(task);
+          DLOG_IF(INFO, VLOG_IS_ON(3)) << "This chunk of FPGA takes " << 
+                                          getUs()- last_batch_ts << " us";
         }
-
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "started task of next iteration";
-
-        extendOnFPGA(&agent, kernel_buffer, 
-            kernel_size_a, kernel_size_b, 
-            kernel_task_num_a, kernel_task_num_b,
-            1 - stage_cnt);
-
-        last_prepare_ts = getUs();
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << 
-          "This chunk of FPGA takes " << 
-          getUs()- last_batch_ts << " us";
-
         last_batch_ts = getUs();
+
+        // reset 
         task_num = 0;
         kernel_buffer_idx = 0;
-        kernel_size_a = 0;
-        kernel_size_b = 0;
-        kernel_task_num_a = 0;
-        kernel_task_num_b = 0;
         reach_half = false;
       }
     }
-    if (agent.pending(1 - stage_cnt)){
-      FPGAPostProcess(&agent, kernel_buffer_out, stage_task_num_a[1 - stage_cnt], 
-          stage_task_num_b[1 - stage_cnt], region_batch[1 - stage_cnt],
-          chain_batch[1 - stage_cnt], 1 - stage_cnt );
-    }
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting the remaining tasks";
+
     // finish the remain reads even with small task number 
+    SWTask* task = task_queue.front();
     if (task_num < chunk_size/2) {
-      kernel_size_a = kernel_buffer_idx;
-      kernel_size_b = 0;
-      kernel_task_num_a = task_num;
-      kernel_task_num_b = 0;
+      task->i_size[0] = kernel_buffer_idx;
+      task->i_size[1] = 0;
+      task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
+      task->o_size[1] = 0;
     }
     else if (task_num < chunk_size) {
-      kernel_size_b = kernel_buffer_idx;
-      kernel_task_num_b = task_num - kernel_task_num_a;
+      task->i_size[1] = kernel_buffer_idx;
+      task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
     }
-    extendOnFPGA(&agent, kernel_buffer, 
-        kernel_size_a, kernel_size_b, 
-        kernel_task_num_a, kernel_task_num_b,
-        stage_cnt);
 
-    FPGAPostProcess(&agent, kernel_buffer_out, kernel_task_num_a, kernel_task_num_b,
-        region_batch[stage_cnt], chain_batch[stage_cnt], stage_cnt );
+    task->start(task_queue[1]);
 
+    for (int iter = 0; iter < 2; iter++) {
+      SWTask* task = task_queue.front();
+      task_queue.push_back(task);
+      task_queue.pop_front();
+
+      task = task_queue.front();
+      if (task->i_size[0] > 0) { 
+        processOutput(task);
+      }
+    }
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Finished entire chunk";
+
+    // reset for one batch
     task_num = 0;
     kernel_buffer_idx = 0;
-    kernel_size_a = 0;
-    kernel_size_b = 0;
-    kernel_task_num_a = 0;
-    kernel_task_num_b = 0;
     reach_half = false;
     i = 0;
 
@@ -512,14 +467,28 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
     freeChains(chains, batch_num);
     pushOutput(outputRecord);
+
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
       << getUs() - last_output_ts << " us";
+
     last_output_ts = getUs();
   }
-  for (int i = 0; i < stage_num; i++) {
-    delete region_batch[i];
-    delete chain_batch[i];
+
+  // delete everything
+  while (!task_queue.empty()) {
+    SWTask* task = task_queue.front();
+
+    for (int k = 0; k < 2; k++) {
+      clReleaseMemObject(task->i_buf[k]);
+      clReleaseMemObject(task->o_buf[k]);
+      free(task->i_data[k]);
+      free(task->o_data[k]);
+    }
+    
+    delete task->region_batch;
+    delete task->chain_batch;
+    delete task;
+
+    task_queue.pop_front();
   }
-  free(kernel_buffer);
-  free(kernel_buffer_out);
 }

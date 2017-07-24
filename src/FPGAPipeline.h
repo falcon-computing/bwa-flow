@@ -3,6 +3,7 @@
 
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
+#include "SWTask.h"
 
 #include "kflow/MapStage.h"
 #include "kflow/MapPartitionStage.h"
@@ -30,25 +31,7 @@ class ChainsToRegionsFPGA
       ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>(n, false) {;}
 
   void compute(int wid);
-  void extendOnFPGA(
-      FPGAAgent* agent,
-      char* &kernel_buffer,
-      int data_size_a,
-      int data_size_b,
-      int task_num_a,
-      int task_num_b,
-      int stage_cnt
-      );
-
-  void FPGAPostProcess(
-      FPGAAgent* agent,
-      short* kernel_output,
-      int task_num_a,
-      int task_num_b,
-      mem_alnreg_t** &region_batch,
-      mem_chain_t** &chain_batch,
-      int stage_cnt
-      );
+  void processOutput(SWTask* task);
 };
 
 #endif

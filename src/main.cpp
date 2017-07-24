@@ -36,7 +36,7 @@
 OpenCLEnv* opencl_env;
 #endif
 
-#define FPGA_TEST
+//#define FPGA_TEST
 
 boost::mutex mpi_mutex;
 
