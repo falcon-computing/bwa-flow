@@ -63,7 +63,7 @@ LIBS	 := $(LIBS) \
 endif
 
 ifneq ($(OPENMPI_DIR),)
-INCLUDES := $(INCLUDES) -I$(OPENMPI_INC)
+INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 endif

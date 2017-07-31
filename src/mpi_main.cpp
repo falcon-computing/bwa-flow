@@ -270,6 +270,9 @@ int main(int argc, char *argv[]) {
   }
   free(bwa_pg);
 
+  // broadcast options from master's pre_process
+  MPI::COMM_WORLD.Bcast(&aux->opt->flag, 1, MPI::INT, 0);
+
   // Restore stdout if stdout is redirected
   if (rank==0 && !sam_dir.empty()) {
     fclose(stdout);
@@ -278,7 +281,7 @@ int main(int argc, char *argv[]) {
     close(stdout_fd);
   }
 
-	double t_real = realtime();
+  double t_real = realtime();
 
   int num_compute_stages = 6;
 
