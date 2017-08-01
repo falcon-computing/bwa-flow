@@ -372,7 +372,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       else if (task_num >= chunk_size/2 && reach_half == false) {
         SWTask* task = task_queue.front();
 
-        task->i_size[0] = kernel_buffer_idx;
+        task->i_size[0] = kernel_buffer_idx/sizeof(int);
         task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
 
         kernel_buffer_idx = 0;
@@ -391,7 +391,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       }
       else if (task_num >= chunk_size) {
         SWTask* task = task_queue.front();
-        task->i_size[1] = kernel_buffer_idx;
+        task->i_size[1] = kernel_buffer_idx/sizeof(int);
         task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
 
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Prepare data for " << 
@@ -428,13 +428,14 @@ void ChainsToRegionsFPGA::compute(int wid) {
     // finish the remain reads even with small task number 
     SWTask* task = task_queue.front();
     if (task_num < chunk_size/2) {
-      task->i_size[0] = kernel_buffer_idx;
+      task->i_size[0] = kernel_buffer_idx/sizeof(int);
       task->i_size[1] = 0;
       task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
       task->o_size[1] = 0;
     }
-    else if (task_num < chunk_size) {
-      task->i_size[1] = kernel_buffer_idx;
+    //else if (task_num < chunk_size) {
+    else {
+      task->i_size[1] = kernel_buffer_idx/sizeof(int);
       task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
     }
 

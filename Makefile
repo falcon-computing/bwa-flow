@@ -49,13 +49,27 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
-            $(SRC_DIR)/FPGAAgent.o 
+	    $(SRC_DIR)/SWTask.o
+
+ifneq ($(ALTERAOCLSDKROOT),)
+CFLAGS 	 := $(CFLAGS) -DINTEL_FPGA
+OBJS	 := $(OBJS) \
+	    $(SRC_DIR)/IntelAgent.o
+
 INCLUDES := $(INCLUDES) \
 	    $(shell aocl compile-config )
-#-I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
 LIBS	 := $(LIBS) \
 	    $(shell aocl link-config )
-#-L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
+else 
+CFLAGS 	 := $(CFLAGS) -DXILINX_FPGA
+INCLUDES := $(INCLUDES) \
+	-I$(XILINX_SDX)/runtime/include/1_2 
+LIBS	 := $(LIBS) \
+	-L$(XILINX_SDX)/runtime/lib/x86_64 -lxilinxopencl
+
+OBJS	 := $(OBJS) \
+	    $(SRC_DIR)/XCLAgent.o
+endif
 endif
 
 PROG	 := ./bin/bwa
@@ -81,7 +95,7 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 	make -C $(BWA_DIR)
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(SRC_DIR)/*.o
 	rm -f $(PROG)  
 
 .PHONY: all scaleout clean

@@ -82,10 +82,9 @@ void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
 
   // kernel execution
   for (int k = 0; k < 2; k++) {
-    int i_size = task->i_size[k] / sizeof(int);
     cl_int err = 0;
     err  = clSetKernelArg(kernels_[2*k+0], 0, sizeof(cl_mem), &task->i_buf[k]);
-    err |= clSetKernelArg(kernels_[2*k+0], 1, sizeof(int), &i_size);
+    err |= clSetKernelArg(kernels_[2*k+0], 1, sizeof(int), &task->i_size[k]);
     err |= clSetKernelArg(kernels_[2*k+1], 0, sizeof(cl_mem), &task->o_buf[k]);
     err |= clSetKernelArg(kernels_[2*k+1], 1, sizeof(int), &task->o_size[k]);
 

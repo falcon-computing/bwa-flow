@@ -1,3 +1,7 @@
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/serialization/binary_object.hpp>
+#include <boost/serialization/serialization.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/thread.hpp>
@@ -248,6 +252,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // dump aux env
+
   // Restore stdout if stdout is redirected
   if (rank==0 && !sam_dir.empty()) {
     fclose(stdout);
@@ -261,9 +267,9 @@ int main(int argc, char *argv[]) {
   int num_compute_stages = 3;
   int num_fpga_threads = 0;
 #ifdef BUILD_FPGA
-  //if (FLAGS_use_fpga) {
-  //  num_fpga_threads = FLAGS_max_fpga_thread;
-  //}
+  if (FLAGS_use_fpga) {
+    num_fpga_threads = FLAGS_max_fpga_thread;
+  }
 #endif
   if (FLAGS_offload) {
 #ifndef FPGA_TEST

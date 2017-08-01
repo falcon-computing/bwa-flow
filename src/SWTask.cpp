@@ -7,6 +7,8 @@
 
 #ifdef INTEL_FPGA
 #include "IntelAgent.h"
+#elif XILINX_FPGA
+#include "XCLAgent.h"
 #endif
 
 #ifdef INTEL_FPGA
@@ -27,6 +29,8 @@ inline void *sw_malloc(size_t size, int data_width) {
 SWTask::SWTask(OpenCLEnv* env, int chunk_size) {
 #ifdef INTEL_FPGA
   agent_ = new IntelAgent(env);
+#elif XILINX_FPGA
+  agent_ = new XCLAgent(env);
 #endif
 
   max_i_size_ = 32*1024*1024;
@@ -53,17 +57,21 @@ SWTask::~SWTask() {
 }
 
 void SWTask::start(SWTask* prev_task) {
-  if (i_size[0] >= max_i_size_ || 
-      i_size[1] >= max_i_size_ ||
+  if (i_size[0]*sizeof(int) >= max_i_size_ || 
+      i_size[1]*sizeof(int) >= max_i_size_ ||
       o_size[0] + o_size[1] >= max_o_size_) 
   {
     DLOG(ERROR) << "exceeding max memory size";
     throw std::runtime_error("exceeding max memory size");
   }
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Task info: " 
+    << "i_size[0] = " << i_size[0] << ", "
+    << "i_size[1] = " << i_size[1];
+                               
 
   uint64_t start_ts = getUs();
-  agent_->writeInput(i_buf[0], i_data[0], i_size[0], 0);
-  agent_->writeInput(i_buf[1], i_data[1], i_size[1], 1);
+  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
+  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
   if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
     agent_->start(this, NULL);
   }
