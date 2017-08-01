@@ -1,12 +1,9 @@
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/serialization/binary_object.hpp>
-#include <boost/serialization/serialization.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/thread.hpp>
 #include <ctype.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -16,10 +13,7 @@
 #include <unistd.h>
 #include <zlib.h>
 
-#ifdef NDEBUG
-#define LOG_HEADER "falcon-bwa"
-#endif
-#include <glog/logging.h>
+#include "mpi.h"
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -29,24 +23,25 @@
 #include "bwa/utils.h"
 #include "kflow/Pipeline.h"
 
-#ifndef VERSION
-#define VERSION "untracked"
-#endif
-
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "MPIPipeline.h"
 #include "Pipeline.h"
 #include "util.h"
 
-#ifdef BUILD_FPGA
-#include "FPGAAgent.h"
-#include "FPGAPipeline.h"
-OpenCLEnv* opencl_env;
+#ifndef VERSION
+#define VERSION "untracked"
 #endif
 
 // use flexlm
 #ifdef USELICENSE
 #include "license.h"
+#endif
+
+#ifdef BUILD_FPGA
+#include "FPGAAgent.h"
+#include "FPGAPipeline.h"
+OpenCLEnv* opencl_env;
 #endif
 
 #ifdef USELICENSE
@@ -74,9 +69,14 @@ void licence_check_in() {
 }
 #endif
 
+// TODO: FPGA version is not supported
+boost::mutex mpi_mutex;
+
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
+int mpi_rank;
+int mpi_nprocs;
 ktp_aux_t* aux;
 
 // Original BWA parameters
@@ -123,7 +123,7 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 3,
+DEFINE_int32(output_nt, 2,
     "Total number of parallel threads to use for output stage");
 
 DEFINE_int32(output_flag, 1, 
@@ -152,15 +152,29 @@ int main(int argc, char *argv[]) {
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
 
-#ifdef USELICENSE
-  try {
-    // check license
-    licence_check_out();
+  // Initialize MPI
+  int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
+
+  if (init_ret != MPI_THREAD_SERIALIZED) {
+    LOG(ERROR) << "Available thread level is " << init_ret;
+    throw std::runtime_error("Cannot initialize MPI with threads");
   }
-  catch (std::runtime_error &e) {
-    LOG(ERROR) << "Cannot connect to the license server: " << e.what();
-    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
-    return -1;
+  mpi_rank   = MPI::COMM_WORLD.Get_rank();
+  mpi_nprocs = MPI::COMM_WORLD.Get_size();
+
+  int rank = mpi_rank;
+
+#ifdef USELICENSE
+  if (rank == 0) {
+    try {
+      // check license
+      licence_check_out();
+    }
+    catch (std::runtime_error &e) {
+      LOG(ERROR) << "Cannot connect to the license server: " << e.what();
+      LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+      return -1;
+    }
   }
 #endif
 
@@ -181,24 +195,12 @@ int main(int argc, char *argv[]) {
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
 
-#ifdef BUILD_FPGA
-  if (FLAGS_offload && FLAGS_use_fpga) {
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
-    boost::filesystem::wpath file_path(FLAGS_fpga_path);
-    if (!boost::filesystem::exists(file_path)) {
-      LOG(ERROR) << "Cannot find FPGA bitstream at " 
-        << FLAGS_fpga_path;
-      return 1;
-    }
-  }
-  else {
-    FLAGS_use_fpga = false;
-  }
-#endif
-
   // Get output file folder
   std::string sam_dir = FLAGS_output_dir;
   if (!sam_dir.empty()) {
+    sam_dir += "/" + boost::asio::ip::host_name()+
+      "-" + std::to_string((long long)getpid());
+
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
       if (!boost::filesystem::create_directories(sam_dir)) {
@@ -261,142 +263,105 @@ int main(int argc, char *argv[]) {
 
   // If output_dir is set then redirect sam_header to a file
   int stdout_fd;
-  if (!sam_dir.empty()) {
+  if (rank==0 && !sam_dir.empty()) {
     stdout_fd = dup(STDOUT_FILENO);
     std::string fname = sam_dir + "/header";
     freopen(fname.c_str(), "w+", stdout);
   }
 
   // Parse BWA arguments and generate index and the options
-  if (pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, true)) {
+  if (pre_process(bwa_args.size(), (char**)&bwa_args[0], aux, rank==0)) {
     LOG(ERROR) << "Failed to parse BWA arguments";
     return 1;
   }
+  free(bwa_pg);
 
-  // dump aux env
+  // broadcast options from master's pre_process
+  MPI::COMM_WORLD.Bcast(&aux->opt->flag, 1, MPI::INT, 0);
 
   // Restore stdout if stdout is redirected
-  if (!sam_dir.empty()) {
+  if (rank==0 && !sam_dir.empty()) {
     fclose(stdout);
     dup2(stdout_fd, STDOUT_FILENO);
     stdout = fdopen(STDOUT_FILENO, "w");
     close(stdout_fd);
   }
 
-	double t_real = realtime();
+  double t_real = realtime();
 
-  int num_compute_stages = 3;
-  int num_fpga_threads = 0;
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread;
-  }
-#endif
-  if (FLAGS_offload) {
-#ifndef FPGA_TEST
-    num_compute_stages = 7;
-#else
-    num_compute_stages = 8;
-#endif
-  }
+  int num_compute_stages = 6;
 
-#ifdef SCALE_OUT
-  kestrelFlow::Pipeline scatter_flow(2, 0);
-  kestrelFlow::Pipeline gather_flow(2, 0);
-#endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, 
-                                     FLAGS_t - num_fpga_threads);
+  kestrelFlow::Pipeline scatter_flow(3, 1);
+  kestrelFlow::Pipeline gather_flow(2, 1);
 
-  DLOG(INFO) << "Using " << FLAGS_t - num_fpga_threads << " threads in total";
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
+  DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
 
-  // Stages for bwa file in/out
-  SeqsRead        read_stage;
+  // stages for bwa file in/out
   KseqsRead       kread_stage;
   KseqsToBseqs    k2b_stage;
   SamsReorder     reorder_stage;
   WriteOutput     write_stage(FLAGS_output_nt);
 
-  // Stages for bwa computation
-  SeqsToSams       seq2sam_stage(FLAGS_t);
+  // stages for mpi scale-out
+  SeqsDispatch    seq_send_stage;
+  SeqsReceive     seq_recv_stage;
+  SamsSend        sam_send_stage;
+  SamsReceive     sam_recv_stage;
+
+  // stages for bwa computation
   SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
   ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
 
-#ifdef BUILD_FPGA
-  kestrelFlow::Pipeline fpga_flow(2, 1);
-
-  // Stages for FPGA acceleration of stage_2
-  ChainsPipeFPGA      chainpipe_fpga_stage; // push through
-  ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
-#endif
-
   // Bind global vars to each pipeline
   compute_flow.addConst("sam_dir", sam_dir);
 
-  compute_flow.addStage(0, &kread_stage);
-  compute_flow.addStage(1, &k2b_stage);
-  compute_flow.addStage(2, &seq2chain_stage);
-  compute_flow.addStage(3, &chain2reg_stage);
-  compute_flow.addStage(4, &reg2sam_stage);
-  compute_flow.addStage(5, &reorder_stage);
-  compute_flow.addStage(6, &write_stage);
+  scatter_flow.addStage(0, &kread_stage);
+  scatter_flow.addStage(1, &k2b_stage);
+  scatter_flow.addStage(2, &seq_send_stage);
 
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    fpga_flow.addStage(0, &chainpipe_fpga_stage);
-    fpga_flow.addStage(1, &chain2reg_fpga_stage);
-
-    // bind the input/output queue of stage_2 in compute_flow
-    fpga_flow.branch(compute_flow, 3);
+  if (rank == 0) { 
+    DLOG(INFO) << "Started scattering data";
+    scatter_flow.start();
   }
-#endif
   
+  compute_flow.addStage(0, &seq_recv_stage);
+  compute_flow.addStage(1, &seq2chain_stage);
+  compute_flow.addStage(2, &chain2reg_stage);
+  compute_flow.addStage(3, &reg2sam_stage);
+  compute_flow.addStage(4, &reorder_stage);
+  compute_flow.addStage(5, &write_stage);
+
   t_real = realtime();
   compute_flow.start();
-
-  // Start FPGA context
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    try {
-      opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
-      //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
-      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-        << FLAGS_fpga_path;
-    }
-    catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot configure FPGA bitstream";
-      DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
-      DLOG(ERROR) << "because: " << e.what();
-      return 1;
-    }
-#ifndef FPGA_TEST
-    fpga_flow.start();
-    fpga_flow.wait();
-#endif
-    delete opencl_env;
-  }
-#endif
   compute_flow.wait();
 
-  kseq_destroy(aux->ks);
-  err_gzclose(fp_idx); 
-  kclose(ko_read1);
+  MPI::COMM_WORLD.Barrier();
+  if (rank == 0) {
+    scatter_flow.wait();
+    if (FLAGS_inorder_output) {
+      gather_flow.wait();
+    }
 
-  if (aux->ks2) {
-    kseq_destroy(aux->ks2);
-    err_gzclose(fp2_read2); kclose(ko_read2);
+    kseq_destroy(aux->ks);
+    err_gzclose(fp_idx); 
+    kclose(ko_read1);
+
+    if (aux->ks2) {
+      kseq_destroy(aux->ks2);
+      err_gzclose(fp2_read2); kclose(ko_read2);
+    }
+
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
+    std::cerr << "Real time: " << realtime() - t_real << " sec, "
+              << "CPU time: " << cputime() << " sec" 
+              << std::endl;
+
+    //err_fflush(stdout);
+    //err_fclose(stdout);
+
   }
-
-  std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-  std::cerr << "Real time: " << realtime() - t_real << " sec, "
-            << "CPU time: " << cputime() << " sec" 
-            << std::endl;
-
-  //err_fflush(stdout);
-  //err_fclose(stdout);
-
-  free(bwa_pg);
-
 #ifdef USE_HTSLIB
   bam_hdr_destroy(aux->h);
 #endif
@@ -405,9 +370,14 @@ int main(int argc, char *argv[]) {
   delete aux;
 
 #ifdef USELICENSE
-  // release license
-  licence_check_in();
+  if (rank == 0) {
+    // release license
+    licence_check_in();
+  }
 #endif
+
+  MPI_Finalize();
 
   return 0;
 }
+

@@ -25,7 +25,7 @@ extern void *ko_read1 , *ko_read2 ;
 int usage() {
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Program: bwa (alignment via Burrows-Wheeler transformation)\n");
-	fprintf(stderr, "Version: %s\n", PACKAGE_VERSION);
+	fprintf(stderr, "Version: %s\n", VERSION);
 	fprintf(stderr, "Contact: Heng Li <lh3@sanger.ac.uk>\n\n");
 	fprintf(stderr, "Usage:   bwa <command> [options]\n\n");
 	fprintf(stderr, "Command: index         index sequences in the FASTA format\n");

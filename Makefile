@@ -4,12 +4,17 @@ BWA_DIR   	:= ./bwa
 KFLOW_DIR 	:= ./kflow
 SRC_DIR   	:= ./src
 
-CFLAGS 	:= -g -std=c++0x -fPIC -O3 
+CFLAGS 	:= -std=c++0x -fPIC -O3 
+
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
-	   $(SRC_DIR)/main.o \
 	   $(SRC_DIR)/util.o
+
+STDOBJS := $(SRC_DIR)/main.o 
+
+MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
+	   $(SRC_DIR)/mpi_main.o
 
 INCLUDES:= -I. -I$(BWA_DIR) \
 	   -I$(KFLOW_DIR)/include \
@@ -29,14 +34,15 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -lpthread -lm -ldl -lz -lrt
 
-ifneq ($(RELEASE),)
-CFLAGS   := $(CFLAGS) -DNDEBUG
-endif
+GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
-ifneq ($(SCALEOUT),)
-CFLAGS   := $(CFLAGS) -DSCALE_OUT
-INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
-LIBS	 := $(LIBS) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
+PROG	 := ./bin/bwa
+
+ifneq ($(DEBUG),)
+CFLAGS   := $(CFLAGS) -g
+else
+CFLAGS   := $(CFLAGS) -DNDEBUG
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -72,18 +78,35 @@ OBJS	 := $(OBJS) \
 endif
 endif
 
-PROG	 := ./bin/bwa
+ifneq ($(OPENMPI_DIR),)
+INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
+MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
+MPIPROG	 := ./bin/bwa-mpi
+endif
 
-all:	$(PROG)
+# check FLMDIR
+ifneq ($(FLMDIR),)
+# add support for flex license manage
+FLMLIB 		:= -llmgr_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub
 
-scaleout:
-	$(MAKE) SCALEOUT=1 all
+CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
+INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)
+LIBS		:= $(LIBS) -L$(FLMDIR) $(FLMLIB) 
+LMDEPS 	 	:= $(FLMDIR)/license.o \
+		   $(FLMDIR)/lm_new.o
+endif 
 
-release:
-	$(MAKE) RELEASE=1 all
 
-./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) 
-	$(PP) $(OBJS) -o $@ $(LIBS)
+
+all:	$(PROG) $(MPIPROG)
+
+scaleout: $(MPIPROG)
+
+./bin/bwa-mpi: $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
+	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
+
+./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
+	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
 
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
@@ -96,6 +119,6 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 
 clean:
 	rm -f $(SRC_DIR)/*.o
-	rm -f $(PROG)  
+	rm -f $(PROG) $(MPIPROG)
 
 .PHONY: all scaleout clean

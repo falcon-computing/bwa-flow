@@ -27,9 +27,7 @@ DECLARE_int32(max_batch_records);
 
 // Global parameters
 extern ktp_aux_t* aux;
-#ifdef SCALE_OUT
 extern int mpi_rank;
 extern int mpi_nprocs;
-#endif
 
 #endif
