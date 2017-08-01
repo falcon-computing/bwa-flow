@@ -24,7 +24,7 @@
     - add `--output_dir` for output folder name
     - Synopsis:     
     ```
-    > ./bin/run.sh mem <path-to-ref> <path-to-fastq1> <path-to-fastq2> 
+    > ./bin/run.sh <path-to-ref> <path-to-fastq1> <path-to-fastq2> 
     ```
 2. With FPGA
     - use settings for CPU run
