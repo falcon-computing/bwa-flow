@@ -38,12 +38,6 @@
 #include "license.h"
 #endif
 
-#ifdef BUILD_FPGA
-#include "FPGAAgent.h"
-#include "FPGAPipeline.h"
-OpenCLEnv* opencl_env;
-#endif
-
 #ifdef USELICENSE
 void licence_check_out() {
   // initialize for licensing. call once
