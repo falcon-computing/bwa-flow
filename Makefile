@@ -55,27 +55,11 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
-	    $(SRC_DIR)/SWTask.o
-
-ifneq ($(ALTERAOCLSDKROOT),)
-CFLAGS 	 := $(CFLAGS) -DINTEL_FPGA
-OBJS	 := $(OBJS) \
-	    $(SRC_DIR)/IntelAgent.o
-
+            $(SRC_DIR)/FPGAAgent.o 
 INCLUDES := $(INCLUDES) \
-	    $(shell aocl compile-config )
+	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
 LIBS	 := $(LIBS) \
-	    $(shell aocl link-config )
-else 
-CFLAGS 	 := $(CFLAGS) -DXILINX_FPGA
-INCLUDES := $(INCLUDES) \
-	-I$(XILINX_SDX)/runtime/include/1_2 
-LIBS	 := $(LIBS) \
-	-L$(XILINX_SDX)/runtime/lib/x86_64 -lxilinxopencl
-
-OBJS	 := $(OBJS) \
-	    $(SRC_DIR)/XCLAgent.o
-endif
+	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
 endif
 
 ifneq ($(OPENMPI_DIR),)
@@ -118,7 +102,9 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 	make -C $(BWA_DIR)
 
 clean:
-	rm -f $(SRC_DIR)/*.o
+	rm -f $(OBJS) 
+	rm -f $(STDOBJS)
+	rm -f $(MPIOBJS)
 	rm -f $(PROG) $(MPIPROG)
 
 .PHONY: all scaleout clean
