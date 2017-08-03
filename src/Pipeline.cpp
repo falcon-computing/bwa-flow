@@ -621,7 +621,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   }
   // start writing to file
   for (int i = 0; i < bam_buffer_idx; ++i){
-    sam_write1(fout, aux->h, bam_buffer[i]); 
+    size_t n = sam_write1(fout, aux->h, bam_buffer[i]); 
     bam_destroy1(bam_buffer[i]);
   }
   sam_close(fout);

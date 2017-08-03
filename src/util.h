@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "bwa/bwamem.h"
+#include "bwa_wrapper.h"
 
 class resultsError : public std::runtime_error {
  public:
@@ -34,5 +35,16 @@ inline uint64_t getNs() {
 
   return (uint64_t)tr.tv_sec*1e9 + tr.tv_nsec;
 }
+
+void serialize(std::stringstream &ss, bseq1_t& seq);
+void serialize(std::stringstream &ss, mem_chain_v& chains);
+void serialize(std::stringstream &ss, mem_chain_t& chain);
+void serialize(std::stringstream &ss, mem_seed_t& seed);
+void serialize(std::stringstream &ss, mem_alnreg_v& alnregs);
+void serialize(std::stringstream &ss, mem_alnreg_t& alnreg);
+void deserialize(std::stringstream &ss, mem_chain_v& chains);
+void deserialize(std::stringstream &ss, mem_chain_t& chain);
+void deserialize(std::stringstream &ss, mem_alnreg_t& alnreg);
+void deserialize(std::stringstream &ss, mem_alnreg_v& alnregs);
 
 #endif

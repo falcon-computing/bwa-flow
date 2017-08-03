@@ -2,24 +2,21 @@ BWA_DIR   := ../bwa
 KFLOW_DIR := ../kflow
 SRC_DIR   := ../src
 
-include /curr/diwu/prog/blaze/Makefile.config
-
-OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
+#OPENMPI_DIR=/curr/diwu/tools/openmpi-1.10.2/build/install
+include ../config.mk
 
 CC	:= gcc
 PP	:= g++
 
-CFLAGS := -c -fPIC -std=c++0x -g
+CFLAGS := -c -fPIC -std=c++0x -g -O2 
 
 INCLUDES := -I.. -I../src \
 	    -I$(KFLOW_DIR)/include \
 	    -I$(BOOST_DIR)/include \
 	    -I$(GLOG_DIR)/include \
-	    -I$(GTEST_DIR)/include \
-			-I$(OPENMPI_DIR)/include \
-	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2
+	   -I$(GFLAGS_DIR)/include \
+	    -I$(GTEST_DIR)/include
 
-COMPILE := $(CFLAGS) $(INCLUDES)
 
 LINK    := -L$(BWA_DIR) -lbwa \
 	   -L$(KFLOW_DIR)/lib -lkflow \
@@ -29,22 +26,35 @@ LINK    := -L$(BWA_DIR) -lbwa \
 	   	-lboost_iostreams \
 	   	-lboost_filesystem \
 	   	-lboost_regex \
-	   -L$(PROTOBUF_DIR)/lib -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
+	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -L$(GTEST_DIR)/build -lgtest \
-	   -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi \
-	   -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL \
-	   -lpthread -lm -ldl
+	   -lpthread -lm -ldl -lz -lrt
+
+ifneq ($(HTSLIB_PATH),)
+CFLAGS   := $(CFLAGS) -DUSE_HTSLIB
+INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
+LINK     := $(LINK) -L$(HTSLIB_PATH) -lhts 
+endif 
+
+ifneq ($(OPENMPI_DIR),)
+INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
+LINK	 := $(LINK) -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
+endif
+
+COMPILE := $(CFLAGS) $(INCLUDES)
 
 OBJS   	:= main.o \
-	   CommTest.o \
-           $(SRC_DIR)/Extension.o\
-           $(SRC_DIR)/FPGAAgent.o \
-	   $(SRC_DIR)/Pipeline.o \
+	   CommTest.o
+DEP_OBJS:= $(SRC_DIR)/Pipeline.o \
+	   $(SRC_DIR)/MPIPipeline.o \
 	   $(SRC_DIR)/preprocess.o \
-	   $(SRC_DIR)/SWRead.o \
 	   $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/util.o
+
+REF_GENOME  := /pool/local/ref/human_g1k_v37.fasta
+TEST_FASTQ1 := /pool/storage/fastq/gcat_set_041_1.fastq
+TEST_FASTQ2 := /pool/storage/fastq/gcat_set_041_2.fastq
 
 DST	:= test_app
 
@@ -56,14 +66,14 @@ test:
 	GLOG_v=3 \
 	GLOG_logtostderr=1 \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
-	./$(DST) mem \
-		/space/scratch/genome/ref/human_g1k_v37.fasta \
-		/space/scratch/genome/fastq/gcat_set_041_1.fastq \
-		/space/scratch/genome/fastq/gcat_set_041_2.fastq 
+	./$(DST) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 
-$(DST): $(OBJS)
-	$(PP) -o $@ $(OBJS) $(LINK) 
+$(DST): $(OBJS) $(DEP_OBJS)
+	$(PP) -o $@ $(OBJS) $(DEP_OBJS) $(LINK) 
+
+$(DEP_OBJS): 
+	make -C ../
 
 %.o: %.cpp
 	$(PP) $(COMPILE) $< -o $@

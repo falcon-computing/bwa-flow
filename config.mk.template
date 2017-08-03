@@ -1,9 +1,19 @@
 BOOST_DIR=/usr
 GFLAGS_DIR=/usr
-GLOG=/usr
-GTEST_DIR=/usr
+GLOG_DIR=/usr
+GTEST_DIR=
+OPENMPI_DIR=
+HTSLIB_PATH=
+
+#BUILD_FPGA=1
+#DEBUG=1
 
 MAKE=make
 CC=gcc
 PP=g++
 AR=ar
+MPIPP=${OPENMPI_DIR}/bin/mpic++
+
+REF_GENOME  := /pool/local/ref/human_g1k_v37.fasta
+TEST_FASTQ1 := /pool/storage/fastq/gcat_set_041_1.fastq
+TEST_FASTQ2 := /pool/storage/fastq/gcat_set_041_2.fastq
