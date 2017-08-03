@@ -1,5 +1,5 @@
 #include <ctype.h>
-#include <glog/logging.h>
+//#include <glog/logging.h> // not needed for gatk-bwa
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
@@ -15,7 +15,11 @@
 #include "bwa/bntseq.h"
 #include "bwa/kseq.h"
 #include "bwa_wrapper.h"
-#include "config.h"
+//#include "config.h" // not needed for gatk-bwa
+
+#ifndef VERSION
+#define VERSION "GATK-BWA v0.1"
+#endif//VERSION
 
 extern unsigned char nst_nt4_table[256];
 
@@ -288,6 +292,7 @@ int pre_process(int argc,
       for (i = 0; i < aux->idx->bns->n_seqs; ++i)
         aux->idx->bns->anns[i].is_alt = 0;
 
+    /* // MPI is disabled for gatk-bwa
     if (is_master) {
       ko_read1 = kopen(argv[optind + 1], &fd);
       if (ko_read1 == 0) {
@@ -328,6 +333,7 @@ int pre_process(int argc,
       }
       aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
     }
+    */ // if is_master
 #ifdef USE_HTSLIB
     bam_hdr_t *h = NULL; // TODO
     kstring_t str;
@@ -337,10 +343,13 @@ int pre_process(int argc,
     h->l_text = str.l; h->text = str.s;
     //sam_hdr_write(out, h);
     aux->h = h;
+/* // SAM header is always needed for gatk-bwa
 #else
     bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+    */
 #endif
 
+    bwa_print_sam_hdr(aux->idx->bns, hdr_line);
     return 0;
   }
 
