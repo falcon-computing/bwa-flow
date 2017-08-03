@@ -93,9 +93,9 @@ int main(int argc, char** argv) {
   norm_pipeline.start();
 
   Queue<int>* input_queue = static_cast<Queue<int>*>(
-                              norm_pipeline.getInputQueue());
+                              norm_pipeline.getInputQueue().get());
   Queue<double>* output_queue = static_cast<Queue<double>*>(
-                              norm_pipeline.getOutputQueue());
+                              norm_pipeline.getOutputQueue().get());
 
   for (int i=0; i<n; i+=64) {
     for (int k = i; k < 64 && k < n; k++) {

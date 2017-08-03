@@ -314,7 +314,7 @@ int bwa_idx_build(const char *fa, const char *prefix, int algo_type, int block_s
 		t = clock();
 		if (bwa_verbose >= 3) fprintf(stderr, "[bwa_index] Construct SA from BWT and Occ... ");
 		bwt = bwt_restore_bwt(str);
-		bwt_cal_sa(bwt, 32);
+		bwt_cal_sa(bwt, 4);
 		bwt_dump_sa(str3, bwt);
 		bwt_destroy(bwt);
 		if (bwa_verbose >= 3) fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC);

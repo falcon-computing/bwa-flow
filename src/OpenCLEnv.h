@@ -15,9 +15,12 @@
 #include "util.h"
 
 struct FPGATask {
-  int     task_num;
-  cl_mem* input;
-  cl_mem* output;
+  int     size_a;
+  int     size_b;
+  cl_mem* input_a;
+  cl_mem* input_b;
+  cl_mem* output_a;
+  cl_mem* output_b;
   boost::promise<bool> ready;
 };
 
@@ -28,7 +31,7 @@ class OpenCLEnv
     // start platform setting up
     int err;
 
-    cl_platform_id platform_id;
+    cl_platform_id* platform_id = new cl_platform_id[2];
     cl_device_id device_id;
 
     char cl_platform_vendor[1001];
@@ -37,7 +40,7 @@ class OpenCLEnv
     cl_uint num_platforms = 0;
 
     // Connect to first platform
-    err = clGetPlatformIDs(2, &platform_id, &num_platforms);
+    err = clGetPlatformIDs(2, platform_id, &num_platforms);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error(
@@ -45,7 +48,7 @@ class OpenCLEnv
     }
 
     err = clGetPlatformInfo(
-        platform_id, 
+        platform_id[1], 
         CL_PLATFORM_VENDOR, 
         1000, 
         (void *)cl_platform_vendor,NULL);
@@ -54,14 +57,14 @@ class OpenCLEnv
         throw std::runtime_error(
             "clGetPlatformInfo(CL_PLATFORM_VENDOR) failed!");
     }
-    err = clGetPlatformInfo(platform_id,CL_PLATFORM_NAME,1000,(void *)cl_platform_name,NULL);
+    err = clGetPlatformInfo(platform_id[1],CL_PLATFORM_NAME,1000,(void *)cl_platform_name,NULL);
     
     if (err != CL_SUCCESS) {
         throw std::runtime_error("clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
     }
 
     // Connect to a compute device
-    err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
+    err = clGetDeviceIDs(platform_id[1], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id, NULL);
 
     if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a device group!");
@@ -76,6 +79,7 @@ class OpenCLEnv
 
     // Create a command commands
     commands_ = clCreateCommandQueue(context_, device_id, 0, &err);
+    //commands_ = clCreateCommandQueue(context_, device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
 
     if (!commands_) {
         throw std::runtime_error("Failed to create a command queue context!");
@@ -173,14 +177,23 @@ class OpenCLEnv
         start_ts = getNs();
 
         // Got new task and start execution
-        int task_num  = task->task_num;
-        cl_mem* input  = task->input;
-        cl_mem* output = task->output;
-
-        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input);
-        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), output);
-        err |= clSetKernelArg(kernel_, 2, sizeof(int), &task_num);
-
+        int size_a = task->size_a;
+        int size_b = task->size_b;
+        cl_mem* input_a  = task->input_a;
+        cl_mem* output_a = task->output_a;
+        cl_mem* input_b  = task->input_b;
+        cl_mem* output_b = task->output_b;
+        // to make sure the fpga works
+        if (size_b == 0) {
+          input_b = input_a;
+        }
+          
+        err  = clSetKernelArg(kernel_, 0, sizeof(cl_mem), input_a);
+        err |= clSetKernelArg(kernel_, 1, sizeof(cl_mem), input_b);
+        err |= clSetKernelArg(kernel_, 2, sizeof(cl_mem), output_a);
+        err |= clSetKernelArg(kernel_, 3, sizeof(cl_mem), output_b);
+        err |= clSetKernelArg(kernel_, 4, sizeof(int), &size_a);
+        err |= clSetKernelArg(kernel_, 5, sizeof(int), &size_b);
         err = clEnqueueTask(commands_, kernel_, 0, NULL, &event);
         if (err) {
           LOG(ERROR) << "Failed to execute kernel.";
@@ -191,7 +204,7 @@ class OpenCLEnv
 
         uint64_t fpga_time = getNs() - start_ts;
 
-        VLOG(3) << "SW-FPGA kernel takes " 
+        DLOG_IF(INFO, FLAGS_v >= 3) << "SW-FPGA kernel takes " 
           << fpga_time/1e3 << " us";
 
         // Only measure middle part of execution
@@ -207,9 +220,9 @@ class OpenCLEnv
       }
     }
     catch (boost::thread_interrupted &e) {
-      VLOG(1) << "FPGA utilization is " 
+      DLOG_IF(INFO, FLAGS_v >= 1) << "FPGA utilization is " 
         << 100.0f*total_fpga_time/(total_fpga_time+total_wait_time) << " %";
-      VLOG(1) << "Percentage of tasks that FPGA util > 80\% is " 
+      DLOG_IF(INFO, FLAGS_v >= 1) << "Percentage of tasks that FPGA util > 80\% is " 
         << 100.0f*thresh_counter/counter << " %";
     }
   }

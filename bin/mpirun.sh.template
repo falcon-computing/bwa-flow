@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source ../setup.sh
+
+MPI_DIR=
+num_proc=
+host_list=
+
+set -x
+$MPI_DIR/bin/mpirun \
+    -np $num_proc \
+    --bind-to none \
+    --host $host_list \
+    --mca btl_tcp_if_exclude lo,virbr0,virbr0-nic \
+    ./bwa \
+      --alsologtostderr=1 \
+      --v=1 \
+      --offload \
+      --output_flag=1 \
+      --sort \
+      --max_num_records=2000000 \
+      $@
+set +x

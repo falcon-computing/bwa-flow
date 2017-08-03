@@ -1,4 +1,4 @@
-ROOT_DIR:=..
+ROOT_DIR:= .
 include $(ROOT_DIR)/../config.mk
 
 CFLAGS  := -c -fPIC -std=c++0x -m64
@@ -15,17 +15,11 @@ COMPILE := $(CFLAGS) \
 	   -I$(GFLAGS_DIR)/include \
 	   -I$(GLOG_DIR)/include
 
-LINK	:= -L$(BOOST_DIR)/lib \
-           -lboost_system -lboost_thread -lboost_iostreams -lboost_filesystem -lboost_regex \
-	   -L$(GFLAGS_DIR)/lib -lgflags \
-           -L$(GLOG_DIR)/lib -lglog \
-           -lpthread -lm -ldl
+DEPS    := src/Common.o \
+	   src/Pipeline.o \
+           src/Stage.o 
 
-DEPS    := Common.o \
-	   Pipeline.o \
-           Stage.o 
-
-DEST	:= $(ROOT_DIR)/lib/libkflow.so
+DEST	:= $(ROOT_DIR)/lib/libkflow.a
 
 all: $(DEST)
 
@@ -33,13 +27,13 @@ debug:
 	$(MAKE) DEBUG=1 all
 
 $(DEST): $(DEPS)
-	$(PP) -shared -o $@ $(DEPS) $(LINK) 
+	$(AR) rvs $@ $(DEPS)
 
 %.o: %.cpp $(ROOT_DIR)/include/kflow/*.h
 	$(PP) $(COMPILE) $< -o $@
 
 clean:
-	rm -rf *.o
+	rm -rf $(DEPS)
 	rm -rf $(DEST)
 
 .PHONY: all debug clean

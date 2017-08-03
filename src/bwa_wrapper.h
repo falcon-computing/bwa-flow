@@ -20,9 +20,10 @@
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
 
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "0.7.13-r1126-wrappered"
+#ifdef USE_HTSLIB
+#include <htslib/sam.h>
 #endif
+
 extern "C"{
 KSEQ_DECLARE(gzFile)
 }
@@ -35,6 +36,10 @@ public:
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
+        bam_hdr_t *h;
+#ifdef USE_HTSLIB
+        samFile * out;
+#endif
 };
 
 class smem_aux_t {
@@ -91,7 +96,14 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 
 int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a);
 
-int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2]);
+#ifdef USE_HTSLIB
+int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2], bam_hdr_t *h);
+#else
+int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2] );
+#endif
+int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
+
+void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m, bam_hdr_t *h);
 
 int kclose(void *a);
 }

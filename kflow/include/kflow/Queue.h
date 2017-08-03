@@ -21,6 +21,10 @@ class Queue : public QueueBase {
     return (num_elements_.load() == 0);
   }
 
+  bool almost_full() {
+    return (num_elements_.load() >= DEPTH / 2);
+  }
+
   void pop(U &item) {
     while (!data_queue_.pop(item)) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(100));
@@ -59,7 +63,8 @@ class Queue<void, 0> : public QueueBase {
    bool empty() { return true;}
 };
 
-const boost::shared_ptr<QueueBase> NULL_QUEUE_PTR;
+typedef boost::shared_ptr<QueueBase> Queue_ptr;
+const Queue_ptr NULL_QUEUE_PTR;
 
 } // namespace kestrelFlow
 

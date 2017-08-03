@@ -8,7 +8,7 @@
 #include <sstream>
 
 #include "blaze/Task.h" 
-#include "OpenCLEnv.h" 
+#include "blaze/xlnx_opencl/OpenCLEnv.h" 
 
 #define FPGA_RET_PARAM_NUM 5
 

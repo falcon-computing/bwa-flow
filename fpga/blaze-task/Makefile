@@ -13,10 +13,11 @@ CC=$(XILINX_OPENCL_DIR)/lnx64/tools/gcc/bin/gcc
 CFLAGS= -shared -fPIC -std=c++0x -m64 -g 
 COMPILE= $(CFLAGS) \
 	 -I$(MANAGER_DIR)/include \
-	 -I$(PLATFORM_DIR) \
+	 -I$(PLATFORM_DIR)/include \
 	 -I$(BOOST_DIR)/include \
 	 -I$(PROTOBUF_DIR)/include \
 	 -I$(GLOG_DIR)/include \
+	 -I$(GFLAGS_DIR)/include \
 	 -I$(XILINX_OPENCL_DIR)/runtime/include/1_2
 
 LINK= -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lxilinxopencl
