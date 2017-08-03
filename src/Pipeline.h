@@ -16,24 +16,17 @@
 
 #include "bwa_wrapper.h"
 
-#define INPUT_DEPTH   16
-#define OUTPUT_DEPTH  96
-#define COMPUTE_DEPTH 96
-
-#define MASTER_RANK   0
-
-// Tags for messages between master and child processes
-#define SEQ_DP_QUERY  0
-#define SEQ_DP_LENGTH 1
-#define SEQ_DP_DATA   2
-#define SAM_RV_QUERY  3
-#define SAM_RV_LENGTH 4
-#define SAM_RV_DATA   5
-
-// mutex for serializing MPI calls
-extern boost::mutex mpi_mutex;
+#define INPUT_DEPTH   8
+#define OUTPUT_DEPTH  16
+#define COMPUTE_DEPTH 16
 
 // Common data structures
+struct KseqsRecord {
+  uint64_t start_idx;
+  int batch_num;
+  kseq_new_t* ks_buffer;
+};
+
 struct SeqsRecord {
   uint64_t start_idx;
   int batch_num;
@@ -56,33 +49,11 @@ struct RegionsRecord {
   mem_alnreg_v* alnreg;
 };
 
-#ifdef SCALE_OUT
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
- public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute();
-  std::string serialize(SeqsRecord* data);
-};
-
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
- public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute();
-  SeqsRecord deserialize(const char* data, size_t length);
-};
-
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  void compute();
-  std::string serialize(SeqsRecord* data);
-};
-
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  SeqsRecord deserialize(const char* data, size_t length);
-  void compute();
+#ifdef USE_HTSLIB
+struct BamsRecord {
+  int bam_buffer_order;
+  bam1_t** bam_buffer;
+  int bam_buffer_idx;
 };
 #endif
 
@@ -92,6 +63,18 @@ class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
   void compute();
 };
 
+class KseqsRead : public kestrelFlow::SourceStage<KseqsRecord, INPUT_DEPTH> {
+ public:
+  KseqsRead(): kestrelFlow::SourceStage<KseqsRecord, INPUT_DEPTH>() {;}
+  void compute();
+};
+
+class KseqsToBseqs : public kestrelFlow::MapStage<KseqsRecord, SeqsRecord, INPUT_DEPTH, INPUT_DEPTH> {
+ public:
+   KseqsToBseqs(int n=1):
+     kestrelFlow::MapStage<KseqsRecord, SeqsRecord, INPUT_DEPTH, INPUT_DEPTH>(n) {;}
+   SeqsRecord compute(KseqsRecord const &input);
+};
 // One stage for the entire BWA-MEM computation
 class SeqsToSams
 : public kestrelFlow::MapStage<
@@ -139,35 +122,42 @@ class RegionsToSam
   SeqsRecord compute(RegionsRecord const & record);
 };
 
-class SamsPrint
-: public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsPrint(int n=1):
-    kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>(n, false) {
-      file_id_ = new int [n];
 #ifdef USE_HTSLIB
-      fout_ = new samFile*[n];
+class SamsReorder
+: public kestrelFlow::MapPartitionStage<SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsReorder():kestrelFlow::MapPartitionStage
+                  <SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
+  {;}
+    void compute(int wid);
+};
 #else
-      fout_ = new FILE*[n];
+class SamsReorder
+: public kestrelFlow::MapPartitionStage<SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsReorder():kestrelFlow::MapPartitionStage
+                  <SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
+  {;}
+    void compute(int wid);
+};
 #endif
-      for (int i =0; i<n; i++) {
-        file_id_[i] = 0;
-        fout_[i] = NULL;
-      }
-    }
-  void compute(int wid);
-  ~SamsPrint() {
-    delete [] file_id_;
-    delete [] fout_;
-  }
- private:
 
-  int* file_id_;
+
+class WriteOutput
 #ifdef USE_HTSLIB
-  samFile** fout_;
-  void sortAndWriteBamBatch(bam1_t** buf, int n_elements, std::string out_dir, int wid);
+:public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
+  public:
+    WriteOutput(int n=1):
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+    int compute(BamsRecord const &input);
 #else
-  FILE** fout_;
+:public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
+  public:
+    WriteOutput(int n=1):
+      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+    int compute(SeqsRecord const &input);
 #endif
 };
 

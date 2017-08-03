@@ -20,10 +20,6 @@
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
 
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "0.7.13-r1126-fcs"
-#endif
-
 #ifdef USE_HTSLIB
 #include <htslib/sam.h>
 #endif
@@ -105,6 +101,9 @@ int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, co
 #else
 int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2] );
 #endif
+int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
+
+void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m, bam_hdr_t *h);
 
 int kclose(void *a);
 }

@@ -139,7 +139,10 @@ void Pipeline::schedule() {
       }
       if (!dispatched) {
         StageBase* stage = pending_stages_.front();
-        if (stage->isFinal() && stage->getNumThreads()==0) {
+        // Wait for execute thread to start 
+        boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
+        if (stage->isFinal() && stage->getNumThreads()==0
+            &&stage->inputQueueEmpty()) {
           // send final signal to downstream stages
           stage->finalize();
           pending_stages_.pop_front();
