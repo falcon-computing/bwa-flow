@@ -1,7 +1,12 @@
-include ../config.mk
+# include ../config.mk only if it exists
+ifneq ("$(wildcard ../config.mk)","")
+	include ../config.mk
+endif
+
+HTSLIB_PATH ?= ../../htslib
 
 CC=		gcc
-CFLAGS=		-g -Wall -Wno-unused-function -O2
+CFLAGS=		-g -Wall -Wno-unused-function -O2 -fPIC
 WRAP_MALLOC=	-DUSE_MALLOC_WRAPPERS
 AR=		ar
 DFLAGS=		-DHAVE_PTHREAD $(WRAP_MALLOC)
