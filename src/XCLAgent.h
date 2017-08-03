@@ -17,6 +17,7 @@ class XCLAgent : public FPGAAgent {
   cl_command_queue cmd_;
   cl_event         kernel_event_;
   cl_event         write_events_[2];
+  OpenCLEnv*       env_;
   bool             valid_2nd_event_;
 };
 

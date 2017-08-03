@@ -23,6 +23,7 @@ XCLAgent::XCLAgent(OpenCLEnv* env) {
   if (err != CL_SUCCESS) {
     throw std::runtime_error("Failed to create kernel");
   }
+  env_ = env;
 }
 
 XCLAgent::~XCLAgent() {
@@ -72,6 +73,8 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
 

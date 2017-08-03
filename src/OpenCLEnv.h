@@ -107,9 +107,48 @@ class OpenCLEnv
      if (err != CL_SUCCESS) {
        throw std::runtime_error("Failed to build program executable!");
      }
+#ifdef XILINX_FPGA
+     // Create and write the reference buffer
+     
+     FILE* pac_inp = fopen("/pool/storage/yaoh/human_g1k_v37.fasta.pac", "rb");
+     int pac_size = 0;
+     fseek(pac_inp, 0, SEEK_END);
+     pac_size = ftell(pac_inp);
+     fseek(pac_inp, 0, SEEK_SET);
+     pac_size = (pac_size+3)/4;
+
+     int *pac = (int*)malloc(sizeof(int)*pac_size);
+     fread(pac, sizeof(int), pac_size, pac_inp);
+     fclose(pac_inp);
+
+     command_ = clCreateCommandQueue(context_, device_id_, 0, &err);
+     if (err != CL_SUCCESS) {
+       throw std::runtime_error("Failed to create a command queue context!");
+     }
+
+     cl_mem_ext_ptr_t ext_c, ext_d;
+     ext_c.flags = XCL_MEM_DDR_BANK1;
+     ext_d.flags = XCL_MEM_DDR_BANK3;
+
+     pac_input_a_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+         sizeof(int) * pac_size, &ext_c, NULL);
+     pac_input_b_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+         sizeof(int) * pac_size, &ext_d, NULL);
+     err = clEnqueueWriteBuffer(command_, pac_input_a_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, NULL);
+     err = clEnqueueWriteBuffer(command_, pac_input_b_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, NULL);
+     if (err != CL_SUCCESS) {
+       throw std::runtime_error("Failed to write reference to DDR!");
+     }
+     // TODO free the pac buffer 
+#endif
    }
 
   ~OpenCLEnv() {
+#ifdef XILINX_FPGA 
+    clReleaseCommandQueue(command_);
+    clReleaseMemObject(pac_input_a_);
+    clReleaseMemObject(pac_input_b_);
+#endif
     clReleaseProgram(program_);
     clReleaseContext(context_);
   }
@@ -125,7 +164,11 @@ class OpenCLEnv
   cl_program getProgram() {
     return program_;
   }
-
+#ifdef XILINX_FPGA
+  cl_command_queue command_;
+  cl_mem pac_input_a_;
+  cl_mem pac_input_b_;
+#endif
  private:
   int load_file(
       const char *filename, 
