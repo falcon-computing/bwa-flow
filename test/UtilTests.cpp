@@ -4,26 +4,38 @@
 #include "util.h"
 #include "test/TestCommon.h"
 
-TEST_F(CommTests, InputSerializationTest) {
+TEST_F(UtilTests, InputSerializationTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
+
   SeqsRecord record;
   record.start_idx = 0x1027;    // use a magic number for testing
-  record.batch_num = batch_num;
+  record.batch_num = test_num;
   record.seqs = seqs;
 
   SeqsDispatch send_stage;
   SeqsReceive  recv_stage;
 
+  uint64_t start_ts = getUs();
   std::string ser_data = send_stage.serialize(&record);
 
   ASSERT_GT(ser_data.size(), 0);
 
+  VLOG(1) << test_num << " seqs has "
+          << ser_data.size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
   SeqsRecord record_test = recv_stage.deserialize(
       ser_data.c_str(), ser_data.length());
+
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
 
   ASSERT_EQ(record.start_idx, record_test.start_idx);
   ASSERT_EQ(record.batch_num, record_test.batch_num);
 
-  for (int i = 0; i < batch_num; i++) {
+  for (int i = 0; i < test_num; i++) {
     bseq1_t* seq_base = &seqs[i];
     bseq1_t* seq_test = &record_test.seqs[i];
 
@@ -34,7 +46,32 @@ TEST_F(CommTests, InputSerializationTest) {
     ASSERT_STREQ(seq_base->qual, seq_test->qual);
   }
 
-  freeSeqs(record_test.seqs, batch_num);
+  freeSeqs(record_test.seqs, test_num);
+}
+
+TEST_F(UtilTests, SeqTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
+  uint64_t start_ts = getUs();
+  std::stringstream ss;
+  for (int i = 0; i < test_num; i++) {
+    serialize(ss, seqs[i]);
+  }
+  ASSERT_LT(0, ss.str().size());
+
+  VLOG(1) << test_num << " seqs (for chain record) has "
+          << ss.str().size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+  
+  start_ts = getUs();
+  bseq1_t* seqs_test = (bseq1_t*)malloc(test_num*sizeof(bseq1_t));
+  for (int i = 0; i < test_num; i++) {
+    deserialize(ss, seqs_test[i]);
+  }
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
+
+  // skip testing
 }
 
 static void check_mem_chain(mem_chain_t& c1, mem_chain_t& c2) {
@@ -50,7 +87,7 @@ static void check_mem_chain(mem_chain_t& c1, mem_chain_t& c2) {
   ASSERT_EQ(c1.pos, c2.pos);
 }
 
-TEST_F(CommTests, MemChainTest) {
+TEST_F(UtilTests, MemChainTest) {
   int test_num = batch_num > 32 ? 32 : batch_num;
   // here only test the first 32 to save time
   for (int i = 0; i < test_num; i++) {
@@ -104,7 +141,7 @@ static void check_mem_alnreg(mem_alnreg_t& a1, mem_alnreg_t& a2) {
 	ASSERT_EQ(a1.hash, a2.hash);
 }
 
-TEST_F(CommTests, MemAlnregTest) {
+TEST_F(UtilTests, MemAlnregTest) {
   int test_num = batch_num > 32 ? 32 : batch_num;
   for (int i = 0; i < test_num; i++) {
     mem_chain_v chains = seq2chain(aux, seqs);
@@ -139,7 +176,7 @@ TEST_F(CommTests, MemAlnregTest) {
   }
 }
 
-TEST_F(CommTests, SerChainsRecordsFullTest) {
+TEST_F(UtilTests, MemChainVFullTest) {
   int test_num = batch_num > 4096 ? 4096 : batch_num;
 
   mem_chain_v* chains_base = (mem_chain_v*)malloc(sizeof(mem_chain_v)*test_num);
@@ -154,16 +191,18 @@ TEST_F(CommTests, SerChainsRecordsFullTest) {
   for (int i = 0; i < test_num; i++) {
     serialize(ss, chains_base[i]);
   }
-  LOG(INFO) << "Serialize " << test_num << " chains takes "
-    << getUs() - start_ts << " us";
+  VLOG(1) << test_num << " chains has "
+          << ss.str().size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
 
   // start deserialization
   start_ts = getUs();
   for (int i = 0; i < test_num; i++) {
     deserialize(ss, chains_test[i]);
   }
-  LOG(INFO) << "Deserialize " << test_num << " chains takes "
-    << getUs() - start_ts << " us";
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
 
   // verify
   for (int i = 0; i < test_num; i++) {
@@ -183,4 +222,57 @@ TEST_F(CommTests, SerChainsRecordsFullTest) {
   free(chains_test);
 }
 
+TEST_F(UtilTests, MemAlnregVFullTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
 
+  mem_alnreg_v* aln_base = (mem_alnreg_v*)malloc(test_num*sizeof(mem_alnreg_v));
+  mem_alnreg_v* aln_test = (mem_alnreg_v*)malloc(test_num*sizeof(mem_alnreg_v)); 
+
+  for (int i = 0; i < test_num; i++) {
+    mem_chain_v chains = seq2chain(aux, seqs);
+    kv_init(aln_base[i]);
+    for (int j = 0; j < chains.n; j++) {
+      mem_chain2aln(
+          aux->opt, 
+          aux->idx->bns, 
+          aux->idx->pac,
+          seqs[i].l_seq,
+          (uint8_t*)seqs[i].seq,
+          &chains.a[j],
+          &aln_base[i]);
+    }
+  }
+
+  // start serialization
+  std::stringstream ss;
+  uint64_t start_ts = getUs(); 
+  for (int i = 0; i < test_num; i++) {
+    serialize(ss, aln_base[i]);
+  }
+  VLOG(1) << test_num << " regions has "
+          << ss.str().size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+
+  // start deserialization
+  start_ts = getUs();
+  for (int i = 0; i < test_num; i++) {
+    deserialize(ss, aln_test[i]);
+  }
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
+
+  // verify
+  for (int i = 0; i < test_num; i++) {
+    ASSERT_EQ(aln_base[i].n, aln_test[i].n);
+    ASSERT_EQ(aln_base[i].m, aln_test[i].m);
+
+    for (int j = 0; j < aln_base[i].n; j++) {
+      check_mem_alnreg(aln_base[i].a[j], aln_test[i].a[j]);
+    }
+    free(aln_base[i].a);
+    free(aln_test[i].a);
+  }
+  free(aln_base);
+  free(aln_test);
+}

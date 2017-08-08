@@ -59,6 +59,10 @@ gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
 
+// bseq_t files
+bseq1_t*  g_seqs;
+int       g_batch_num;
+
 boost::mutex mpi_mutex;
 
 int main(int argc, char *argv[]) {
@@ -69,12 +73,32 @@ int main(int argc, char *argv[]) {
   aux = (ktp_aux_t*)malloc(sizeof(ktp_aux_t));
   memset(aux, 0, sizeof(ktp_aux_t));
 
-  // Get the index and the options
-  pre_process(argc-1, argv+1, aux, true);
+  if (pre_process(argc-1, argv+1, aux, true)) {
+    LOG(ERROR) << "Cannot initialize";
+    return -1;
+  }
+
+  // suppress messages
+  bwa_verbose = 0;
+
+  // save seqs for all tests
+  g_seqs = bseq_read(aux->actual_chunk_size, &g_batch_num, aux->ks, aux->ks2);
+  if (!g_seqs) {
+    throw std::runtime_error("cannot read sequence");
+  }
 
   int ret = RUN_ALL_TESTS();
 
-  // Free all global variables
+  // free bseq1_t
+  for (int i = 0; i < g_batch_num; i++) {
+    free(g_seqs[i].name); 
+    free(g_seqs[i].comment);
+    free(g_seqs[i].seq); 
+    free(g_seqs[i].qual); 
+  }
+  free(g_seqs);
+
+  // free all global variables
   free(aux->opt);
   bwa_idx_destroy(aux->idx);
   kseq_destroy(aux->ks);

@@ -42,6 +42,7 @@ void serialize(std::stringstream &ss, mem_chain_t& chain);
 void serialize(std::stringstream &ss, mem_seed_t& seed);
 void serialize(std::stringstream &ss, mem_alnreg_v& alnregs);
 void serialize(std::stringstream &ss, mem_alnreg_t& alnreg);
+void deserialize(std::stringstream &ss, bseq1_t& seq);
 void deserialize(std::stringstream &ss, mem_chain_v& chains);
 void deserialize(std::stringstream &ss, mem_chain_t& chain);
 void deserialize(std::stringstream &ss, mem_alnreg_t& alnreg);

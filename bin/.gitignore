@@ -1,7 +1,5 @@
 # Ignore everything in this directory
-bwa
-*.sam
-*.bam
-*.INFO
-*.WARNING
-*.ERROR
+*
+!.gitignore
+!.template
+!profile.sh

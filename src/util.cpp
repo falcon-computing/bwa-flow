@@ -48,7 +48,7 @@ static inline void putStr(std::stringstream &ss, const char* str) {
 }
 
 // Retrieve a string from serialized data
-static inline void getStr(std::stringstream &ss, char* &dst) {
+static inline size_t getStr(std::stringstream &ss, char* &dst) {
   size_t length = 0;
   getT(ss, length);
 
@@ -57,13 +57,16 @@ static inline void getStr(std::stringstream &ss, char* &dst) {
     ss.read(dst, length);
     dst[length] = '\0';
   }
+  return length;
 }
 
+// for chain_record ser
 void serialize(std::stringstream &ss, bseq1_t& seq) {
-  putStr(ss, seq.name);
-  putStr(ss, seq.comment);
   putStr(ss, seq.seq);
-  putStr(ss, seq.qual);
+}
+
+void deserialize(std::stringstream &ss, bseq1_t& seq) {
+  getStr(ss, seq.seq);
 }
 
 void serialize(std::stringstream &ss, mem_chain_v& chains) {

@@ -21,7 +21,8 @@ MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
 	   $(SRC_DIR)/mpi_main.o
 
 TESTOBJS:= $(TEST_DIR)/main.o \
-	   $(TEST_DIR)/CommTest.o
+	   $(TEST_DIR)/PipelineTests.o \
+	   $(TEST_DIR)/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
 	   	$(SRC_DIR)/MPIPipeline.o \
@@ -36,7 +37,7 @@ INCLUDES:= -I$(MKFILE_DIR) \
 	   -I$(BOOST_DIR)/include \
 	   -I$(GLOG_DIR)/include \
 	   -I$(GFLAGS_DIR)/include \
-	    -I$(GTEST_DIR)/include
+	   -I$(GTEST_DIR)/include
 	
 LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(KFLOW_DIR)/lib -lkflow \
@@ -108,7 +109,8 @@ test:	$(TESTPROG)
 
 runtest: 
 	GLOG_v=3 \
-	GLOG_logtostderr=1 \
+	GLOG_alsologtostderr=1 \
+	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(TESTPROG) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
