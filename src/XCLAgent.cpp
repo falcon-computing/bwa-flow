@@ -32,26 +32,44 @@ XCLAgent::~XCLAgent() {
 
 void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
   if (size > 0) {
-    cl_int err = clEnqueueWriteBuffer(cmd_, buf, CL_FALSE, 0, size, 
-        host_ptr, 0, NULL, &write_events_[bank]);
+    //OCL_CHECKRUN(clEnqueueWriteBuffer(cmd_, buf, CL_FALSE, 0, size, 
+    //    host_ptr, 0, NULL, &write_events_[bank]));
+    cl_int err = 0;
+    void* device_ptr = clEnqueueMapBuffer(cmd_, buf, CL_TRUE,
+        CL_MAP_WRITE,
+        0, size,
+        0, NULL,
+        NULL, &err);
 
-    if (err != CL_SUCCESS) {
-      DLOG(ERROR) << "error writing buffer of size " << size
-        << " err: " << err;
-      throw std::runtime_error("Failed to write buffer to FPGA");
-    }
+    OCL_CHECK(err, "clEnqueueMapBuffer");
+
+    memcpy(device_ptr, host_ptr, size);
+
+    OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &buf, 
+          0, 0, NULL, &write_events_[bank]));
   }
 }
 
 void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
   if (size > 0) {
-    cl_int err = clEnqueueReadBuffer(cmd_, buf, CL_TRUE, 0, size, 
-        host_ptr, 1, &kernel_event_, NULL);
-    if (err != CL_SUCCESS) {
-      DLOG(ERROR) << "error reading buffer of size " << size
-        << " err: " << err;
-      throw std::runtime_error("Failed to read buffer from FPGA");
-    }
+    //OCK_CHECKRUN(clEnqueueReadBuffer(cmd_, buf, CL_TRUE, 0, size, 
+    //      host_ptr, 1, &kernel_event_, NULL));
+    cl_event read_event;
+    OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &buf, 
+          CL_MIGRATE_MEM_OBJECT_HOST, 1, &kernel_event_, &read_event));
+
+    cl_int err = 0;
+    void* device_ptr = clEnqueueMapBuffer(cmd_, buf, CL_TRUE,
+        CL_MAP_READ,
+        0, size,
+        1, &read_event,
+        NULL, &err);
+
+    OCL_CHECK(err, "clEnqueueMapBuffer");
+
+    memcpy(host_ptr, device_ptr, size);
+
+    OCL_CHECKRUN(clReleaseEvent(read_event));
   }
 }
 
