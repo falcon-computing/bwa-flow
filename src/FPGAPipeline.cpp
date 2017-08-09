@@ -285,7 +285,17 @@ inline void packReadData(ktp_aux_t* aux,
       }
       else {
         // no need to loop again 
-        alnregs->a[region_num].seedcov = seed_array->len;
+        //alnregs->a[region_num].seedcov = seed_array->len;
+        // need to loop again 
+        int seedcov = 0;
+        for (int i =0; i < chains->a[chain_idx].n; i++ ) {
+          mem_seed_t *t = &chains->a[chain_idx].seeds[i];
+          if (t->qbeg >=0 && t->qbeg + t->len <=seq->l_seq &&
+              t->rbeg >= seed_array->rbeg && t->rbeg + t->len <= seed_array->rbeg + seed_array->len) {
+            seedcov += t->len;
+          }
+        }
+        alnregs->a[region_num].seedcov = seedcov;
       }
       region_num++;
     }

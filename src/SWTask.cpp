@@ -38,8 +38,8 @@ SWTask::SWTask(OpenCLEnv* env, int chunk_size) {
 
 #ifdef XILINX_FPGA
   cl_mem_ext_ptr_t ext_a, ext_b;
-  ext_a.flags = XCL_MEM_DDR_BANK0;
-  ext_b.flags = XCL_MEM_DDR_BANK2;
+  ext_a.flags = XCL_MEM_DDR_BANK0; ext_a.obj = 0; ext_a.param = 0;
+  ext_b.flags = XCL_MEM_DDR_BANK2; ext_b.obj = 0; ext_b.param = 0;
   i_buf[0] = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
       sizeof(int)*max_i_size_, &ext_a, NULL);
   i_buf[1] = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
@@ -98,7 +98,7 @@ void SWTask::start(SWTask* prev_task) {
   else {
     agent_->start(this, prev_task->agent_);
   }
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Prepare input takes " << 
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Write OpenCL buffer takes " << 
                                getUs() - start_ts << " us";
 }
 

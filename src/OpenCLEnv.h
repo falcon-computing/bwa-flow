@@ -127,19 +127,26 @@ class OpenCLEnv
      }
 
      cl_mem_ext_ptr_t ext_c, ext_d;
-     ext_c.flags = XCL_MEM_DDR_BANK1;
-     ext_d.flags = XCL_MEM_DDR_BANK3;
+     ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
+     ext_d.flags = XCL_MEM_DDR_BANK3; ext_d.obj = 0; ext_d.param = 0;
 
      pac_input_a_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-         sizeof(int) * pac_size, &ext_c, NULL);
+         sizeof(int) * pac_size, &ext_c, &err);
      pac_input_b_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-         sizeof(int) * pac_size, &ext_d, NULL);
-     err = clEnqueueWriteBuffer(command_, pac_input_a_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, NULL);
-     err = clEnqueueWriteBuffer(command_, pac_input_b_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, NULL);
+         sizeof(int) * pac_size, &ext_d, &err);
+     if (err != CL_SUCCESS) {
+       throw std::runtime_error("Failed to create reference OpenCL buffer!");
+     }
+     cl_event event[2];
+     err = clEnqueueWriteBuffer(command_, pac_input_a_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, &event[0]);
+     err = clEnqueueWriteBuffer(command_, pac_input_b_, CL_TRUE, 0, sizeof(int) * pac_size, pac, 0, NULL, &event[1]);
+     clWaitForEvents(2, event);
      if (err != CL_SUCCESS) {
        throw std::runtime_error("Failed to write reference to DDR!");
      }
-     // TODO free the pac buffer 
+     free(pac);
+     clReleaseEvent(event[0]);
+     clReleaseEvent(event[1]);
 #endif
    }
 

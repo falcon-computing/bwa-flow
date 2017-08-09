@@ -87,6 +87,7 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     wait_list[0] = prev_agent->kernel_event_;
     wait_list[1] = write_events_[0];
     wait_list[2] = write_events_[1];
+    uint64_t start_ts_compute = getUs();
     if (task->i_size[1] > 0) {
       err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
       valid_2nd_event_ = true;
@@ -95,6 +96,8 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
       err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
       valid_2nd_event_ = false;
     }
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Enqueue compute task takes " <<
+      getUs() - start_ts_compute << " us";
   }
   else {
     if (task->i_size[1] > 0) {
