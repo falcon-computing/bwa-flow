@@ -73,7 +73,7 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0) {
 int pre_process(int argc,
     char *argv[],
     ktp_aux_t* aux,
-    bool is_master
+    bool is_jni
 ) {
 	mem_opt_t *opt, opt0;
 	int fd, fd2, i, c, ignore_alt = 0, no_mt_io = 0;
@@ -292,8 +292,7 @@ int pre_process(int argc,
       for (i = 0; i < aux->idx->bns->n_seqs; ++i)
         aux->idx->bns->anns[i].is_alt = 0;
 
-    /* // MPI is disabled for gatk-bwa
-    if (is_master) {
+    if (!is_jni) {
       ko_read1 = kopen(argv[optind + 1], &fd);
       if (ko_read1 == 0) {
         if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to open file `%s'.\n", __func__, argv[optind + 1]);
@@ -302,6 +301,7 @@ int pre_process(int argc,
       fp_idx = gzdopen(fd, "r");
       aux->ks = kseq_init(fp_idx);
 
+      /*
       // Decide FPGA usage based on read size
       int read_length = kseq_read(aux->ks);
       if (read_length >= 250 || read_length < 100){
@@ -310,6 +310,7 @@ int pre_process(int argc,
         }
         FLAGS_use_fpga = false;
       }
+      */
 
       err_gzclose(fp_idx);
       kclose(ko_read1);
@@ -331,9 +332,10 @@ int pre_process(int argc,
           opt->flag |= MEM_F_PE;
         }
       }
-      aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
     }
-    */ // if is_master
+
+    aux->actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
+
 #ifdef USE_HTSLIB
     bam_hdr_t *h = NULL; // TODO
     kstring_t str;
@@ -349,7 +351,10 @@ int pre_process(int argc,
     */
 #endif
 
-    bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+    if(is_jni)
+    {
+        bwa_print_sam_hdr(aux->idx->bns, hdr_line);
+    }
     return 0;
   }
 
