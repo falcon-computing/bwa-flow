@@ -89,11 +89,15 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     wait_list[2] = write_events_[1];
     uint64_t start_ts_compute = getUs();
     if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
+      err = clWaitForEvents(3, wait_list);
+      //err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
+      err = clWaitForEvents(2, wait_list);
+      //err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
       valid_2nd_event_ = false;
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Enqueue compute task takes " <<
@@ -101,11 +105,15 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   }
   else {
     if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
+      err = clWaitForEvents(2, write_events_);
+      //err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
+      err = clWaitForEvents(1, write_events_);
+      //err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
       valid_2nd_event_ = false;
     }
   }
@@ -113,6 +121,8 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     LOG(ERROR) << "failed to execute kernels: " << err;
   }
 }
+
+
 
 void XCLAgent::finish() {
   clReleaseEvent(kernel_event_);

@@ -16,10 +16,7 @@ class ChainsPipeFPGA
   ChainsPipeFPGA(int n=1): kestrelFlow::MapStage<
       ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n, false) {;}
 
-  ChainsRecord compute(ChainsRecord const & record) {
-    ChainsRecord output = record;
-    return output; 
-  }
+  ChainsRecord compute(ChainsRecord const & record) ;
 };
 
 class ChainsToRegionsFPGA
