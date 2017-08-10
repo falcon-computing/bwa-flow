@@ -62,11 +62,26 @@ static inline size_t getStr(std::stringstream &ss, char* &dst) {
 
 // for chain_record ser
 void serialize(std::stringstream &ss, bseq1_t& seq) {
-  putStr(ss, seq.seq);
+  putStr(ss, seq.name);
+  putStr(ss, seq.comment);
+
+  // special treatment because seq.seq may use 2-bit encoding
+  putT(ss, seq.l_seq);
+  ss.write(seq.seq, seq.l_seq);
+
+  putStr(ss, seq.qual);
 }
 
 void deserialize(std::stringstream &ss, bseq1_t& seq) {
-  getStr(ss, seq.seq);
+  if (!getStr(ss, seq.name)) seq.name = 0;
+  if (!getStr(ss, seq.comment)) seq.comment = 0;
+
+  // special treatment because seq.seq may use 2-bit encoding
+  getT(ss, seq.l_seq);
+  seq.seq = (char*)malloc(seq.l_seq);
+  ss.read(seq.seq, seq.l_seq);
+
+  if (!getStr(ss, seq.qual)) seq.qual = 0;
 }
 
 void serialize(std::stringstream &ss, mem_chain_v& chains) {
@@ -228,4 +243,125 @@ void deserialize(std::stringstream &ss, mem_alnreg_v& alnregs) {
   for (int i = 0; i < alnregs.n; i++) {
     getT(ss, alnregs.a[i]);
   }
+}
+
+std::string serialize(SeqsRecord& record) {
+
+  uint64_t start_idx = record.start_idx;
+  int      batch_num = record.batch_num;
+
+  std::stringstream ss;
+
+  putT(ss, start_idx);
+  putT(ss, batch_num);
+
+  for (int i = 0; i < batch_num; i++) {
+    serialize(ss, record.seqs[i]);
+  }
+
+  return ss.str();
+}
+
+void deserialize(const char* data, size_t length, SeqsRecord &output) {
+
+  uint64_t start_idx = 0;
+  int      batch_num = 0;
+
+  std::stringstream ss;
+  ss.write(data, length);
+
+  getT(ss, start_idx);
+  getT(ss, batch_num);
+
+  bseq1_t* seqs = (bseq1_t*)calloc(batch_num, sizeof(bseq1_t));
+
+  for (int i = 0; i < batch_num; i++) {
+    deserialize(ss, seqs[i]);
+  }
+
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
+}
+
+std::string serialize(ChainsRecord& record) {
+  uint64_t start_idx = record.start_idx;
+  int      batch_num = record.batch_num;
+
+  std::stringstream ss;
+
+  putT(ss, start_idx);
+  putT(ss, batch_num);
+
+  for (int i = 0; i < batch_num; i++) {
+    serialize(ss, record.seqs[i]);
+    serialize(ss, record.chains[i]);
+  }
+
+  return ss.str();
+}
+
+void deserialize(const char* data, size_t length, ChainsRecord& output) {
+  uint64_t start_idx = 0;
+  int      batch_num = 0;
+
+  std::stringstream ss;
+  ss.write(data, length);
+
+  getT(ss, start_idx);
+  getT(ss, batch_num);
+
+  bseq1_t*     seqs   = (bseq1_t*)calloc(batch_num, sizeof(bseq1_t));
+  mem_chain_v* chains = (mem_chain_v*)calloc(batch_num, sizeof(mem_chain_v));
+
+  for (int i = 0; i < batch_num; i++) {
+    deserialize(ss, seqs[i]);
+    deserialize(ss, chains[i]);
+  }
+
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
+  output.chains = chains;
+}
+
+std::string serialize(RegionsRecord& record) {
+  uint64_t start_idx = record.start_idx;
+  int      batch_num = record.batch_num;
+
+  std::stringstream ss;
+
+  putT(ss, start_idx);
+  putT(ss, batch_num);
+
+  for (int i = 0; i < batch_num; i++) {
+    serialize(ss, record.seqs[i]);
+    serialize(ss, record.alnreg[i]);
+  }
+
+  return ss.str();
+}
+
+void deserialize(const char* data, size_t length, RegionsRecord& output) {
+  uint64_t start_idx = 0;
+  int      batch_num = 0;
+
+  std::stringstream ss;
+  ss.write(data, length);
+
+  getT(ss, start_idx);
+  getT(ss, batch_num);
+
+  bseq1_t*     seqs     = (bseq1_t*)calloc(batch_num, sizeof(bseq1_t));
+  mem_alnreg_v* alnregs = (mem_alnreg_v*)calloc(batch_num, sizeof(mem_alnreg_v));
+
+  for (int i = 0; i < batch_num; i++) {
+    deserialize(ss, seqs[i]);
+    deserialize(ss, alnregs[i]);
+  }
+
+  output.start_idx = start_idx;
+  output.batch_num = batch_num;
+  output.seqs = seqs;
+  output.alnreg = alnregs;
 }

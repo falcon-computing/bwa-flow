@@ -25,7 +25,6 @@ TESTOBJS:= $(TEST_DIR)/main.o \
 	   $(TEST_DIR)/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
-	   	$(SRC_DIR)/MPIPipeline.o \
 	   	$(SRC_DIR)/preprocess.o \
 	   	$(SRC_DIR)/wrappered_mem.o \
 	   	$(SRC_DIR)/util.o
@@ -87,6 +86,9 @@ ifneq ($(OPENMPI_DIR),)
 INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	   	$(SRC_DIR)/MPIPipeline.o
 endif
 
 # check FLMDIR

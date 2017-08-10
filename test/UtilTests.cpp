@@ -1,52 +1,54 @@
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
-#include "MPIPipeline.h"
 #include "util.h"
 #include "test/TestCommon.h"
 
-TEST_F(UtilTests, InputSerializationTest) {
-  int test_num = batch_num > 4096 ? 4096 : batch_num;
-
-  SeqsRecord record;
-  record.start_idx = 0x1027;    // use a magic number for testing
-  record.batch_num = test_num;
-  record.seqs = seqs;
-
-  SeqsDispatch send_stage;
-  SeqsReceive  recv_stage;
-
-  uint64_t start_ts = getUs();
-  std::string ser_data = send_stage.serialize(&record);
-
-  ASSERT_GT(ser_data.size(), 0);
-
-  VLOG(1) << test_num << " seqs has "
-          << ser_data.size() << " bytes, "
-          << "serialization takes "
-          << getUs() - start_ts << " us";
-
-  start_ts = getUs();
-  SeqsRecord record_test = recv_stage.deserialize(
-      ser_data.c_str(), ser_data.length());
-
-  VLOG(1) << "deserialization takes "
-          << getUs() - start_ts << " us";
-
-  ASSERT_EQ(record.start_idx, record_test.start_idx);
-  ASSERT_EQ(record.batch_num, record_test.batch_num);
-
-  for (int i = 0; i < test_num; i++) {
-    bseq1_t* seq_base = &seqs[i];
-    bseq1_t* seq_test = &record_test.seqs[i];
-
-    ASSERT_EQ(seq_base->l_seq, seq_test->l_seq);
-    ASSERT_STREQ(seq_base->name, seq_test->name);
-    ASSERT_STREQ(seq_base->comment, seq_test->comment);
-    ASSERT_STREQ(seq_base->seq, seq_test->seq);
-    ASSERT_STREQ(seq_base->qual, seq_test->qual);
+static inline void check_bseq(bseq1_t& base, bseq1_t& test) {
+  ASSERT_EQ(base.l_seq, test.l_seq);
+  // seq may not be encoded as string
+  for (int i = 0; i < base.l_seq; i++) {
+    EXPECT_EQ(base.seq[i], test.seq[i]);
   }
+  
+  EXPECT_STREQ(base.name, test.name);
+  EXPECT_STREQ(base.comment, test.comment);
+  EXPECT_STREQ(base.qual, test.qual);
+}
 
-  freeSeqs(record_test.seqs, test_num);
+static inline void check_mem_chain(mem_chain_t& c1, mem_chain_t& c2) {
+  // check result match for mem_chain_t
+  EXPECT_EQ(c1.n, c2.n);
+  EXPECT_EQ(c1.m, c2.m);
+  EXPECT_EQ(c1.first, c2.first);
+  EXPECT_EQ(c1.rid, c2.rid);
+  EXPECT_EQ(c1.w, c2.w);
+  EXPECT_EQ(c1.kept, c2.kept);
+  EXPECT_EQ(c1.is_alt, c2.is_alt);
+  EXPECT_EQ(c1.frac_rep, c2.frac_rep);
+  EXPECT_EQ(c1.pos, c2.pos);
+}
+
+static void check_mem_alnreg(mem_alnreg_t& a1, mem_alnreg_t& a2) {
+  EXPECT_EQ(a1.rb, a2.rb);
+  EXPECT_EQ(a1.re, a2.re);
+  EXPECT_EQ(a1.qb, a2.qb);
+  EXPECT_EQ(a1.qe, a2.qe);
+	EXPECT_EQ(a1.rid, a2.rid);
+	EXPECT_EQ(a1.score, a2.score);
+	EXPECT_EQ(a1.truesc, a2.truesc);
+	EXPECT_EQ(a1.sub, a2.sub);
+	EXPECT_EQ(a1.alt_sc, a2.alt_sc);
+	EXPECT_EQ(a1.csub, a2.csub);
+	EXPECT_EQ(a1.sub_n, a2.sub_n);
+	EXPECT_EQ(a1.w, a2.w);
+	EXPECT_EQ(a1.seedcov, a2.seedcov);
+	EXPECT_EQ(a1.secondary, a2.secondary);
+	EXPECT_EQ(a1.secondary_all, a2.secondary_all);
+	EXPECT_EQ(a1.seedlen0, a2.seedlen0);
+  EXPECT_EQ(a1.n_comp, a2.n_comp);
+  EXPECT_EQ(a1.is_alt, a2.is_alt);
+	EXPECT_EQ(a1.frac_rep, a2.frac_rep);
+	EXPECT_EQ(a1.hash, a2.hash);
 }
 
 TEST_F(UtilTests, SeqTest) {
@@ -72,19 +74,6 @@ TEST_F(UtilTests, SeqTest) {
           << getUs() - start_ts << " us";
 
   // skip testing
-}
-
-static void check_mem_chain(mem_chain_t& c1, mem_chain_t& c2) {
-  // check result match for mem_chain_t
-  ASSERT_EQ(c1.n, c2.n);
-  ASSERT_EQ(c1.m, c2.m);
-  ASSERT_EQ(c1.first, c2.first);
-  ASSERT_EQ(c1.rid, c2.rid);
-  ASSERT_EQ(c1.w, c2.w);
-  ASSERT_EQ(c1.kept, c2.kept);
-  ASSERT_EQ(c1.is_alt, c2.is_alt);
-  ASSERT_EQ(c1.frac_rep, c2.frac_rep);
-  ASSERT_EQ(c1.pos, c2.pos);
 }
 
 TEST_F(UtilTests, MemChainTest) {
@@ -116,29 +105,6 @@ TEST_F(UtilTests, MemChainTest) {
     free(chains.a);
     free(chains_test.a);
   }
-}
-
-static void check_mem_alnreg(mem_alnreg_t& a1, mem_alnreg_t& a2) {
-  ASSERT_EQ(a1.rb, a2.rb);
-  ASSERT_EQ(a1.re, a2.re);
-  ASSERT_EQ(a1.qb, a2.qb);
-  ASSERT_EQ(a1.qe, a2.qe);
-	ASSERT_EQ(a1.rid, a2.rid);
-	ASSERT_EQ(a1.score, a2.score);
-	ASSERT_EQ(a1.truesc, a2.truesc);
-	ASSERT_EQ(a1.sub, a2.sub);
-	ASSERT_EQ(a1.alt_sc, a2.alt_sc);
-	ASSERT_EQ(a1.csub, a2.csub);
-	ASSERT_EQ(a1.sub_n, a2.sub_n);
-	ASSERT_EQ(a1.w, a2.w);
-	ASSERT_EQ(a1.seedcov, a2.seedcov);
-	ASSERT_EQ(a1.secondary, a2.secondary);
-	ASSERT_EQ(a1.secondary_all, a2.secondary_all);
-	ASSERT_EQ(a1.seedlen0, a2.seedlen0);
-  ASSERT_EQ(a1.n_comp, a2.n_comp);
-  ASSERT_EQ(a1.is_alt, a2.is_alt);
-	ASSERT_EQ(a1.frac_rep, a2.frac_rep);
-	ASSERT_EQ(a1.hash, a2.hash);
 }
 
 TEST_F(UtilTests, MemAlnregTest) {
@@ -275,4 +241,157 @@ TEST_F(UtilTests, MemAlnregVFullTest) {
   }
   free(aln_base);
   free(aln_test);
+}
+
+TEST_F(UtilTests, SeqsRecordTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
+
+  SeqsRecord record;
+  record.start_idx = 0x1027;    // use a magic number for testing
+  record.batch_num = test_num;
+  record.seqs = seqs;
+
+  uint64_t start_ts = getUs();
+  std::string ser_data = serialize(record);
+
+  ASSERT_GT(ser_data.size(), 0);
+
+  VLOG(1) << test_num << " seqs has "
+          << ser_data.size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+  SeqsRecord record_test;
+  deserialize(ser_data.c_str(), ser_data.length(), record_test);
+
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
+
+  ASSERT_EQ(record.start_idx, record_test.start_idx);
+  ASSERT_EQ(record.batch_num, record_test.batch_num);
+
+  for (int i = 0; i < test_num; i++) {
+    check_bseq(seqs[i], record_test.seqs[i]); 
+  }
+
+  freeSeqs(record_test.seqs, test_num);
+}
+
+TEST_F(UtilTests, ChainsRecordTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
+
+  // compute mem_chain_v
+  mem_chain_v* chains = (mem_chain_v*)malloc(sizeof(mem_chain_v)*test_num);
+  for (int i = 0; i < test_num; i++) {
+    chains[i] = seq2chain(aux, seqs);
+  }
+
+  // construct record
+  ChainsRecord record;
+  record.start_idx = 0x1027;    // use a magic number for testing
+  record.batch_num = test_num;
+  record.seqs = seqs;
+  record.chains = chains;
+
+  uint64_t start_ts = getUs();
+
+  // serialization
+  std::string ser_data = serialize(record);
+  ASSERT_GT(ser_data.size(), 0);
+
+  VLOG(1) << test_num << " chains has "
+          << ser_data.size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+
+  // deserialization
+  ChainsRecord test;
+  deserialize(ser_data.c_str(), ser_data.length(), test);
+
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
+
+  // check results
+  ASSERT_EQ(record.start_idx, test.start_idx);
+  ASSERT_EQ(record.batch_num, test.batch_num);
+
+  for (int i = 0; i < test_num; i++) {
+    check_bseq(seqs[i], test.seqs[i]); 
+
+    ASSERT_EQ(record.chains[i].n, test.chains[i].n);
+    for (int j = 0; j < record.chains[i].n; j++) {
+      check_mem_chain(record.chains[i].a[j], test.chains[i].a[j]); 
+    }
+  }
+
+  // clean up
+  freeSeqs(test.seqs, test_num);
+  freeChains(test.chains, test_num);
+}
+
+TEST_F(UtilTests, RegionsRecordTest) {
+  int test_num = batch_num > 4096 ? 4096 : batch_num;
+
+  // compute mem_alnreg_v
+  mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(test_num*sizeof(mem_alnreg_v));
+  for (int i = 0; i < test_num; i++) {
+    mem_chain_v chains = seq2chain(aux, seqs);
+    kv_init(alnreg[i]);
+    for (int j = 0; j < chains.n; j++) {
+      mem_chain2aln(
+          aux->opt, 
+          aux->idx->bns, 
+          aux->idx->pac,
+          seqs[i].l_seq,
+          (uint8_t*)seqs[i].seq,
+          &chains.a[j],
+          alnreg+i);
+    }
+  }
+
+  // construct record
+  RegionsRecord record;
+  record.start_idx = 0x1027;    // use a magic number for testing
+  record.batch_num = test_num;
+  record.seqs = seqs;
+  record.alnreg = alnreg;
+
+  uint64_t start_ts = getUs();
+
+  // serialization
+  std::string ser_data = serialize(record);
+  ASSERT_GT(ser_data.size(), 0);
+
+  VLOG(1) << test_num << " chains has "
+          << ser_data.size() << " bytes, "
+          << "serialization takes "
+          << getUs() - start_ts << " us";
+
+  start_ts = getUs();
+
+  // deserialization
+  RegionsRecord test;
+  deserialize(ser_data.c_str(), ser_data.length(), test);
+
+  VLOG(1) << "deserialization takes "
+          << getUs() - start_ts << " us";
+
+  // check results
+  ASSERT_EQ(record.start_idx, test.start_idx);
+  ASSERT_EQ(record.batch_num, test.batch_num);
+
+  for (int i = 0; i < test_num; i++) {
+    check_bseq(seqs[i], test.seqs[i]); 
+
+    ASSERT_EQ(record.alnreg[i].n, test.alnreg[i].n);
+    for (int j = 0; j < record.alnreg[i].n; j++) {
+      check_mem_alnreg(record.alnreg[i].a[j], test.alnreg[i].a[j]); 
+    }
+  }
+
+  freeSeqs(test.seqs, test_num);
+  freeAligns(test.alnreg, test_num);
 }

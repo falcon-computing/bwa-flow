@@ -20,14 +20,12 @@ class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
  public:
   SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute(int wid = 0);
-  std::string serialize(SeqsRecord* data);
 };
 
 class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
   SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
   void compute();
-  SeqsRecord deserialize(const char* data, size_t length);
 };
 
 class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
