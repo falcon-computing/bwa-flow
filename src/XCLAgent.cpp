@@ -6,23 +6,18 @@
 #include "XCLAgent.h"
 #include "SWTask.h"
 
-XCLAgent::XCLAgent(OpenCLEnv* env) {
-
-  cl_context context_ = env->getContext();
+XCLAgent::XCLAgent(OpenCLEnv* env, SWTask* task): task_(task) {
+  context_ = env->getContext();
 
   cl_int        err       = 0;
   cl_device_id  device_id = env->getDeviceId();
   cl_program    program   = env->getProgram();
 
   cmd_ = clCreateCommandQueue(context_, device_id, 0, &err);
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to create a command queue context");
-  }
+  OCL_CHECK(err, "clCreateCommandQueue");
   
   kernel_ = clCreateKernel(program, "sw_top", &err);
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to create kernel");
-  }
+  OCL_CHECK(err, "clCreateKernel");
 }
 
 XCLAgent::~XCLAgent() {
@@ -30,50 +25,31 @@ XCLAgent::~XCLAgent() {
   clReleaseKernel(kernel_);
 }
 
-void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
-  if (size > 0) {
-    //OCL_CHECKRUN(clEnqueueWriteBuffer(cmd_, buf, CL_FALSE, 0, size, 
-    //    host_ptr, 0, NULL, &write_events_[bank]));
-    cl_int err = 0;
-    void* device_ptr = clEnqueueMapBuffer(cmd_, buf, CL_TRUE,
-        CL_MAP_WRITE,
-        0, size,
-        0, NULL,
-        NULL, &err);
+void XCLAgent::writeInput(void* host_ptr, int size, int bank) {
+  if (size == 0) return;
 
-    OCL_CHECK(err, "clEnqueueMapBuffer");
+  cl_int err = 0;
+  i_buf_[bank] = clCreateBuffer(context_, 
+      CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,  
+      size, host_ptr, &err);
 
-    memcpy(device_ptr, host_ptr, size);
+  OCL_CHECK(err, "clCreateBuffer");
 
-    OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &buf, 
-          0, 0, NULL, &write_events_[bank]));
-  }
+  OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &i_buf_[bank], 
+        0, 0, NULL, &write_events_[bank]));
 }
 
-void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
-  if (size > 0) {
-    //OCK_CHECKRUN(clEnqueueReadBuffer(cmd_, buf, CL_TRUE, 0, size, 
-    //      host_ptr, 1, &kernel_event_, NULL));
-    cl_event read_event;
-    OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &buf, 
-          CL_MIGRATE_MEM_OBJECT_HOST, 1, &kernel_event_, &read_event));
+void XCLAgent::readOutput(void* host_ptr, int size, int bank) {
+  if (size == 0) return;
+  cl_event read_event;
+  OCL_CHECKRUN(clEnqueueMigrateMemObjects(cmd_, 1, &o_buf_[bank], 
+        CL_MIGRATE_MEM_OBJECT_HOST, 1, &kernel_event_, &read_event));
 
-    cl_int err = 0;
-    void* device_ptr = clEnqueueMapBuffer(cmd_, buf, CL_TRUE,
-        CL_MAP_READ,
-        0, size,
-        1, &read_event,
-        NULL, &err);
-
-    OCL_CHECK(err, "clEnqueueMapBuffer");
-
-    memcpy(host_ptr, device_ptr, size);
-
-    OCL_CHECKRUN(clReleaseEvent(read_event));
-  }
+  OCL_CHECKRUN(clWaitForEvents(1, &read_event));
+  OCL_CHECKRUN(clReleaseEvent(read_event));
 }
 
-void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
+void XCLAgent::start(FPGAAgent* agent) {
 
   XCLAgent* prev_agent = NULL;
   if (agent) {
@@ -83,15 +59,26 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     }
   }
 
+  // create output buffer
+  for (int k = 0; k < 2; k++) { 
+    if (task_->o_size[k] > 0) {
+      cl_int err = 0;
+      o_buf_[k]  = clCreateBuffer(context_, 
+          CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,  
+          task_->o_size[k]*sizeof(int), task_->o_data[k], &err);
+      OCL_CHECK(err, "clCreateBuffer");
+    }
+  }
+
   // kernel execution
   cl_int err = 0;
   int i_arg = 0;
-  err  = clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
+  err  = clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &i_buf_[0]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &i_buf_[1]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &o_buf_[0]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &o_buf_[1]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task_->i_size[0]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task_->i_size[1]);
 
   if (err) {
     LOG(ERROR) << "failed to set kernel args";
@@ -102,23 +89,19 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     wait_list[0] = prev_agent->kernel_event_;
     wait_list[1] = write_events_[0];
     wait_list[2] = write_events_[1];
-    if (task->i_size[1] > 0) {
+    if (task_->i_size[1] > 0) {
       err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
-      valid_2nd_event_ = true;
     }
     else {
       err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
-      valid_2nd_event_ = false;
     }
   }
   else {
-    if (task->i_size[1] > 0) {
+    if (task_->i_size[1] > 0) {
       err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
-      valid_2nd_event_ = true;
     }
     else {
       err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
-      valid_2nd_event_ = false;
     }
   }
   if (err) {
@@ -127,9 +110,12 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
 }
 
 void XCLAgent::finish() {
-  clReleaseEvent(kernel_event_);
-  clReleaseEvent(write_events_[0]);
-  if (valid_2nd_event_) {
-    clReleaseEvent(write_events_[1]);
+  OCL_CHECKRUN(clReleaseEvent(kernel_event_));
+  for (int k = 0; k < 2; k++) {
+    if (task_->i_size[k]) {
+      OCL_CHECKRUN(clReleaseEvent(write_events_[k]));
+      OCL_CHECKRUN(clReleaseMemObject(i_buf_[k]));
+    }
+    if (task_->o_size[k]) OCL_CHECKRUN(clReleaseMemObject(o_buf_[k]));
   }
 }

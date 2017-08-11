@@ -37,7 +37,7 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
     int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
     short* kernel_output = task->o_data[k];
 
-    //DLOG_IF(INFO, VLOG_IS_ON(3)) << "output " << k << " task num = " << task_num;
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "output " << k << " task num = " << task_num;
     for (int i = 0; i < task_num; i++) {
       int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
         kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
