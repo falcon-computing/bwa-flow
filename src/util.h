@@ -9,17 +9,14 @@
 #include <time.h>
 
 #include "bwa/bwamem.h"
+#include "bwa_wrapper.h"
+#include "Pipeline.h"  
 
 class resultsError : public std::runtime_error {
  public:
   explicit resultsError(const std::string& what_arg):
     std::runtime_error(what_arg) {;}
 };
-
-void regionsCompare(
-    mem_alnreg_v *alnreg_base,
-    mem_alnreg_v *alnreg_test,
-    int num_seqs);
 
 inline uint64_t getUs() {
   struct timespec tr;
@@ -34,5 +31,26 @@ inline uint64_t getNs() {
 
   return (uint64_t)tr.tv_sec*1e9 + tr.tv_nsec;
 }
+
+void serialize(std::stringstream &ss, bseq1_t& seq);
+void serialize(std::stringstream &ss, mem_chain_v& chains);
+void serialize(std::stringstream &ss, mem_chain_t& chain);
+void serialize(std::stringstream &ss, mem_seed_t& seed);
+void serialize(std::stringstream &ss, mem_alnreg_v& alnregs);
+void serialize(std::stringstream &ss, mem_alnreg_t& alnreg);
+
+void deserialize(std::stringstream &ss, bseq1_t& seq);
+void deserialize(std::stringstream &ss, mem_chain_v& chains);
+void deserialize(std::stringstream &ss, mem_chain_t& chain);
+void deserialize(std::stringstream &ss, mem_alnreg_t& alnreg);
+void deserialize(std::stringstream &ss, mem_alnreg_v& alnregs);
+
+std::string serialize(SeqsRecord& record);
+std::string serialize(ChainsRecord& record);
+std::string serialize(RegionsRecord& record);
+
+void deserialize(const char* data, size_t length, SeqsRecord& record);
+void deserialize(const char* data, size_t length, ChainsRecord& record);
+void deserialize(const char* data, size_t length, RegionsRecord& record);
 
 #endif

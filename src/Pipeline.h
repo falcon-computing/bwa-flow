@@ -38,14 +38,12 @@ struct ChainsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
-  mem_alnreg_v* alnreg;
 };
 
 struct RegionsRecord {
   uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
-  mem_chain_v* chains;
   mem_alnreg_v* alnreg;
 };
 
