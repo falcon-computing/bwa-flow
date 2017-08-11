@@ -306,6 +306,7 @@ int pre_process(int argc,
         FLAGS_use_fpga = false;
       }
 
+      kseq_destroy(aux->ks);
       err_gzclose(fp_idx);
       kclose(ko_read1);
       ko_read1 = kopen(argv[optind + 1], &fd);
