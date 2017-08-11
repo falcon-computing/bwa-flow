@@ -154,16 +154,16 @@ void SeqsRead::compute() {
 
     if (!seqs) break;
 
-		if (!aux->copy_comment) {
-			for (int i = 0; i < batch_num; i++) {
-				free(seqs[i].comment);
-				seqs[i].comment = 0;
-			}
-      VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
+    if (!aux->copy_comment) {
+	    for (int i = 0; i < batch_num; i++) {
+		    free(seqs[i].comment);
+		    seqs[i].comment = 0;
+	    }
+	    VLOG_IF(2, num_seqs_produced == 0) << "Do not append seq comment";
     }
 
     VLOG(1) << "Read " << batch_num << " seqs in "
-            << getUs() - start_ts << " us";
+	    << getUs() - start_ts << " us";
 
     // Construct output record
     SeqsRecord record;
@@ -276,11 +276,9 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   int batch_num = seqs_record.batch_num;
 
   mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
-  mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
   for (int i = 0; i < batch_num; i++) {
     chains[i] = seq2chain(aux, &seqs[i]);
-    kv_init(alnreg[i]);
   }
 
   ChainsRecord ret;
@@ -288,7 +286,6 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.batch_num    = batch_num;
   ret.seqs         = seqs;
   ret.chains       = chains;
-  ret.alnreg       = alnreg;
  
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SeqsToChains() in " 
     << getUs() - start_ts << " us";
@@ -305,9 +302,10 @@ RegionsRecord ChainsToRegions::compute(ChainsRecord const & record) {
   mem_chain_v* chains = record.chains;
   int batch_num       = record.batch_num;
 
-  mem_alnreg_v* alnreg = record.alnreg;
+  mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
 
   for (int i = 0; i < batch_num; i++) {
+    kv_init(alnreg[i]);
     for (int j = 0; j < chains[i].n; j++) {
       mem_chain2aln(
           aux->opt, 
@@ -325,7 +323,6 @@ RegionsRecord ChainsToRegions::compute(ChainsRecord const & record) {
   output.batch_num = batch_num;
   output.seqs = seqs;
   output.alnreg = alnreg;
-  output.chains = NULL;
 
   freeChains(chains, batch_num);
 
@@ -344,7 +341,6 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   uint64_t start_idx        = record.start_idx;
   int batch_num        = record.batch_num;
-  mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
   bseq1_t* seqs        = record.seqs;
 
@@ -621,7 +617,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   }
   // start writing to file
   for (int i = 0; i < bam_buffer_idx; ++i){
-    sam_write1(fout, aux->h, bam_buffer[i]); 
+    size_t n = sam_write1(fout, aux->h, bam_buffer[i]); 
     bam_destroy1(bam_buffer[i]);
   }
   sam_close(fout);

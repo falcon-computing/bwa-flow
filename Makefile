@@ -1,8 +1,12 @@
-include config.mk
+MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+MKFILE_DIR  := $(dir $(MKFILE_PATH))
+include $(MKFILE_DIR)/config.mk
 
-BWA_DIR   	:= ./bwa
-KFLOW_DIR 	:= ./kflow
-SRC_DIR   	:= ./src
+BIN_DIR   	:= $(MKFILE_DIR)/bin
+BWA_DIR   	:= $(MKFILE_DIR)/bwa
+KFLOW_DIR 	:= $(MKFILE_DIR)/kflow
+SRC_DIR   	:= $(MKFILE_DIR)/src
+TEST_DIR	:= $(MKFILE_DIR)/test
 
 CFLAGS 	:= -std=c++0x -fPIC -O3 
 
@@ -16,11 +20,23 @@ STDOBJS := $(SRC_DIR)/main.o
 MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
 	   $(SRC_DIR)/mpi_main.o
 
-INCLUDES:= -I. -I$(BWA_DIR) \
+TESTOBJS:= $(TEST_DIR)/main.o \
+	   $(TEST_DIR)/PipelineTests.o \
+	   $(TEST_DIR)/UtilTests.o
+
+TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
+	   	$(SRC_DIR)/preprocess.o \
+	   	$(SRC_DIR)/wrappered_mem.o \
+	   	$(SRC_DIR)/util.o
+
+
+INCLUDES:= -I$(MKFILE_DIR) \
+	   -I$(SRC_DIR) \
 	   -I$(KFLOW_DIR)/include \
 	   -I$(BOOST_DIR)/include \
 	   -I$(GLOG_DIR)/include \
-	   -I$(GFLAGS_DIR)/include
+	   -I$(GFLAGS_DIR)/include \
+	   -I$(GTEST_DIR)/include
 	
 LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(KFLOW_DIR)/lib -lkflow \
@@ -32,12 +48,16 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
+	   -L$(GTEST_DIR)/build -lgtest \
 	   -lpthread -lm -ldl -lz -lrt
 
 GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
-PROG	 := ./bin/bwa
+PROG	 := $(BIN_DIR)/bwa
+MPIPROG	 := $(BIN_DIR)/bwa-mpi
+TESTPROG := $(TEST_DIR)/bwa-test
+
 
 ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
@@ -66,6 +86,9 @@ ifneq ($(OPENMPI_DIR),)
 INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	   	$(SRC_DIR)/MPIPipeline.o
 endif
 
 # check FLMDIR
@@ -80,17 +103,27 @@ LMDEPS 	 	:= $(FLMDIR)/license.o \
 		   $(FLMDIR)/lm_new.o
 endif 
 
-
-
-all:	$(PROG) $(MPIPROG)
+all:	$(PROG) $(TESTPROG)
 
 scaleout: $(MPIPROG)
 
-./bin/bwa-mpi: $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
+test:	$(TESTPROG)
+
+runtest: 
+	GLOG_v=3 \
+	GLOG_alsologtostderr=1 \
+	GLOG_log_dir=$(TEST_DIR) \
+	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
+	$(TESTPROG) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+
+$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
+	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
+
+$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
 	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
 
-./bin/bwa: $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
+$(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
+	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 
 
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
@@ -98,13 +131,15 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-./bwa/libbwa.a:
+$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp
+	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
+
+$(BWA_DIR)/libbwa.a:
 	make -C $(BWA_DIR)
 
 clean:
-	rm -f $(OBJS) 
-	rm -f $(STDOBJS)
-	rm -f $(MPIOBJS)
-	rm -f $(PROG) $(MPIPROG)
+	rm -f $(SRC_DIR)/*.o
+	rm -f $(TEST_DIR)/*.o
+	rm -f $(PROG) $(MPIPROG) $(TESTPROG)
 
-.PHONY: all scaleout clean
+.PHONY: all scaleout test runtest clean

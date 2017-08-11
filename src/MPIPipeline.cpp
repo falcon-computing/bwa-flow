@@ -119,7 +119,7 @@ void SeqsDispatch::compute(int wid) {
       uint64_t start_ts = getUs();
 
       // Serialize output record
-      std::string ser_data = serialize(&record);
+      std::string ser_data = serialize(record);
 
       int length = ser_data.length();
 
@@ -170,28 +170,6 @@ void SeqsDispatch::compute(int wid) {
   }
 }
 
-std::string SeqsDispatch::serialize(SeqsRecord* data) {
-
-  uint64_t start_idx = data->start_idx;
-  int      batch_num = data->batch_num;
-
-  std::stringstream ss;
-
-  putT(ss, start_idx);
-  putT(ss, batch_num);
-
-  for (int i = 0; i < batch_num; i++) {
-    bseq1_t* seq = &data->seqs[i];
-
-    putStr(ss, seq->name);
-    putStr(ss, seq->comment);
-    putStr(ss, seq->seq);
-    putStr(ss, seq->qual);
-  }
-
-  return ss.str();
-}
-
 void SeqsReceive::compute() {
 
   int rank   = mpi_rank;
@@ -214,7 +192,8 @@ void SeqsReceive::compute() {
       bwaMPIRecv(ser_data, length,
           MPI::CHAR, MASTER_RANK, SEQ_DP_DATA);
 
-      SeqsRecord output = deserialize(ser_data, length);
+      SeqsRecord output;
+      deserialize(ser_data, length, output);
       free(ser_data);
 
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Receive one read batch in "
@@ -227,39 +206,6 @@ void SeqsReceive::compute() {
       finished = true;
     }
   }
-}
-
-SeqsRecord SeqsReceive::deserialize(const char* data, size_t length) {
-
-  uint64_t start_idx = 0;
-  int      batch_num = 0;
-
-  std::stringstream ss;
-  ss.write(data, length);
-
-  getT(ss, start_idx);
-  getT(ss, batch_num);
-
-  bseq1_t* seqs = (bseq1_t*)malloc(batch_num*sizeof(bseq1_t));
-
-  for (int i = 0; i < batch_num; i++) {
-    bseq1_t* seq = &seqs[i];
-    memset(seq, 0, sizeof(bseq1_t));
-
-    getStr(ss, seq->name);
-    getStr(ss, seq->comment);
-    getStr(ss, seq->seq);
-    getStr(ss, seq->qual);
-
-    seq->l_seq = strlen(seq->seq);
-  }
-
-  SeqsRecord output;
-  output.start_idx = start_idx;
-  output.batch_num = batch_num;
-  output.seqs = seqs;
-
-  return output;
 }
 
 void SamsSend::compute(int wid) {
@@ -294,7 +240,7 @@ void SamsSend::compute(int wid) {
       uint64_t start_ts = getUs();
 
       // Serialize data and send to master
-      std::string ser_data = serialize(&input);
+      std::string ser_data = this->serialize(&input);
 
       int length = ser_data.length();
 
@@ -384,7 +330,7 @@ void SamsReceive::compute() {
 
       bwaMPIRecv(ser_data, length, MPI::CHAR, proc_id, SAM_RV_DATA);
 
-      SeqsRecord output = deserialize(ser_data, length);
+      SeqsRecord output = this->deserialize(ser_data, length);
       free(ser_data);
 
       pushOutput(output);
