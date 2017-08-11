@@ -306,7 +306,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
   // elements of the Regions record
   bseq1_t* seqs;
   mem_chain_v* chains;
-  mem_alnreg_v* alnreg;
 
   int kernel_buffer_idx = 0;
   int task_num = 0;
@@ -353,8 +352,11 @@ void ChainsToRegionsFPGA::compute(int wid) {
     batch_num = record.batch_num;
     seqs = record.seqs;
     chains = record.chains;
-    alnreg = record.alnreg;
 
+    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
+    for (int i = 0; i < batch_num; i++) {
+      kv_init(alnreg[i]);
+    }
 
     int i = 0;
     bool reach_half = false;
@@ -463,7 +465,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
     outputRecord.start_idx = start_idx;
     outputRecord.batch_num = batch_num;
     outputRecord.seqs = seqs;
-    outputRecord.chains = chains;
     outputRecord.alnreg = alnreg;
 
     freeChains(chains, batch_num);
