@@ -163,16 +163,15 @@ inline void packReadData(ktp_aux_t* aux,
     const bseq1_t* seq, 
     const mem_chain_v* chains,
     mem_alnreg_v* alnregs, 
-    mem_chainref_t* ref,
     char* buffer, 
     int &buffer_idx, 
     int &task_num, 
     mem_alnreg_t** &region_batch,
     mem_chain_t** &chain_batch) 
 {
-  //mem_chainref_t* ref;
+  mem_chainref_t* ref;
   int seed_idx = chains->a[0].n - 1;
-  //getChainRef(aux, seq, chains, ref);
+  getChainRef(aux, seq, chains, ref);
 
 //  for (int chain_idx = 0; 
 //       chain_idx < chains->n; 
@@ -316,6 +315,14 @@ inline void packReadData(ktp_aux_t* aux,
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
+  // set thread affinity
+  cpu_set_t cpuset;
+  pthread_t thread;
+  thread = pthread_self();
+  CPU_ZERO(&cpuset);
+  CPU_SET(0, &cpuset);
+  CPU_SET(1, &cpuset);
+  int rc = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
 
   int chunk_size = FLAGS_chunk_size;
 
@@ -380,7 +387,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
     seqs = record.seqs;
     chains = record.chains;
     alnreg = record.alnreg;
-    mem_chainref_t** chain_ref = record.chain_ref;
 
 
     int i = 0;
@@ -389,7 +395,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
       if (task_num < chunk_size/2) {
         SWTask* task = task_queue.front();
-        packReadData(aux, seqs+i, chains+i, alnreg+i, chain_ref[i], 
+        packReadData(aux, seqs+i, chains+i, alnreg+i, 
             task->i_data[0], 
             kernel_buffer_idx, task_num,
             task->region_batch,
@@ -408,7 +414,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       else if (task_num < chunk_size) {
         SWTask* task = task_queue.front();
 
-        packReadData(aux, seqs+i, chains+i, alnreg+i, chain_ref[i], 
+        packReadData(aux, seqs+i, chains+i, alnreg+i, 
             task->i_data[1], 
             kernel_buffer_idx, task_num,
             task->region_batch,
@@ -494,7 +500,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
     outputRecord.alnreg = alnreg;
 
     freeChains(chains, batch_num);
-    free(chain_ref);
     pushOutput(outputRecord);
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
@@ -522,16 +527,19 @@ void ChainsToRegionsFPGA::compute(int wid) {
   }
 }
 
-
-ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & input) {
+ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
+  // set thread affinity
+  cpu_set_t cpuset;
+  pthread_t thread;
+  thread = pthread_self();
+  CPU_ZERO(&cpuset);
+  CPU_SET(0, &cpuset);
+  CPU_SET(1, &cpuset);
+  int rc = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
   uint64_t start_ts = getUs();
-  ChainsRecord record = input;
   mem_alnreg_v* alnreg = record.alnreg;
   int batch_num = record.batch_num;
   mem_chain_v* chains = record.chains;
-  bseq1_t* seqs = record.seqs;
-  // get the chain ref
-  mem_chainref_t** chain_ref = new mem_chainref_t*[batch_num];
   for (int i=0; i<batch_num; i++) {
     int chain_idx = 0;
     int seed_idx = chains[i].a[0].n -1;
@@ -552,10 +560,7 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & input) {
       newreg->frac_rep = chains[i].a[chain_idx].frac_rep;
       newreg->w = aux->opt->w;
     }
-    getChainRef(aux, &seqs[i], &chains[i], chain_ref[i]);
   }
-  record.chain_ref = chain_ref;
-
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsPipeFPGA() on FPGA for "
     << getUs() - start_ts << " us";
   return record;
