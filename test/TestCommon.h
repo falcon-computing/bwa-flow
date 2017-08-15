@@ -20,6 +20,7 @@
 
 #ifdef USE_MPI
 #include "mpi.h"
+#include "MPIChannel.h"
 #endif
 
 // Global variables
@@ -80,7 +81,12 @@ class PipelineTests : public BaseTests {
 };
 
 #ifdef USE_MPI
-class ChannelTests : public ::testing::Test {
+class MPITests : public ::testing::Test {
+ protected:
+  MPILink link_;
+};
+
+class ChannelTests : public MPITests {
   ;
 };
 #endif

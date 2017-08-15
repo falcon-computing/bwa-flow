@@ -12,6 +12,7 @@
 #define SAM_RV_DATA   5
 
 #include "Pipeline.h"
+#include "MPIChannel.h"
 
 // mutex for serializing MPI calls
 extern boost::mutex mpi_mutex;
@@ -30,14 +31,28 @@ void recv(void* buf, int count, const MPI::Datatype& datatype,
 
 class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
  public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
+  SeqsDispatch(MPILink* link): 
+    ch_(link),
+    kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() 
+  {;}
+
   void compute(int wid = 0);
+
+ private:
+  SourceChannel ch_;
 };
 
 class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
+  SeqsReceive(MPILink* link): 
+    ch_(link),
+    kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() 
+  {;}
+
   void compute();
+
+ private:
+  SourceChannel ch_;
 };
 
 /* 
@@ -73,16 +88,28 @@ class RegionsSend : public kestrelFlow::SinkStage<RegionsRecord, INPUT_DEPTH> {
 
 class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
+  SamsSend(MPILink* link): 
+    ch_(link),
+    kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() 
+  {;}
+
   void compute(int wid = 0);
-  std::string serialize(SeqsRecord* data);
+
+ private:
+  SinkChannel ch_;
 };
 
 class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
  public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  SeqsRecord deserialize(const char* data, size_t length);
+  SamsReceive(MPILink* link): 
+    ch_(link),
+    kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() 
+  {;}
+
   void compute();
+
+ private:
+  SinkChannel ch_;
 };
 
 #endif

@@ -9,9 +9,9 @@ TEST_F(ChannelTests, ChannelSetup) {
   // run tests only if there are more than 1 proc
   ASSERT_GT(nproc, 1);
 
-  SourceChannel ch1(0);
-  SourceChannel ch2(0);
-  SinkChannel   ch3(0);
+  SourceChannel ch1(&link_, 0);
+  SourceChannel ch2(&link_, 0);
+  SinkChannel   ch3(&link_, 0);
 
   ASSERT_GT(ch2.getId(), ch1.getId());
   ASSERT_GT(ch3.getId(), ch2.getId());
@@ -35,19 +35,19 @@ TEST_F(ChannelTests, SourceChannel) {
   // run tests only if there are more than 3 proc
   ASSERT_GT(nproc, 3);
 
-  SourceChannel ch(0);
+  SourceChannel ch(&link_, 0);
   boost::thread t;
   if (rank == 0) {
     t = boost::thread(boost::bind(dispatch_msg, &ch));
   }
   while (!ch.isFinished()) {
-    char msg[100];
     int length;
-    ch.recv((char*)&msg, length);
+    char* msg = (char*)ch.recv(length);
     if (length > 0) {
       VLOG(1) << "message " << msg << " for " << rank;
       ASSERT_LT(atoi(msg), 10);
       ASSERT_GE(atoi(msg), 0);
+      free(msg);
     }
   }
   if (rank == 0) {
@@ -60,14 +60,18 @@ static void gather_msg(SinkChannel* ch) {
   int nproc = MPI::COMM_WORLD.Get_size();
   int counter = 0;
   while (!ch->isFinished()) {
-    char msg[100];
     int length;
+    char* msg = (char*)ch->recv(length);
 
-    ch->recv((char*)&msg, length);
-    VLOG(1) << "message " << msg;
-    ASSERT_LT(atoi(msg), 10);
-    ASSERT_GE(atoi(msg), 0);
-    counter++;
+    if (length > 0) {
+      VLOG(1) << "message " << msg;
+
+      ASSERT_LT(atoi(msg), 10);
+      ASSERT_GE(atoi(msg), 0);
+
+      free(msg);
+      counter++;
+    }
   }
   ASSERT_EQ(3*nproc, counter);
 }
@@ -79,7 +83,7 @@ TEST_F(ChannelTests, SinkChannel) {
   // run tests only if there are more than 3 proc
   ASSERT_GT(nproc, 3);
 
-  SinkChannel ch(0);
+  SinkChannel ch(&link_, 0);
   boost::thread t;
   if (rank == 0) {
     t = boost::thread(boost::bind(gather_msg, &ch));

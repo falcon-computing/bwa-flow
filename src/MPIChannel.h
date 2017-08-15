@@ -8,35 +8,40 @@
 
 #include "mpi.h"
 
+class MPILink
+: public boost::basic_lockable_adapter<boost::mutex> {
+ public:
+  // message primitives
+  bool query(MPI::Request &req);
+
+  void send(MPI::Intercomm comm, 
+      const void* buf, int count, 
+      const MPI::Datatype& datatype, 
+      int dest, int tag);
+
+  void recv(MPI::Intercomm comm, 
+      void* buf, int count, 
+      const MPI::Datatype& datatype, 
+      int source, int tag);
+};
+
 class Channel 
 : public boost::basic_lockable_adapter<boost::mutex> {
 
  public:
-  Channel();
+  Channel(MPILink* link);
 
   //void retire(); // retire from channel if is sender
   virtual void finish() = 0;
   virtual void send(const char* data, int length) = 0;
-  virtual void recv(char* data, int & length) = 0;
+  virtual void* recv(int & length) = 0;
   //bool isFinish(); // if all senders of this channel have retired
 
   int getId() { return id_; }
   bool isFinished() { return is_finished_; }
   
  protected:
-  // message primitives
-  bool query(MPI::Request &req);
-
-  void do_send(MPI::Intercomm comm, 
-      const void* buf, int count, 
-      const MPI::Datatype& datatype, 
-      int dest, int tag);
-
-  void do_recv(MPI::Intercomm comm, 
-      void* buf, int count, 
-      const MPI::Datatype& datatype, 
-      int source, int tag);
-
+  
   enum Msg {
     req    = 0,
     length = 1,
@@ -48,6 +53,8 @@ class Channel
   int id_;
   static int counter_;
 
+  MPILink* link_;
+
   int rank_;
   int nproc_;
 
@@ -57,11 +64,11 @@ class Channel
 class SourceChannel : public Channel {
 
  public:
-  SourceChannel(int source_rank = 0);
+  SourceChannel(MPILink* link, int source_rank = 0);
 
   void finish();
   void send(const char* data, int length);
-  void recv(char* data, int & length);
+  void* recv(int & length);
   
  private:
   int source_rank_;
@@ -70,11 +77,11 @@ class SourceChannel : public Channel {
 class SinkChannel : public Channel {
 
  public:
-  SinkChannel(int sink_rank = 0);
+  SinkChannel(MPILink* link, int sink_rank = 0);
 
   void finish();
   void send(const char* data, int length);
-  void recv(char* data, int & length);
+  void* recv(int & length);
   
  private:
   int sink_rank_;

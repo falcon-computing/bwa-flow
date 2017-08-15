@@ -18,7 +18,8 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 STDOBJS := $(SRC_DIR)/main.o 
 
 MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
-	   $(SRC_DIR)/mpi_main.o
+					 $(SRC_DIR)/MPIChannel.o \
+					 $(SRC_DIR)/mpi_main.o
 
 TESTOBJS:= $(TEST_DIR)/main.o \
 	   $(TEST_DIR)/PipelineTests.o \

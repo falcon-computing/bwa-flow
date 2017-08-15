@@ -16,26 +16,19 @@
 #include "mpi.h"
 #include "MPIChannel.h"
 
-int Channel::counter_ = 0;
-
-int Channel::getTag(Msg m) {
-  int tag = std::numeric_limits<Msg>::max()*id_ + (int)m;
-  return tag;
-}
-
-bool Channel::query(MPI::Request &req) {
-  boost::lock_guard<Channel> guard(*this);
+bool MPILink::query(MPI::Request &req) {
+  boost::lock_guard<MPILink> guard(*this);
   return req.Test();
 }
 
-void Channel::do_send(MPI::Intercomm comm,
+void MPILink::send(MPI::Intercomm comm,
     const void* buf,
     int count, const MPI::Datatype& datatype,
     int dest, int tag
 ) {
   MPI::Request req;
   {
-    boost::lock_guard<Channel> guard(*this);
+    boost::lock_guard<MPILink> guard(*this);
     req = comm.Isend(buf, count,
         datatype, dest, tag);
   }
@@ -44,13 +37,13 @@ void Channel::do_send(MPI::Intercomm comm,
   }
 }
 
-void Channel::do_recv(MPI::Intercomm comm, void* buf,
+void MPILink::recv(MPI::Intercomm comm, void* buf,
     int count, const MPI::Datatype& datatype,
     int source, int tag
 ) {
   MPI::Request req;
   {
-    boost::lock_guard<Channel> guard(*this);
+    boost::lock_guard<MPILink> guard(*this);
     req = comm.Irecv(buf, count,
         datatype, source, tag);
   }
@@ -59,8 +52,12 @@ void Channel::do_recv(MPI::Intercomm comm, void* buf,
   }
 }
 
-Channel::Channel(): is_finished_(false) {
-  
+int Channel::counter_ = 0;
+
+Channel::Channel(MPILink* link): 
+  link_(link),
+  is_finished_(false) 
+{
   // accumulate the class id
   id_ = counter_;
   counter_++;
@@ -110,7 +107,16 @@ Channel::Channel(): is_finished_(false) {
 #endif
 }
 
-SourceChannel::SourceChannel(int source_rank): source_rank_(source_rank) {
+int Channel::getTag(Msg m) {
+  int tag = std::numeric_limits<Msg>::max()*id_ + (int)m;
+  return tag;
+}
+
+
+
+SourceChannel::SourceChannel(MPILink* link, int source_rank): 
+  Channel(link), 
+  source_rank_(source_rank) {
   ;
 }
 
@@ -119,11 +125,11 @@ void SourceChannel::send(const char* data, int length) {
   // pid of the requester
   int req_id = -1;
 
-  do_recv(MPI::COMM_WORLD, &req_id, 1, 
+  link_->recv(MPI::COMM_WORLD, &req_id, 1, 
       MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
-  do_send(MPI::COMM_WORLD, &length, 1, 
+  link_->send(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, req_id, getTag(Msg::length));
-  do_send(MPI::COMM_WORLD, data, length, 
+  link_->send(MPI::COMM_WORLD, data, length, 
       MPI::CHAR, req_id, getTag(Msg::data));
 }
 
@@ -135,71 +141,88 @@ void SourceChannel::finish() {
   for (int p = 0; p < nproc_; p++) {
     int proc_id = 0;
     int length = 0;
-    do_recv(MPI::COMM_WORLD, &proc_id, 1, 
+    link_->recv(MPI::COMM_WORLD, &proc_id, 1, 
         MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
 
     // Send finish signal to child-process
-    do_send(MPI::COMM_WORLD, &length, 1, 
+    link_->send(MPI::COMM_WORLD, &length, 1, 
         MPI::INT, p, getTag(Msg::length));
   }
-  //is_finished_ = true;
+  is_finished_ = true;
 }
 
-void SourceChannel::recv(char* data, int & length) {
+void* SourceChannel::recv(int & length) {
 
-  do_send(MPI::COMM_WORLD, &rank_, 1, 
+  link_->send(MPI::COMM_WORLD, &rank_, 1, 
       MPI::INT, source_rank_, getTag(Msg::req));
-  do_recv(MPI::COMM_WORLD, &length, 1, 
+
+  link_->recv(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, source_rank_, getTag(Msg::length));
+
   if (length > 0) {
-    do_recv(MPI::COMM_WORLD, data, length, 
+    // allocate return buffer for data
+    void* data = malloc(length);
+
+    link_->recv(MPI::COMM_WORLD, data, length, 
         MPI::CHAR, source_rank_, getTag(Msg::data));
+
+    return data;
   }
   else {
     is_finished_ = true;
+    return NULL;
   }
 }
 
-SinkChannel::SinkChannel(int sink_rank): sink_rank_(sink_rank) {
+SinkChannel::SinkChannel(MPILink* link, int sink_rank): 
+  Channel(link),
+  sink_rank_(sink_rank) 
+{
   for (int p = 0; p < nproc_; p++) {
     active_senders_.insert(p);
   } 
 }
 
 void SinkChannel::send(const char* data, int length) {
-  do_send(MPI::COMM_WORLD, &rank_, 1, 
+  link_->send(MPI::COMM_WORLD, &rank_, 1, 
       MPI::INT, sink_rank_, getTag(Msg::req));
-  do_send(MPI::COMM_WORLD, &length, 1, 
+  link_->send(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, sink_rank_, getTag(Msg::length));
-  do_send(MPI::COMM_WORLD, data, length, 
+  link_->send(MPI::COMM_WORLD, data, length, 
       MPI::CHAR, sink_rank_, getTag(Msg::data));
 }
 
-void SinkChannel::recv(char* data, int & length) {
-  if (active_senders_.empty()) return;
+void* SinkChannel::recv(int & length) {
+  if (active_senders_.empty()) return NULL;
   
   // non-blocking query for tasks
   int req_id = 0;
-  do_recv(MPI::COMM_WORLD, &req_id, 1, MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
-  do_recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
+  link_->recv(MPI::COMM_WORLD, &req_id, 1, MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
+  link_->recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
   while (length == 0) {
     active_senders_.erase(req_id); 
     if (active_senders_.empty()) break;
-    do_recv(MPI::COMM_WORLD, &req_id, 1, MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
-    do_recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
+    link_->recv(MPI::COMM_WORLD, &req_id, 1, MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
+    link_->recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
   }
   if (active_senders_.empty()) {
     is_finished_ = true;
+    return NULL;
   }
   else {
-    do_recv(MPI::COMM_WORLD, data, length, MPI::CHAR, req_id, getTag(Msg::data));
+    // allocate return buffer for data
+    void* data = malloc(length);
+
+    link_->recv(MPI::COMM_WORLD, data, length, MPI::CHAR, req_id, getTag(Msg::data));
+
+    return data;
   }
 }
 
 void SinkChannel::finish() {
   int length = 0;
-  do_send(MPI::COMM_WORLD, &rank_, 1, MPI::INT, sink_rank_, getTag(Msg::req));
-  do_send(MPI::COMM_WORLD, &length, 1, MPI::INT, sink_rank_, getTag(Msg::length));
-  // 
-  // is_finished_ = true;
+  link_->send(MPI::COMM_WORLD, &rank_, 1, MPI::INT, sink_rank_, getTag(Msg::req));
+  link_->send(MPI::COMM_WORLD, &length, 1, MPI::INT, sink_rank_, getTag(Msg::length));
+
+  is_finished_ = true;
 }

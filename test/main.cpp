@@ -52,9 +52,6 @@ DEFINE_int32(output_flag, 1,
 DEFINE_int32(max_batch_records, 20, 
     "Flag to specify how many batch to buffer before sort");
 
-int mpi_rank;
-int mpi_nprocs;
-
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;

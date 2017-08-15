@@ -69,14 +69,9 @@ void licence_check_in() {
 }
 #endif
 
-// TODO: FPGA version is not supported
-boost::mutex mpi_mutex;
-
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
-int mpi_rank;
-int mpi_nprocs;
 ktp_aux_t* aux;
 
 // Original BWA parameters
@@ -159,10 +154,8 @@ int main(int argc, char *argv[]) {
     LOG(ERROR) << "Available thread level is " << init_ret;
     throw std::runtime_error("Cannot initialize MPI with threads");
   }
-  mpi_rank   = MPI::COMM_WORLD.Get_rank();
-  mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
-  int rank = mpi_rank;
+  int rank = MPI::COMM_WORLD.Get_rank();
 
 #ifdef USELICENSE
   if (rank == 0) {
@@ -297,6 +290,9 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
   DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
 
+  // initialize MPI link
+  MPILink link;
+
   // stages for bwa file in/out
   KseqsRead       kread_stage;
   KseqsToBseqs    k2b_stage;
@@ -304,10 +300,10 @@ int main(int argc, char *argv[]) {
   WriteOutput     write_stage(FLAGS_output_nt);
 
   // stages for mpi scale-out
-  SeqsDispatch    seq_send_stage;
-  SeqsReceive     seq_recv_stage;
-  SamsSend        sam_send_stage;
-  SamsReceive     sam_recv_stage;
+  SeqsDispatch    seq_send_stage(&link);
+  SeqsReceive     seq_recv_stage(&link);
+  SamsSend        sam_send_stage(&link);
+  SamsReceive     sam_recv_stage(&link);
 
   // stages for bwa computation
   SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
