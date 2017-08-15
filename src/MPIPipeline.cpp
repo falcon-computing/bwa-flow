@@ -26,50 +26,13 @@
 #include "MPIPipeline.h"  
 #include "util.h"
 
-// Encode a scalar value to serialized data
-template <typename T>
-static inline void putT(std::stringstream &ss, T value) {
-  ss.write(reinterpret_cast<char*>(&value), sizeof(value));
-}
-
-// Decode a scalar value from serialized data
-template <typename T>
-static inline void getT(std::stringstream &ss, T &value) {
-  ss.read(reinterpret_cast<char*>(&value), sizeof(value));
-}
-
-// Store a string with its length to serialized data
-static inline void putStr(std::stringstream &ss, const char* str) {
-  if (str) {
-    size_t length = strlen(str);
-    putT(ss, length);
-    ss.write(str, length);
-  }
-  else {
-    size_t length = 0;
-    putT(ss, length);
-  }
-}
-
-// Retrieve a string from serialized data
-static inline void getStr(std::stringstream &ss, char* &dst) {
-  size_t length = 0;
-  getT(ss, length);
-
-  if (length > 0) {
-    dst = (char*)malloc(length+1);
-    ss.read(dst, length);
-    dst[length] = '\0';
-  }
-}
-
 // Check MPI::Request status with mutex lock
-static inline bool queryStatus(MPI::Request &req) {
+bool bwa_mpi::query(MPI::Request &req) {
   boost::mutex::scoped_lock lock(mpi_mutex);
   return req.Test();
 }
 
-static inline void bwaMPISend(const void* buf,
+void bwa_mpi::send(const void* buf,
     int count, const MPI::Datatype& datatype,
     int dest, int tag
 ) {
@@ -79,12 +42,12 @@ static inline void bwaMPISend(const void* buf,
     req = MPI::COMM_WORLD.Isend(buf, count,
         datatype, dest, tag);
   }
-  while (!queryStatus(req)) {
+  while (!bwa_mpi::query(req)) {
     boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
   }
 }
 
-static inline void bwaMPIRecv(void* buf,
+void bwa_mpi::recv(void* buf,
     int count, const MPI::Datatype& datatype,
     int source, int tag
 ) {
@@ -94,7 +57,7 @@ static inline void bwaMPIRecv(void* buf,
     req = MPI::COMM_WORLD.Irecv(buf, count,
         datatype, source, tag);
   }
-  while (!queryStatus(req)) {
+  while (!bwa_mpi::query(req)) {
     boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
   }
 }
@@ -143,11 +106,11 @@ void SeqsDispatch::compute(int wid) {
 
       // First query a process to send data to
       int proc_id = -1;
-      bwaMPIRecv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
+      bwa_mpi::recv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
 
-      bwaMPISend(&length, 1, MPI::INT, proc_id, SEQ_DP_LENGTH);
+      bwa_mpi::send(&length, 1, MPI::INT, proc_id, SEQ_DP_LENGTH);
 
-      bwaMPISend(ser_data.c_str(), length, MPI::CHAR, proc_id, SEQ_DP_DATA);
+      bwa_mpi::send(ser_data.c_str(), length, MPI::CHAR, proc_id, SEQ_DP_DATA);
 
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending seqs batch " << record.start_idx
         << " to proc_" << proc_id
@@ -160,10 +123,10 @@ void SeqsDispatch::compute(int wid) {
       for (int p = 0; p < nprocs; p++) {
         int proc_id = 0;
         int length = 0;
-        bwaMPIRecv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
+        bwa_mpi::recv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SEQ_DP_QUERY);
 
         // Send finish signal to child-process
-        bwaMPISend(&length, 1, MPI::INT, p, SEQ_DP_LENGTH);
+        bwa_mpi::send(&length, 1, MPI::INT, p, SEQ_DP_LENGTH);
       }
       finished = true;
     }
@@ -180,16 +143,16 @@ void SeqsReceive::compute() {
     uint64_t start_ts = getUs();
 
     // Request new data from master
-    bwaMPISend(&rank, 1, MPI::INT, MASTER_RANK, SEQ_DP_QUERY);
+    bwa_mpi::send(&rank, 1, MPI::INT, MASTER_RANK, SEQ_DP_QUERY);
 
     int length = 0;
-    bwaMPIRecv(&length, 1,
+    bwa_mpi::recv(&length, 1,
         MPI::INT, MASTER_RANK, SEQ_DP_LENGTH);
 
     if (length > 0) {
       char* ser_data = (char*) malloc(length);
 
-      bwaMPIRecv(ser_data, length,
+      bwa_mpi::recv(ser_data, length,
           MPI::CHAR, MASTER_RANK, SEQ_DP_DATA);
 
       SeqsRecord output;
@@ -203,6 +166,34 @@ void SeqsReceive::compute() {
     }
     else {
       // Means master has no more batch
+      finished = true;
+    }
+  }
+}
+
+void ChainsToRegionsOffload::compute(int wid) {
+  int rank   = mpi_rank;
+  int nprocs = mpi_nprocs;
+  bool finished = false;
+  while (!finished) {
+    ChainsRecord input;
+    bool ready = this->getInput(input);
+
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(input);
+    }
+
+    if (!ready) { 
+      // This means isFinal() is true and input queue is empty
+      int length = 0;
+
+      // Send proc_id to master to let master receive following msg
+      bwa_mpi::send(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
+
+      // Send a zero-length to master indicating current process is finished
+      bwa_mpi::send(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
+
       finished = true;
     }
   }
@@ -229,10 +220,10 @@ void SamsSend::compute(int wid) {
       int length = 0;
 
       // Send proc_id to master to let master receive following msg
-      bwaMPISend(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
+      bwa_mpi::send(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
 
       // Send a zero-length to master indicating current process is finished
-      bwaMPISend(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
+      bwa_mpi::send(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
 
       finished = true;
     }
@@ -254,11 +245,11 @@ void SamsSend::compute(int wid) {
       start_ts = getUs();
 
       // Send proc_id to master to let master receive following msg
-      bwaMPISend(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
+      bwa_mpi::send(&rank, 1, MPI::INT, MASTER_RANK, SAM_RV_QUERY);
 
-      bwaMPISend(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
+      bwa_mpi::send(&length, 1, MPI::INT, MASTER_RANK, SAM_RV_LENGTH);
 
-      bwaMPISend(ser_data.c_str(), length,
+      bwa_mpi::send(ser_data.c_str(), length,
           MPI::CHAR, MASTER_RANK, SAM_RV_DATA);
 
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending sam batch " << input.start_idx
@@ -316,9 +307,9 @@ void SamsReceive::compute() {
     int length = 0;
 
     // non-blocking query for tasks
-    bwaMPIRecv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SAM_RV_QUERY);
+    bwa_mpi::recv(&proc_id, 1, MPI::INT, MPI::ANY_SOURCE, SAM_RV_QUERY);
 
-    bwaMPIRecv(&length, 1, MPI::INT, proc_id, SAM_RV_LENGTH);
+    bwa_mpi::recv(&length, 1, MPI::INT, proc_id, SAM_RV_LENGTH);
 
     if (length == 0) {
       // Process proc_id is already finished, remove from table
@@ -328,7 +319,7 @@ void SamsReceive::compute() {
       // Allocate buffer for serialized obj
       char* ser_data = (char*) malloc(length);
 
-      bwaMPIRecv(ser_data, length, MPI::CHAR, proc_id, SAM_RV_DATA);
+      bwa_mpi::recv(ser_data, length, MPI::CHAR, proc_id, SAM_RV_DATA);
 
       SeqsRecord output = this->deserialize(ser_data, length);
       free(ser_data);

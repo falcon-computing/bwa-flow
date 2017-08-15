@@ -99,12 +99,17 @@ endif
 endif
 
 ifneq ($(OPENMPI_DIR),)
+CFLAGS 	 := $(CFLAGS) -DUSE_MPI
 INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 
+TESTOBJS:= $(TESTOBJS) \
+	   $(TEST_DIR)/ChannelTests.o
+
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
-	   	$(SRC_DIR)/MPIPipeline.o
+	   	$(SRC_DIR)/MPIPipeline.o \
+	   	$(SRC_DIR)/MPIChannel.o
 endif
 
 # check FLMDIR
@@ -131,6 +136,16 @@ runtest:
 	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(TESTPROG) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+
+runmpitest: 
+	GLOG_v=3 \
+	GLOG_alsologtostderr=1 \
+	GLOG_log_dir=$(TEST_DIR) \
+	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
+	$(OPENMPI_DIR)/bin/mpirun -np 4 \
+	--mca orte_base_help_aggregate 0 \
+	$(TESTPROG) --gtest_filter=ChannelTests.* \
+	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 $(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
 	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)

@@ -16,6 +16,18 @@
 // mutex for serializing MPI calls
 extern boost::mutex mpi_mutex;
 
+// MPI helper functions
+namespace bwa_mpi {
+
+// basic MPI APIs with mutex lock for multi-thread safety
+bool query(MPI::Request &req);
+void send(const void* buf, int count, const MPI::Datatype& datatype, 
+    int dest, int tag);
+void recv(void* buf, int count, const MPI::Datatype& datatype, 
+    int source, int tag);
+
+} // namepsace bwa_mpi
+
 class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
  public:
   SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
@@ -25,6 +37,37 @@ class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
 class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:
   SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
+  void compute();
+};
+
+/* 
+ * Offload ChainsRecord to remote worker(s) and receive RegionsRecord.
+ */
+class ChainsToRegionsOffload : public kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+ public:
+  ChainsToRegionsOffload(int n=1): kestrelFlow::MapPartitionStage<
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n, false) {;}
+
+  void compute(int wid);
+};
+
+/*
+ * Receive from remote process(es), and deserialize to ChainsRecord
+ */
+class ChainsReceive : public kestrelFlow::SourceStage<ChainsRecord, INPUT_DEPTH> {
+ public:
+  ChainsReceive(): kestrelFlow::SourceStage<ChainsRecord, INPUT_DEPTH>() {;}
+  void compute();
+};
+
+/*
+ * Serialize RegionsRecord and send to remote 
+ */
+class RegionsSend : public kestrelFlow::SinkStage<RegionsRecord, INPUT_DEPTH> {
+ public:
+  RegionsSend(): kestrelFlow::SinkStage<RegionsRecord, INPUT_DEPTH>() {;}
   void compute();
 };
 

@@ -1,0 +1,94 @@
+#include <iostream>
+#include "test/TestCommon.h"
+#include "MPIChannel.h"
+
+TEST_F(ChannelTests, ChannelSetup) {
+  int rank  = MPI::COMM_WORLD.Get_rank();
+  int nproc = MPI::COMM_WORLD.Get_size();
+
+  // run tests only if there are more than 1 proc
+  ASSERT_GT(nproc, 1);
+
+  SourceChannel ch1(0);
+  SourceChannel ch2(0);
+  SinkChannel   ch3(0);
+
+  ASSERT_GT(ch2.getId(), ch1.getId());
+  ASSERT_GT(ch3.getId(), ch2.getId());
+  ASSERT_GT(ch3.getId(), ch1.getId());
+}
+
+static void dispatch_msg(SourceChannel* ch) {
+  int rank  = MPI::COMM_WORLD.Get_rank();
+  for (int p = 0; p < 10; p++) {
+    char msg[5];
+    sprintf(msg, "%d", p);
+    ch->send(msg, strlen(msg));
+  }
+  ch->finish();
+}
+
+TEST_F(ChannelTests, SourceChannel) {
+  int rank  = MPI::COMM_WORLD.Get_rank();
+  int nproc = MPI::COMM_WORLD.Get_size();
+
+  // run tests only if there are more than 3 proc
+  ASSERT_GT(nproc, 3);
+
+  SourceChannel ch(0);
+  boost::thread t;
+  if (rank == 0) {
+    t = boost::thread(boost::bind(dispatch_msg, &ch));
+  }
+  while (!ch.isFinished()) {
+    char msg[100];
+    int length;
+    ch.recv((char*)&msg, length);
+    if (length > 0) {
+      VLOG(1) << "message " << msg << " for " << rank;
+      ASSERT_LT(atoi(msg), 10);
+      ASSERT_GE(atoi(msg), 0);
+    }
+  }
+  if (rank == 0) {
+    t.join();
+  }
+}
+
+static void gather_msg(SinkChannel* ch) {
+  int rank  = MPI::COMM_WORLD.Get_rank();
+  int nproc = MPI::COMM_WORLD.Get_size();
+  int counter = 0;
+  while (!ch->isFinished()) {
+    char msg[100];
+    int length;
+
+    ch->recv((char*)&msg, length);
+    VLOG(1) << "message " << msg;
+    ASSERT_LT(atoi(msg), 10);
+    ASSERT_GE(atoi(msg), 0);
+    counter++;
+  }
+  ASSERT_EQ(3*nproc, counter);
+}
+
+TEST_F(ChannelTests, SinkChannel) {
+  int rank  = MPI::COMM_WORLD.Get_rank();
+  int nproc = MPI::COMM_WORLD.Get_size();
+
+  // run tests only if there are more than 3 proc
+  ASSERT_GT(nproc, 3);
+
+  SinkChannel ch(0);
+  boost::thread t;
+  if (rank == 0) {
+    t = boost::thread(boost::bind(gather_msg, &ch));
+  }
+  for (int k = 0; k < 3; k++) {
+    char msg[10];
+    sprintf(msg, "%d", rank);
+    ch.send(msg, strlen(msg));
+  }
+  ch.finish();
+  t.join();
+}

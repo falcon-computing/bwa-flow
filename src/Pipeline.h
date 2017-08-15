@@ -126,8 +126,7 @@ class SamsReorder
 {
   public:
     SamsReorder():kestrelFlow::MapPartitionStage
-                  <SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
-  {;}
+                  <SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false){;}
     void compute(int wid);
 };
 #else

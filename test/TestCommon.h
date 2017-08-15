@@ -18,6 +18,10 @@
 
 #include "bwa_wrapper.h"
 
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
+
 // Global variables
 extern char *bwa_pg;
 extern gzFile fp_idx, fp2_read2;
@@ -74,5 +78,11 @@ class UtilTests : public BaseTests {
 class PipelineTests : public BaseTests {
   ;
 };
+
+#ifdef USE_MPI
+class ChannelTests : public ::testing::Test {
+  ;
+};
+#endif
 
 #endif

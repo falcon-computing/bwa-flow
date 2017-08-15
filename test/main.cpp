@@ -65,21 +65,34 @@ int       g_batch_num;
 
 boost::mutex mpi_mutex;
 
+int    g_argc = 0;
+char** g_argv = 0;
+
 int main(int argc, char *argv[]) {
+
+#ifdef USE_MPI
+  // Initialize MPI
+  int init_ret = MPI::Init_thread(MPI_THREAD_SERIALIZED);
+
+  if (init_ret != MPI_THREAD_SERIALIZED) {
+    LOG(ERROR) << "Available thread level is " << init_ret;
+    throw std::runtime_error("Cannot initialize MPI with threads");
+  }
+#endif
 
   google::InitGoogleLogging(argv[0]);
   ::testing::InitGoogleTest(&argc, argv);
 
+  // suppress messages
+  bwa_verbose = 0;
+
   aux = (ktp_aux_t*)malloc(sizeof(ktp_aux_t));
   memset(aux, 0, sizeof(ktp_aux_t));
 
+  // initialize idx
   if (pre_process(argc-1, argv+1, aux, true)) {
     LOG(ERROR) << "Cannot initialize";
-    return -1;
   }
-
-  // suppress messages
-  bwa_verbose = 0;
 
   // save seqs for all tests
   g_seqs = bseq_read(aux->actual_chunk_size, &g_batch_num, aux->ks, aux->ks2);
@@ -87,6 +100,7 @@ int main(int argc, char *argv[]) {
     throw std::runtime_error("cannot read sequence");
   }
 
+  // run all tests
   int ret = RUN_ALL_TESTS();
 
   // free bseq1_t
@@ -109,6 +123,9 @@ int main(int argc, char *argv[]) {
     kseq_destroy(aux->ks2);
     err_gzclose(fp2_read2); kclose(ko_read2);
   }
+#ifdef USE_MPI
+  MPI_Finalize();
+#endif
 
   return ret;
 }
