@@ -289,7 +289,7 @@ int main(int argc, char *argv[]) {
   int num_fpga_threads = 0;
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread + 1;
+    num_fpga_threads = FLAGS_max_fpga_thread + 3;
   }
 #endif
   if (FLAGS_offload) {
