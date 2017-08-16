@@ -1,115 +1,108 @@
 #ifndef BWA_FLOW_MPIPIPELINE_H
 #define BWA_FLOW_MPIPIPELINE_H
 
-#define MASTER_RANK   0
-
-// Tags for messages between master and child processes
-#define SEQ_DP_QUERY  0
-#define SEQ_DP_LENGTH 1
-#define SEQ_DP_DATA   2
-#define SAM_RV_QUERY  3
-#define SAM_RV_LENGTH 4
-#define SAM_RV_DATA   5
-
 #include "Pipeline.h"
 #include "MPIChannel.h"
+#include "util.h"
 
-// mutex for serializing MPI calls
-extern boost::mutex mpi_mutex;
-
-// MPI helper functions
-namespace bwa_mpi {
-
-// basic MPI APIs with mutex lock for multi-thread safety
-bool query(MPI::Request &req);
-void send(const void* buf, int count, const MPI::Datatype& datatype, 
-    int dest, int tag);
-void recv(void* buf, int count, const MPI::Datatype& datatype, 
-    int source, int tag);
-
-} // namepsace bwa_mpi
-
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
+template<typename Record, typename C>
+class SendRecord : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
  public:
-  SeqsDispatch(MPILink* link): 
+  SendRecord(MPILink* link): 
     ch_(link),
-    kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() 
+    kestrelFlow::SinkStage<Record, INPUT_DEPTH>() 
   {;}
 
-  void compute(int wid = 0);
+  void compute(int wid = 0) {
+    while (!ch_.sendFinished()) { 
+      Record input;
+      bool ready = this->getInput(input);
 
+      while (!this->isFinal() && !ready) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+        ready = this->getInput(input);
+      }
+      if (ready) { // record is a valid new input
+        uint64_t start_ts = getUs();
+
+        // Serialize output record
+        std::string ser_data = serialize(input);
+        int length = ser_data.length();
+
+        freeRecord(input);
+
+        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Serializing one " << input.name 
+          << " of " << length / 1024  << "kb"
+          << " in " << getUs() - start_ts << " us";
+
+        start_ts = getUs();
+
+        // dispatch data to slaves
+        ch_.send(ser_data.c_str(), length);
+
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending " << input.name << "-"
+          << input.start_idx
+          << " takes " << getUs() - start_ts << " us";
+      }
+      else {
+        // this means isFinal() is true and input queue is empty
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finish sending " << input.name
+          << ", start sending finish signals";
+        ch_.retire();
+      }
+    }
+  }
  private:
-  SourceChannel ch_;
+  C ch_;
 };
 
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
+template<typename Record, typename C>
+class RecvRecord : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
  public:
-  SeqsReceive(MPILink* link): 
+  RecvRecord(MPILink* link): 
     ch_(link),
-    kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() 
+    kestrelFlow::SourceStage<Record, INPUT_DEPTH>() 
   {;}
 
-  void compute();
+  void compute() {
+    while (!ch_.recvFinished()) {
+      uint64_t start_ts = getUs();
+
+      // request new data from master
+      int length = 0;
+      char* ser_data = (char*)ch_.recv(length);
+
+      if (length > 0) {
+        Record output;
+        deserialize(ser_data, length, output);
+        free(ser_data);
+
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Receive " << output.name 
+          << "-" << output.start_idx 
+          << " in " << getUs() - start_ts << " us";
+
+        this->pushOutput(output);
+      }
+    }
+  }
 
  private:
-  SourceChannel ch_;
+  C ch_;
 };
 
-/* 
- * Offload ChainsRecord to remote worker(s) and receive RegionsRecord.
- */
-class ChainsToRegionsOffload : public kestrelFlow::MapPartitionStage<
-      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
-{
- public:
-  ChainsToRegionsOffload(int n=1): kestrelFlow::MapPartitionStage<
-      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n, false) {;}
 
-  void compute(int wid);
-};
-
-/*
- * Receive from remote process(es), and deserialize to ChainsRecord
- */
-class ChainsReceive : public kestrelFlow::SourceStage<ChainsRecord, INPUT_DEPTH> {
+class SeqsDispatch : public SendRecord<SeqsRecord, SourceChannel> {
  public:
-  ChainsReceive(): kestrelFlow::SourceStage<ChainsRecord, INPUT_DEPTH>() {;}
-  void compute();
-};
-
-/*
- * Serialize RegionsRecord and send to remote 
- */
-class RegionsSend : public kestrelFlow::SinkStage<RegionsRecord, INPUT_DEPTH> {
- public:
-  RegionsSend(): kestrelFlow::SinkStage<RegionsRecord, INPUT_DEPTH>() {;}
-  void compute();
-};
-
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsSend(MPILink* link): 
-    ch_(link),
-    kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() 
+  SeqsDispatch(MPILink *link): SendRecord<SeqsRecord, SourceChannel>(link)
   {;}
-
-  void compute(int wid = 0);
-
- private:
-  SinkChannel ch_;
 };
 
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
+class SeqsGather : public RecvRecord<SeqsRecord, SourceChannel> {
  public:
-  SamsReceive(MPILink* link): 
-    ch_(link),
-    kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() 
+  SeqsGather(MPILink *link): RecvRecord<SeqsRecord, SourceChannel>(link)
   {;}
-
-  void compute();
-
- private:
-  SinkChannel ch_;
 };
+
+
 
 #endif

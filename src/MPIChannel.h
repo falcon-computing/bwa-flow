@@ -31,14 +31,16 @@ class Channel
  public:
   Channel(MPILink* link);
 
-  //void retire(); // retire from channel if is sender
-  virtual void finish() = 0;
+  virtual void retire() = 0; // retire from channel if is sender
   virtual void send(const char* data, int length) = 0;
   virtual void* recv(int & length) = 0;
-  //bool isFinish(); // if all senders of this channel have retired
 
   int getId() { return id_; }
-  bool isFinished() { return is_finished_; }
+
+  // separate two finish var because sometimes sender 
+  // and receiver share the same channel object
+  bool sendFinished() { return is_send_finished_; }
+  bool recvFinished() { return is_recv_finished_; }
   
  protected:
   
@@ -58,7 +60,8 @@ class Channel
   int rank_;
   int nproc_;
 
-  bool is_finished_;
+  bool is_send_finished_;
+  bool is_recv_finished_;
 };
 
 class SourceChannel : public Channel {
@@ -66,7 +69,7 @@ class SourceChannel : public Channel {
  public:
   SourceChannel(MPILink* link, int source_rank = 0);
 
-  void finish();
+  void retire();
   void send(const char* data, int length);
   void* recv(int & length);
   
@@ -79,7 +82,7 @@ class SinkChannel : public Channel {
  public:
   SinkChannel(MPILink* link, int sink_rank = 0);
 
-  void finish();
+  void retire();
   void send(const char* data, int length);
   void* recv(int & length);
   

@@ -31,6 +31,7 @@ struct SeqsRecord {
   uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
+  const char* name = "SeqsRecord";
 };
 
 struct ChainsRecord {
@@ -38,6 +39,7 @@ struct ChainsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
+  const char* name = "ChainsRecord";
 };
 
 struct RegionsRecord {
@@ -45,6 +47,7 @@ struct RegionsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_alnreg_v* alnreg;
+  const char* name = "RegionsRecord";
 };
 
 #ifdef USE_HTSLIB
@@ -54,6 +57,11 @@ struct BamsRecord {
   int bam_buffer_idx;
 };
 #endif
+
+template<typename Record>
+void freeRecord(Record &record) {
+  DLOG(INFO) << "Undefined record type.";
+}
 
 class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
  public:

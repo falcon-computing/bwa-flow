@@ -17,8 +17,7 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 
 STDOBJS := $(SRC_DIR)/main.o 
 
-MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
-					 $(SRC_DIR)/MPIChannel.o \
+MPIOBJS := $(SRC_DIR)/MPIChannel.o \
 					 $(SRC_DIR)/mpi_main.o
 
 TESTOBJS:= $(TEST_DIR)/main.o \
@@ -109,7 +108,6 @@ TESTOBJS:= $(TESTOBJS) \
 	   $(TEST_DIR)/ChannelTests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
-	   	$(SRC_DIR)/MPIPipeline.o \
 	   	$(SRC_DIR)/MPIChannel.o
 endif
 
@@ -136,7 +134,8 @@ runtest:
 	GLOG_alsologtostderr=1 \
 	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
-	$(TESTPROG) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+	$(TESTPROG) --gtest_filter=-ChannelTests.* \
+	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 runmpitest: 
 	GLOG_v=3 \
@@ -160,10 +159,10 @@ $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
+$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp
+$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:

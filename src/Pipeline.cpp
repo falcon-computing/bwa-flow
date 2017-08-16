@@ -25,6 +25,20 @@
 #include "Pipeline.h"  
 #include "util.h"
 
+void freeRecord(SeqsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+}
+
+void freeRecord(ChainsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+  freeChains(record.chains, record.batch_num);
+}
+
+void freeRecord(RegionsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+  freeAligns(record.alnreg, record.batch_num);
+}
+
 // Comparator function for bam1_t records
 #ifdef USE_HTSLIB
 bool bam1_lt(const bam1_t* a, const bam1_t* b) {

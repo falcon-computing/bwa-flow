@@ -285,13 +285,9 @@ int main(int argc, char *argv[]) {
   int num_compute_stages = 6;
 
   kestrelFlow::Pipeline scatter_flow(3, 1);
-  kestrelFlow::Pipeline gather_flow(2, 1);
 
   kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
   DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
-
-  // initialize MPI link
-  MPILink link;
 
   // stages for bwa file in/out
   KseqsRead       kread_stage;
@@ -299,16 +295,25 @@ int main(int argc, char *argv[]) {
   SamsReorder     reorder_stage;
   WriteOutput     write_stage(FLAGS_output_nt);
 
-  // stages for mpi scale-out
-  SeqsDispatch    seq_send_stage(&link);
-  SeqsReceive     seq_recv_stage(&link);
-  SamsSend        sam_send_stage(&link);
-  SamsReceive     sam_recv_stage(&link);
-
   // stages for bwa computation
   SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
   ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
+
+  // initialize MPI link
+  MPILink link;
+
+  // stages for mpi send/recv
+  // NOTE: the order and number of mpi stages should match 
+  // exactly on each processes, because a static id is
+  // used to label each communication channels
+  //SeqsDispatch    seq_send_stage(&link);
+  //SeqsReceive     seq_recv_stage(&link);
+  SeqsDispatch seq_send_stage(&link);
+  SeqsGather   seq_recv_stage(&link);
+
+  //SamsSend        sam_send_stage(&link);
+  //SamsReceive     sam_recv_stage(&link);
 
   // Bind global vars to each pipeline
   compute_flow.addConst("sam_dir", sam_dir);
@@ -336,9 +341,6 @@ int main(int argc, char *argv[]) {
   MPI::COMM_WORLD.Barrier();
   if (rank == 0) {
     scatter_flow.wait();
-    if (FLAGS_inorder_output) {
-      gather_flow.wait();
-    }
 
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 

@@ -25,7 +25,7 @@ static void dispatch_msg(SourceChannel* ch) {
     sprintf(msg, "%d", p);
     ch->send(msg, strlen(msg));
   }
-  ch->finish();
+  ch->retire();
 }
 
 TEST_F(ChannelTests, SourceChannel) {
@@ -40,7 +40,7 @@ TEST_F(ChannelTests, SourceChannel) {
   if (rank == 0) {
     t = boost::thread(boost::bind(dispatch_msg, &ch));
   }
-  while (!ch.isFinished()) {
+  while (!ch.recvFinished()) {
     int length;
     char* msg = (char*)ch.recv(length);
     if (length > 0) {
@@ -59,7 +59,7 @@ static void gather_msg(SinkChannel* ch) {
   int rank  = MPI::COMM_WORLD.Get_rank();
   int nproc = MPI::COMM_WORLD.Get_size();
   int counter = 0;
-  while (!ch->isFinished()) {
+  while (!ch->recvFinished()) {
     int length;
     char* msg = (char*)ch->recv(length);
 
@@ -93,6 +93,6 @@ TEST_F(ChannelTests, SinkChannel) {
     sprintf(msg, "%d", rank);
     ch.send(msg, strlen(msg));
   }
-  ch.finish();
+  ch.retire();
   t.join();
 }

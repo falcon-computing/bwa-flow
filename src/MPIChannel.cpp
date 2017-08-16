@@ -56,7 +56,8 @@ int Channel::counter_ = 0;
 
 Channel::Channel(MPILink* link): 
   link_(link),
-  is_finished_(false) 
+  is_send_finished_(false),
+  is_recv_finished_(false) 
 {
   // accumulate the class id
   id_ = counter_;
@@ -112,8 +113,6 @@ int Channel::getTag(Msg m) {
   return tag;
 }
 
-
-
 SourceChannel::SourceChannel(MPILink* link, int source_rank): 
   Channel(link), 
   source_rank_(source_rank) {
@@ -133,7 +132,7 @@ void SourceChannel::send(const char* data, int length) {
       MPI::CHAR, req_id, getTag(Msg::data));
 }
 
-void SourceChannel::finish() {
+void SourceChannel::retire() {
   if (rank_ != source_rank_) {
     throw std::runtime_error("unexpected caller of finish()");
   }
@@ -148,7 +147,7 @@ void SourceChannel::finish() {
     link_->send(MPI::COMM_WORLD, &length, 1, 
         MPI::INT, p, getTag(Msg::length));
   }
-  is_finished_ = true;
+  is_send_finished_ = true;
 }
 
 void* SourceChannel::recv(int & length) {
@@ -161,7 +160,8 @@ void* SourceChannel::recv(int & length) {
 
   if (length > 0) {
     // allocate return buffer for data
-    void* data = malloc(length);
+    // allow one extra 0 for c strings
+    void* data = calloc(length+1, 1);
 
     link_->recv(MPI::COMM_WORLD, data, length, 
         MPI::CHAR, source_rank_, getTag(Msg::data));
@@ -169,7 +169,7 @@ void* SourceChannel::recv(int & length) {
     return data;
   }
   else {
-    is_finished_ = true;
+    is_recv_finished_ = true;
     return NULL;
   }
 }
@@ -206,12 +206,13 @@ void* SinkChannel::recv(int & length) {
     link_->recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
   }
   if (active_senders_.empty()) {
-    is_finished_ = true;
+    is_recv_finished_ = true;
     return NULL;
   }
   else {
     // allocate return buffer for data
-    void* data = malloc(length);
+    // allow one extra 0 for c strings
+    void* data = calloc(length+1, 1);
 
     link_->recv(MPI::COMM_WORLD, data, length, MPI::CHAR, req_id, getTag(Msg::data));
 
@@ -219,10 +220,10 @@ void* SinkChannel::recv(int & length) {
   }
 }
 
-void SinkChannel::finish() {
+void SinkChannel::retire() {
   int length = 0;
   link_->send(MPI::COMM_WORLD, &rank_, 1, MPI::INT, sink_rank_, getTag(Msg::req));
   link_->send(MPI::COMM_WORLD, &length, 1, MPI::INT, sink_rank_, getTag(Msg::length));
 
-  is_finished_ = true;
+  is_send_finished_ = true;
 }
