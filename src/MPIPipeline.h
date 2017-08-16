@@ -5,16 +5,17 @@
 #include "MPIChannel.h"
 #include "util.h"
 
-template<typename Record, typename C>
-class SendRecord : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
+template<typename Record>
+class SendStage : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
  public:
-  SendRecord(MPILink* link): 
-    ch_(link),
+  SendStage(Channel* ch): 
+    ch_(ch), 
     kestrelFlow::SinkStage<Record, INPUT_DEPTH>() 
   {;}
 
   void compute(int wid = 0) {
-    while (!ch_.sendFinished()) { 
+    Record r;
+    while (!ch_->sendFinished()) { 
       Record input;
       bool ready = this->getInput(input);
 
@@ -38,7 +39,7 @@ class SendRecord : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
         start_ts = getUs();
 
         // dispatch data to slaves
-        ch_.send(ser_data.c_str(), length);
+        ch_->send(ser_data.c_str(), length);
 
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending " << input.name << "-"
           << input.start_idx
@@ -48,29 +49,30 @@ class SendRecord : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
         // this means isFinal() is true and input queue is empty
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finish sending " << input.name
           << ", start sending finish signals";
-        ch_.retire();
+        ch_->retire();
       }
     }
   }
  private:
-  C ch_;
+  Channel* ch_;
 };
 
-template<typename Record, typename C>
-class RecvRecord : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
+template<typename Record>
+class RecvStage : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
  public:
-  RecvRecord(MPILink* link): 
-    ch_(link),
+  RecvStage(Channel* ch): 
+    ch_(ch),
     kestrelFlow::SourceStage<Record, INPUT_DEPTH>() 
   {;}
 
   void compute() {
-    while (!ch_.recvFinished()) {
+    Record r;
+    while (!ch_->recvFinished()) {
       uint64_t start_ts = getUs();
 
       // request new data from master
       int length = 0;
-      char* ser_data = (char*)ch_.recv(length);
+      char* ser_data = (char*)ch_->recv(length);
 
       if (length > 0) {
         Record output;
@@ -87,22 +89,6 @@ class RecvRecord : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
   }
 
  private:
-  C ch_;
+  Channel* ch_;
 };
-
-
-class SeqsDispatch : public SendRecord<SeqsRecord, SourceChannel> {
- public:
-  SeqsDispatch(MPILink *link): SendRecord<SeqsRecord, SourceChannel>(link)
-  {;}
-};
-
-class SeqsGather : public RecvRecord<SeqsRecord, SourceChannel> {
- public:
-  SeqsGather(MPILink *link): RecvRecord<SeqsRecord, SourceChannel>(link)
-  {;}
-};
-
-
-
 #endif

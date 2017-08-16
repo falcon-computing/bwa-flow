@@ -89,7 +89,7 @@ TEST_F(ChannelTests, SinkChannel) {
     t = boost::thread(boost::bind(gather_msg, &ch));
   }
   for (int k = 0; k < 3; k++) {
-    char msg[10];
+    char msg[10] = {0};
     sprintf(msg, "%d", rank);
     ch.send(msg, strlen(msg));
   }

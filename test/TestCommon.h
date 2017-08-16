@@ -83,6 +83,9 @@ class PipelineTests : public BaseTests {
 #ifdef USE_MPI
 class MPITests : public ::testing::Test {
  protected:
+  virtual void SetUp() {
+    MPI::COMM_WORLD.Barrier();
+  }
   MPILink link_;
 };
 

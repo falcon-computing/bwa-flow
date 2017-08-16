@@ -31,6 +31,9 @@ void MPILink::send(MPI::Intercomm comm,
     boost::lock_guard<MPILink> guard(*this);
     req = comm.Isend(buf, count,
         datatype, dest, tag);
+    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Send to " << dest 
+               << " from " << MPI::COMM_WORLD.Get_rank()
+               << " tag: " << tag;
   }
   while (!query(req)) {
     boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
@@ -46,6 +49,10 @@ void MPILink::recv(MPI::Intercomm comm, void* buf,
     boost::lock_guard<MPILink> guard(*this);
     req = comm.Irecv(buf, count,
         datatype, source, tag);
+
+    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Recv from " << source 
+               << " to " << MPI::COMM_WORLD.Get_rank()
+               << " tag: " << tag;
   }
   while (!query(req)) {
     boost::this_thread::sleep_for(boost::chrono::milliseconds(1));
@@ -109,14 +116,21 @@ Channel::Channel(MPILink* link):
 }
 
 int Channel::getTag(Msg m) {
-  int tag = std::numeric_limits<Msg>::max()*id_ + (int)m;
+  int tag = ((int)Msg::MsgMax+1)*id_ + (int)m;
   return tag;
 }
 
-SourceChannel::SourceChannel(MPILink* link, int source_rank): 
+SourceChannel::SourceChannel(MPILink* link, 
+    int source_rank,
+    bool send_to_source): 
   Channel(link), 
-  source_rank_(source_rank) {
-  ;
+  source_rank_(source_rank) 
+{
+  for (int p = 0; p < nproc_; p++) {
+    if (send_to_source || p != source_rank) {
+      active_receiver_.insert(p);
+    }
+  }
 }
 
 // dispatch data to receivers of this channel
@@ -137,7 +151,8 @@ void SourceChannel::retire() {
     throw std::runtime_error("unexpected caller of finish()");
   }
 
-  for (int p = 0; p < nproc_; p++) {
+  for (auto p : active_receiver_) {
+  //for (int p = 0; p < nproc_; p++) {
     int proc_id = 0;
     int length = 0;
     link_->recv(MPI::COMM_WORLD, &proc_id, 1, 
@@ -154,6 +169,8 @@ void* SourceChannel::recv(int & length) {
 
   link_->send(MPI::COMM_WORLD, &rank_, 1, 
       MPI::INT, source_rank_, getTag(Msg::req));
+
+  //DLOG_IF(INFO, VLOG_IS_ON(2)) << __func__ << ":" << "receiving from " << source_rank_;
 
   link_->recv(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, source_rank_, getTag(Msg::length));
@@ -174,18 +191,23 @@ void* SourceChannel::recv(int & length) {
   }
 }
 
-SinkChannel::SinkChannel(MPILink* link, int sink_rank): 
+SinkChannel::SinkChannel(MPILink* link, 
+    int sink_rank,
+    bool recv_from_sink): 
   Channel(link),
   sink_rank_(sink_rank) 
 {
   for (int p = 0; p < nproc_; p++) {
-    active_senders_.insert(p);
+    if (recv_from_sink || p != sink_rank) {
+      active_senders_.insert(p);
+    }
   } 
 }
 
 void SinkChannel::send(const char* data, int length) {
   link_->send(MPI::COMM_WORLD, &rank_, 1, 
       MPI::INT, sink_rank_, getTag(Msg::req));
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << __func__ << ":" << "sending to " << sink_rank_;
   link_->send(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, sink_rank_, getTag(Msg::length));
   link_->send(MPI::COMM_WORLD, data, length, 
@@ -198,6 +220,8 @@ void* SinkChannel::recv(int & length) {
   // non-blocking query for tasks
   int req_id = 0;
   link_->recv(MPI::COMM_WORLD, &req_id, 1, MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
+  //DLOG_IF(INFO, VLOG_IS_ON(2)) << __func__ << ":" << "receiving from " << req_id;
+
   link_->recv(MPI::COMM_WORLD, &length, 1, MPI::INT, req_id, getTag(Msg::length));
   while (length == 0) {
     active_senders_.erase(req_id); 
@@ -221,6 +245,7 @@ void* SinkChannel::recv(int & length) {
 }
 
 void SinkChannel::retire() {
+  //DLOG(INFO) << "Retiring sender " << rank_;
   int length = 0;
   link_->send(MPI::COMM_WORLD, &rank_, 1, MPI::INT, sink_rank_, getTag(Msg::req));
   link_->send(MPI::COMM_WORLD, &length, 1, MPI::INT, sink_rank_, getTag(Msg::length));

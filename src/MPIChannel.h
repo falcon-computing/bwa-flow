@@ -47,7 +47,8 @@ class Channel
   enum Msg {
     req    = 0,
     length = 1,
-    data   = 2
+    data   = 2,
+    MsgMax = data
   };
   int getTag(Msg m);
 
@@ -67,7 +68,16 @@ class Channel
 class SourceChannel : public Channel {
 
  public:
-  SourceChannel(MPILink* link, int source_rank = 0);
+  /*
+   * - send_to_source: sometimes the sender process will also
+   *   receive data, but sometimes it does not. In case it
+   *   does not, the sender process need to be excluded from
+   *   the receivers list, otherwise the recv() in retire will
+   *   block
+   */
+  SourceChannel(MPILink* link, 
+      int source_rank = 0, 
+      bool send_to_source = true);
 
   void retire();
   void send(const char* data, int length);
@@ -75,12 +85,19 @@ class SourceChannel : public Channel {
   
  private:
   int source_rank_;
+  std::unordered_set<int> active_receiver_;
 };
 
 class SinkChannel : public Channel {
 
  public:
-  SinkChannel(MPILink* link, int sink_rank = 0);
+  /*
+   * - recv_from_sink: similar to send_to_source,
+   *   prevent recv() from hang
+   */
+  SinkChannel(MPILink* link, 
+      int sink_rank = 0,
+      bool recv_from_sink = true);
 
   void retire();
   void send(const char* data, int length);

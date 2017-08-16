@@ -282,12 +282,13 @@ int main(int argc, char *argv[]) {
 
   double t_real = realtime();
 
-  int num_compute_stages = 6;
+  kestrelFlow::Pipeline compute_flow(7, FLAGS_t);
 
-  kestrelFlow::Pipeline scatter_flow(3, 1);
+  kestrelFlow::Pipeline send_flow(1, 1);
+  kestrelFlow::Pipeline recv_flow(1, 1);
+  kestrelFlow::Pipeline region_flow(3, FLAGS_t);
 
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
-  DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
+  //DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
 
   // stages for bwa file in/out
   KseqsRead       kread_stage;
@@ -296,51 +297,54 @@ int main(int argc, char *argv[]) {
   WriteOutput     write_stage(FLAGS_output_nt);
 
   // stages for bwa computation
-  SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
-  ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
-  RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
+  SeqsToChains    seq2chain_stage(FLAGS_stage_1_nt);
+  ChainsToRegions chain2reg_stage(FLAGS_stage_2_nt);
+  RegionsToSam    reg2sam_stage(FLAGS_stage_3_nt);
 
   // initialize MPI link
   MPILink link;
 
-  // stages for mpi send/recv
-  // NOTE: the order and number of mpi stages should match 
+  // channels for record send/recv
+  // NOTE: the order and number of channels should match 
   // exactly on each processes, because a static id is
   // used to label each communication channels
-  //SeqsDispatch    seq_send_stage(&link);
-  //SeqsReceive     seq_recv_stage(&link);
-  SeqsDispatch seq_send_stage(&link);
-  SeqsGather   seq_recv_stage(&link);
+  SourceChannel seq_ch(&link, 0, true);
+  SourceChannel chn_ch(&link, 0, false);
+  SinkChannel   reg_ch(&link, 0, false);
 
-  //SamsSend        sam_send_stage(&link);
-  //SamsReceive     sam_recv_stage(&link);
+  // stages for record communication
+  SendStage<SeqsRecord>    seq_send_stage(&seq_ch);
+  RecvStage<SeqsRecord>    seq_recv_stage(&seq_ch);
+  SendStage<ChainsRecord>  chn_send_stage(&chn_ch);
+  RecvStage<ChainsRecord>  chn_recv_stage(&chn_ch);
+  SendStage<RegionsRecord> reg_send_stage(&reg_ch);
+  RecvStage<RegionsRecord> reg_recv_stage(&reg_ch);
 
   // Bind global vars to each pipeline
   compute_flow.addConst("sam_dir", sam_dir);
 
-  scatter_flow.addStage(0, &kread_stage);
-  scatter_flow.addStage(1, &k2b_stage);
-  scatter_flow.addStage(2, &seq_send_stage);
-
-  if (rank == 0) { 
-    DLOG(INFO) << "Started scattering data";
-    scatter_flow.start();
-  }
-  
-  compute_flow.addStage(0, &seq_recv_stage);
-  compute_flow.addStage(1, &seq2chain_stage);
-  compute_flow.addStage(2, &chain2reg_stage);
-  compute_flow.addStage(3, &reg2sam_stage);
-  compute_flow.addStage(4, &reorder_stage);
-  compute_flow.addStage(5, &write_stage);
-
   t_real = realtime();
-  compute_flow.start();
-  compute_flow.wait();
+  if (rank == 0) { 
+    compute_flow.addStage(0, &kread_stage);
+    compute_flow.addStage(1, &k2b_stage);
+    compute_flow.addStage(2, &seq2chain_stage);
+    compute_flow.addStage(3, &chain2reg_stage);
+    compute_flow.addStage(4, &reg2sam_stage);
+    compute_flow.addStage(5, &reorder_stage);
+    compute_flow.addStage(6, &write_stage);
 
-  MPI::COMM_WORLD.Barrier();
-  if (rank == 0) {
-    scatter_flow.wait();
+    send_flow.addStage(0, &chn_send_stage);
+    recv_flow.addStage(0, &reg_recv_stage);
+
+    compute_flow.diverge(send_flow, 2);
+    compute_flow.converge(recv_flow, 4);
+
+    compute_flow.start();
+
+    send_flow.start();
+    recv_flow.start();
+
+    compute_flow.wait();
 
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
@@ -350,15 +354,21 @@ int main(int argc, char *argv[]) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
+  }
+  else {
+    region_flow.addStage(0, &chn_recv_stage);
+    region_flow.addStage(1, &chain2reg_stage);
+    region_flow.addStage(2, &reg_send_stage);
 
+    region_flow.start();
+    region_flow.wait();
+  }
+  MPI::COMM_WORLD.Barrier();
+  if (rank == 0) {
     std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
     std::cerr << "Real time: " << realtime() - t_real << " sec, "
-              << "CPU time: " << cputime() << " sec" 
-              << std::endl;
-
-    //err_fflush(stdout);
-    //err_fclose(stdout);
-
+      << "CPU time: " << cputime() << " sec" 
+      << std::endl;
   }
 #ifdef USE_HTSLIB
   bam_hdr_destroy(aux->h);

@@ -16,7 +16,7 @@
 
 #include "bwa_wrapper.h"
 
-#define INPUT_DEPTH   8
+#define INPUT_DEPTH   16
 #define OUTPUT_DEPTH  16
 #define COMPUTE_DEPTH 16
 
@@ -25,6 +25,7 @@ struct KseqsRecord {
   uint64_t start_idx;
   int batch_num;
   kseq_new_t* ks_buffer;
+  const char* name = "KseqsRecord";
 };
 
 struct SeqsRecord {
@@ -55,12 +56,30 @@ struct BamsRecord {
   int bam_buffer_order;
   bam1_t** bam_buffer;
   int bam_buffer_idx;
+  const char* name = "BamsRecord";
 };
 #endif
 
 template<typename Record>
-void freeRecord(Record &record) {
-  DLOG(INFO) << "Undefined record type.";
+inline void freeRecord(Record &record) {
+  DLOG(INFO) << "Undefined record type: " << record.name;
+}
+
+template<>
+inline void freeRecord(SeqsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+}
+
+template<>
+inline void freeRecord(ChainsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+  freeChains(record.chains, record.batch_num);
+}
+
+template<>
+inline void freeRecord(RegionsRecord &record) {
+  freeSeqs(record.seqs, record.batch_num);
+  freeAligns(record.alnreg, record.batch_num);
 }
 
 class SeqsRead : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
