@@ -1,3 +1,7 @@
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/serialization/binary_object.hpp>
+#include <boost/serialization/serialization.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/thread.hpp>
@@ -119,7 +123,7 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 2,
+DEFINE_int32(output_nt, 3,
     "Total number of parallel threads to use for output stage");
 
 DEFINE_int32(output_flag, 1, 
@@ -269,6 +273,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // dump aux env
+
   // Restore stdout if stdout is redirected
   if (!sam_dir.empty()) {
     fclose(stdout);
@@ -283,11 +289,15 @@ int main(int argc, char *argv[]) {
   int num_fpga_threads = 0;
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread + 3;
+    num_fpga_threads = FLAGS_max_fpga_thread;
   }
 #endif
   if (FLAGS_offload) {
+#ifndef FPGA_TEST
     num_compute_stages = 7;
+#else
+    num_compute_stages = 8;
+#endif
   }
 
 #ifdef SCALE_OUT
@@ -340,7 +350,7 @@ int main(int argc, char *argv[]) {
     fpga_flow.branch(compute_flow, 3);
   }
 #endif
-
+  
   t_real = realtime();
   compute_flow.start();
 
@@ -359,18 +369,14 @@ int main(int argc, char *argv[]) {
       DLOG(ERROR) << "because: " << e.what();
       return 1;
     }
+#ifndef FPGA_TEST
     fpga_flow.start();
-  }
-#endif
-  compute_flow.wait();
-
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    fpga_flow.finalize();
     fpga_flow.wait();
+#endif
     delete opencl_env;
   }
 #endif
+  compute_flow.wait();
 
   kseq_destroy(aux->ks);
   err_gzclose(fp_idx); 

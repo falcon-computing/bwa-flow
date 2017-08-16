@@ -17,8 +17,8 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 
 STDOBJS := $(SRC_DIR)/main.o 
 
-MPIOBJS := $(SRC_DIR)/MPIPipeline.o \
-	   $(SRC_DIR)/mpi_main.o
+MPIOBJS := $(SRC_DIR)/MPIChannel.o \
+					 $(SRC_DIR)/mpi_main.o
 
 TESTOBJS:= $(TEST_DIR)/main.o \
 	   $(TEST_DIR)/PipelineTests.o \
@@ -55,14 +55,16 @@ GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := $(BIN_DIR)/bwa
-MPIPROG	 := $(BIN_DIR)/bwa-mpi
 TESTPROG := $(TEST_DIR)/bwa-test
 
 
 ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
+TESTOPT  := GLOG_v=3 \
+						GLOG_alsologtostderr=1
 else
 CFLAGS   := $(CFLAGS) -DNDEBUG
+TESTOPT  := 
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -75,20 +77,40 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
-            $(SRC_DIR)/FPGAAgent.o 
+	    $(SRC_DIR)/SWTask.o
+
+ifneq ($(ALTERAOCLSDKROOT),)
+CFLAGS 	 := $(CFLAGS) -DINTEL_FPGA
+OBJS	 := $(OBJS) \
+	    $(SRC_DIR)/IntelAgent.o
+
 INCLUDES := $(INCLUDES) \
-	    -I$(XILINX_OPENCL_DIR)/runtime/include/1_2 
+	    $(shell aocl compile-config )
 LIBS	 := $(LIBS) \
-	    -L$(XILINX_OPENCL_DIR)/runtime/lib/x86_64 -lOpenCL
+	    $(shell aocl link-config )
+else 
+CFLAGS 	 := $(CFLAGS) -DXILINX_FPGA
+INCLUDES := $(INCLUDES) \
+	-I$(XILINX_SDX)/runtime/include/1_2 
+LIBS	 := $(LIBS) \
+	-L$(XILINX_SDX)/runtime/lib/x86_64 -lxilinxopencl
+
+OBJS	 := $(OBJS) \
+	    $(SRC_DIR)/XCLAgent.o
+endif
 endif
 
 ifneq ($(OPENMPI_DIR),)
+CFLAGS 	 := $(CFLAGS) -DUSE_MPI
 INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
 MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 
+TESTOBJS:= $(TESTOBJS) \
+	   $(TEST_DIR)/ChannelTests.o
+
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
-	   	$(SRC_DIR)/MPIPipeline.o
+	   	$(SRC_DIR)/MPIChannel.o
 endif
 
 # check FLMDIR
@@ -103,18 +125,27 @@ LMDEPS 	 	:= $(FLMDIR)/license.o \
 		   $(FLMDIR)/lm_new.o
 endif 
 
-all:	$(PROG) $(TESTPROG)
+all:	$(PROG) $(TESTPROG) $(MPIPROG)
 
 scaleout: $(MPIPROG)
 
 test:	$(TESTPROG)
 
 runtest: 
-	GLOG_v=3 \
-	GLOG_alsologtostderr=1 \
+	$(TESTOPT) \
 	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
-	$(TESTPROG) mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+	$(TESTPROG)  \
+	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+
+runmpitest: 
+	$(TESTOPT) \
+	GLOG_log_dir=$(TEST_DIR) \
+	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
+	$(OPENMPI_DIR)/bin/mpirun -np 4 \
+	--mca orte_base_help_aggregate 0 \
+	$(TESTPROG) --gtest_filter=ChannelTests.* \
+	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 $(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
 	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
@@ -128,10 +159,10 @@ $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp
+$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp
+$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:

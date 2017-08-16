@@ -1,45 +1,94 @@
 #ifndef BWA_FLOW_MPIPIPELINE_H
 #define BWA_FLOW_MPIPIPELINE_H
 
-#define MASTER_RANK   0
-
-// Tags for messages between master and child processes
-#define SEQ_DP_QUERY  0
-#define SEQ_DP_LENGTH 1
-#define SEQ_DP_DATA   2
-#define SAM_RV_QUERY  3
-#define SAM_RV_LENGTH 4
-#define SAM_RV_DATA   5
-
 #include "Pipeline.h"
+#include "MPIChannel.h"
+#include "util.h"
 
-// mutex for serializing MPI calls
-extern boost::mutex mpi_mutex;
-
-class SeqsDispatch : public kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH> {
+template<typename Record>
+class SendStage : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
  public:
-  SeqsDispatch(): kestrelFlow::SinkStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute(int wid = 0);
+  SendStage(Channel* ch): 
+    ch_(ch), 
+    kestrelFlow::SinkStage<Record, INPUT_DEPTH>() 
+  {;}
+
+  void compute(int wid = 0) {
+    Record r;
+    while (!ch_->sendFinished()) { 
+      Record input;
+      bool ready = this->getInput(input);
+
+      while (!this->isFinal() && !ready) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+        ready = this->getInput(input);
+      }
+      if (ready) { // record is a valid new input
+        uint64_t start_ts = getUs();
+
+        // Serialize output record
+        std::string ser_data = serialize(input);
+        int length = ser_data.length();
+
+        freeRecord(input);
+
+        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Serializing one " << input.name 
+          << " of " << length / 1024  << "kb"
+          << " in " << getUs() - start_ts << " us";
+
+        start_ts = getUs();
+
+        // dispatch data to slaves
+        ch_->send(ser_data.c_str(), length);
+
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending " << input.name << "-"
+          << input.start_idx
+          << " takes " << getUs() - start_ts << " us";
+      }
+      else {
+        // this means isFinal() is true and input queue is empty
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finish sending " << input.name
+          << ", start sending finish signals";
+        ch_->retire();
+      }
+    }
+  }
+ private:
+  Channel* ch_;
 };
 
-class SeqsReceive : public kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH> {
+template<typename Record>
+class RecvStage : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
  public:
-  SeqsReceive(): kestrelFlow::SourceStage<SeqsRecord, INPUT_DEPTH>() {;}
-  void compute();
-};
+  RecvStage(Channel* ch): 
+    ch_(ch),
+    kestrelFlow::SourceStage<Record, INPUT_DEPTH>() 
+  {;}
 
-class SamsSend : public kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsSend(): kestrelFlow::SinkStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  void compute(int wid = 0);
-  std::string serialize(SeqsRecord* data);
-};
+  void compute() {
+    Record r;
+    while (!ch_->recvFinished()) {
+      uint64_t start_ts = getUs();
 
-class SamsReceive : public kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH> {
- public:
-  SamsReceive(): kestrelFlow::SourceStage<SeqsRecord, OUTPUT_DEPTH>() {;}
-  SeqsRecord deserialize(const char* data, size_t length);
-  void compute();
-};
+      // request new data from master
+      int length = 0;
+      char* ser_data = (char*)ch_->recv(length);
 
+      if (length > 0) {
+        Record output;
+        deserialize(ser_data, length, output);
+        free(ser_data);
+
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Receive " << output.name 
+          << "-" << output.start_idx 
+          << " in " << getUs() - start_ts << " us";
+
+        this->pushOutput(output);
+      }
+    }
+  }
+
+ private:
+  Channel* ch_;
+};
 #endif

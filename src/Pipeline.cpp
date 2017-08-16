@@ -108,7 +108,8 @@ SeqsRecord KseqsToBseqs::compute(KseqsRecord const & input) {
   
   int batch_num = input.batch_num;
   kseq_new_t *ks_buffer = input.ks_buffer;
-  bseq1_t* seqs = new bseq1_t[batch_num];
+  bseq1_t* seqs = (bseq1_t*)calloc(batch_num, sizeof(bseq1_t));
+
   for (int i=0; i<batch_num; i++) { 
     trim_readno(&ks_buffer[i].name);
     seqs[i].name = strdup(ks_buffer[i].name.s);
@@ -339,7 +340,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   uint64_t start_ts = getUs();
   uint64_t seedcov_time = 0;
 
-  uint64_t start_idx        = record.start_idx;
+  uint64_t start_idx   = record.start_idx;
   int batch_num        = record.batch_num;
   mem_alnreg_v* alnreg = record.alnreg;
   bseq1_t* seqs        = record.seqs;

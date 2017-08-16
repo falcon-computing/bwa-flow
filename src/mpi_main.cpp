@@ -38,6 +38,12 @@
 #include "license.h"
 #endif
 
+#ifdef BUILD_FPGA
+#include "FPGAAgent.h"
+#include "FPGAPipeline.h"
+OpenCLEnv* opencl_env;
+#endif
+
 #ifdef USELICENSE
 void licence_check_out() {
   // initialize for licensing. call once
@@ -63,14 +69,9 @@ void licence_check_in() {
 }
 #endif
 
-// TODO: FPGA version is not supported
-boost::mutex mpi_mutex;
-
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
-int mpi_rank;
-int mpi_nprocs;
 ktp_aux_t* aux;
 
 // Original BWA parameters
@@ -153,10 +154,8 @@ int main(int argc, char *argv[]) {
     LOG(ERROR) << "Available thread level is " << init_ret;
     throw std::runtime_error("Cannot initialize MPI with threads");
   }
-  mpi_rank   = MPI::COMM_WORLD.Get_rank();
-  mpi_nprocs = MPI::COMM_WORLD.Get_size();
 
-  int rank = mpi_rank;
+  int rank = MPI::COMM_WORLD.Get_rank();
 
 #ifdef USELICENSE
   if (rank == 0) {
@@ -281,15 +280,16 @@ int main(int argc, char *argv[]) {
     close(stdout_fd);
   }
 
-  double t_real = realtime();
+  // initialize MPI link
+  MPILink link;
 
-  int num_compute_stages = 6;
-
-  kestrelFlow::Pipeline scatter_flow(3, 1);
-  kestrelFlow::Pipeline gather_flow(2, 1);
-
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, FLAGS_t);
-  DLOG(INFO) << "Using " << FLAGS_t << " threads in total";
+  // channels for record send/recv
+  // NOTE: the order and number of channels should match 
+  // exactly on each processes, because a static id is
+  // used to label each communication channels
+  SourceChannel seq_ch(&link, 0, true);
+  SourceChannel chn_ch(&link, 0, false);
+  SinkChannel   reg_ch(&link, 0, false);
 
   // stages for bwa file in/out
   KseqsRead       kread_stage;
@@ -297,29 +297,78 @@ int main(int argc, char *argv[]) {
   SamsReorder     reorder_stage;
   WriteOutput     write_stage(FLAGS_output_nt);
 
-  // stages for mpi scale-out
-  SeqsDispatch    seq_send_stage;
-  SeqsReceive     seq_recv_stage;
-  SamsSend        sam_send_stage;
-  SamsReceive     sam_recv_stage;
-
   // stages for bwa computation
-  SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
-  ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
-  RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
+  SeqsToChains    seq2chain_stage(FLAGS_stage_1_nt);
+  ChainsToRegions chain2reg_stage(FLAGS_stage_2_nt);
+  RegionsToSam    reg2sam_stage(FLAGS_stage_3_nt);
+
+  // stages for record communication
+  SendStage<SeqsRecord>    seq_send_stage(&seq_ch);
+  RecvStage<SeqsRecord>    seq_recv_stage(&seq_ch);
+  SendStage<ChainsRecord>  chn_send_stage(&chn_ch);
+  RecvStage<ChainsRecord>  chn_recv_stage(&chn_ch);
+  SendStage<RegionsRecord> reg_send_stage(&reg_ch);
+  RecvStage<RegionsRecord> reg_recv_stage(&reg_ch);
+
+  double t_real = realtime();
+
+  // setup pipelines
+#if 0
+  kestrelFlow::Pipeline compute_flow(7, FLAGS_t);
+
+  kestrelFlow::Pipeline send_flow(1, 1);
+  kestrelFlow::Pipeline recv_flow(1, 1);
+  kestrelFlow::Pipeline region_flow(3, FLAGS_t);
 
   // Bind global vars to each pipeline
   compute_flow.addConst("sam_dir", sam_dir);
 
-  scatter_flow.addStage(0, &kread_stage);
-  scatter_flow.addStage(1, &k2b_stage);
-  scatter_flow.addStage(2, &seq_send_stage);
-
   if (rank == 0) { 
-    DLOG(INFO) << "Started scattering data";
+    compute_flow.addStage(0, &kread_stage);
+    compute_flow.addStage(1, &k2b_stage);
+    compute_flow.addStage(2, &seq2chain_stage);
+    compute_flow.addStage(3, &chain2reg_stage);
+    compute_flow.addStage(4, &reg2sam_stage);
+    compute_flow.addStage(5, &reorder_stage);
+    compute_flow.addStage(6, &write_stage);
+
+    send_flow.addStage(0, &chn_send_stage);
+    recv_flow.addStage(0, &reg_recv_stage);
+
+    compute_flow.diverge(send_flow, 2);
+    compute_flow.converge(recv_flow, 4);
+  }
+  else {
+    region_flow.addStage(0, &chn_recv_stage);
+    region_flow.addStage(1, &chain2reg_stage);
+    region_flow.addStage(2, &reg_send_stage);
+  }
+
+  if (rank == 0) {
+    compute_flow.start();
+    send_flow.start();
+    recv_flow.start();
+    compute_flow.wait();
+  }
+  else {
+    region_flow.start();
+    region_flow.wait();
+  }
+#else
+  kestrelFlow::Pipeline scatter_flow(3, 3);
+  kestrelFlow::Pipeline compute_flow(6, FLAGS_t);
+
+  // Bind global vars to each pipeline
+  compute_flow.addConst("sam_dir", sam_dir);
+
+
+  if (rank == 0) {
+    scatter_flow.addStage(0, &kread_stage);
+    scatter_flow.addStage(1, &k2b_stage);
+    scatter_flow.addStage(2, &seq_send_stage);
+    
     scatter_flow.start();
   }
-  
   compute_flow.addStage(0, &seq_recv_stage);
   compute_flow.addStage(1, &seq2chain_stage);
   compute_flow.addStage(2, &chain2reg_stage);
@@ -327,16 +376,16 @@ int main(int argc, char *argv[]) {
   compute_flow.addStage(4, &reorder_stage);
   compute_flow.addStage(5, &write_stage);
 
-  t_real = realtime();
   compute_flow.start();
   compute_flow.wait();
-
+#endif
   MPI::COMM_WORLD.Barrier();
+
   if (rank == 0) {
-    scatter_flow.wait();
-    if (FLAGS_inorder_output) {
-      gather_flow.wait();
-    }
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
+    std::cerr << "Real time: " << realtime() - t_real << " sec, "
+      << "CPU time: " << cputime() << " sec" 
+      << std::endl;
 
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
@@ -346,15 +395,6 @@ int main(int argc, char *argv[]) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
-
-    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-    std::cerr << "Real time: " << realtime() - t_real << " sec, "
-              << "CPU time: " << cputime() << " sec" 
-              << std::endl;
-
-    //err_fflush(stdout);
-    //err_fclose(stdout);
-
   }
 #ifdef USE_HTSLIB
   bam_hdr_destroy(aux->h);

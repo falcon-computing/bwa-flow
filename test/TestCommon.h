@@ -18,6 +18,11 @@
 
 #include "bwa_wrapper.h"
 
+#ifdef USE_MPI
+#include "mpi.h"
+#include "MPIChannel.h"
+#endif
+
 // Global variables
 extern char *bwa_pg;
 extern gzFile fp_idx, fp2_read2;
@@ -74,5 +79,21 @@ class UtilTests : public BaseTests {
 class PipelineTests : public BaseTests {
   ;
 };
+
+#ifdef USE_MPI
+class MPITests : public ::testing::Test {
+ protected:
+  virtual void SetUp() {
+    if (MPI::COMM_WORLD.Get_size() > 1) {
+      MPI::COMM_WORLD.Barrier();
+    }
+  }
+  MPILink link_;
+};
+
+class ChannelTests : public MPITests {
+  ;
+};
+#endif
 
 #endif
