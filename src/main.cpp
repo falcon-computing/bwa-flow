@@ -367,7 +367,7 @@ int main(int argc, char *argv[]) {
       LOG(ERROR) << "Cannot configure FPGA bitstream";
       DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
       DLOG(ERROR) << "because: " << e.what();
-      return 1;
+      exit(1);
     }
 #ifndef FPGA_TEST
     fpga_flow.start();

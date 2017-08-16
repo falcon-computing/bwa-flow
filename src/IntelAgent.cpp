@@ -6,7 +6,7 @@
 #include "IntelAgent.h"
 #include "SWTask.h"
 
-IntelAgent::IntelAgent(OpenCLEnv* env) {
+IntelAgent::IntelAgent(OpenCLEnv* env, SWTask* task): task_(task) {
 
   cl_context context_ = env->getContext();
 
@@ -27,50 +27,44 @@ IntelAgent::IntelAgent(OpenCLEnv* env) {
     sprintf(kernel_in_name,"data_parse%d", i);
     sprintf(kernel_out_name,"upload_results%d", i);
 
+    // allocate buffers
+    size_t max_i_size = task->max_i_size_;
+    size_t max_o_size = task->max_o_size_;;
+    i_buf_[i] = clCreateBuffer(context_, CL_MEM_READ_ONLY, sizeof(int)*max_i_size, NULL, NULL);
+    o_buf_[i] = clCreateBuffer(context_, CL_MEM_WRITE_ONLY, sizeof(int)*max_o_size, NULL, NULL);
+
     kernels_[2*i+0] = clCreateKernel(program, kernel_in_name, &err);
     kernels_[2*i+1] = clCreateKernel(program, kernel_out_name, &err);
   }
 }
 
 IntelAgent::~IntelAgent() {
-  for (int i=0; i<4; i++) {
-    clReleaseCommandQueue(cmd_[i]);
-    clReleaseKernel(kernels_[i]);
+  for (int i = 0; i < 2; i++) {
+    OCL_CHECKRUN(clReleaseMemObject(i_buf_[i]));
+    OCL_CHECKRUN(clReleaseMemObject(o_buf_[i]));
+  }
+  for (int i = 0; i < 4; i++) {
+    OCL_CHECKRUN(clReleaseCommandQueue(cmd_[i]));
+    OCL_CHECKRUN(clReleaseKernel(kernels_[i]));
   }
 }
 
-void IntelAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
-  //boost::lock_guard<OpenCLEnv> guard(*env_);
+void IntelAgent::writeInput(void* host_ptr, int size, int bank) {
   if (size == 0) return;
   uint64_t start_ts = getUs();
-  //cl_event event;
-  cl_int err = clEnqueueWriteBuffer(cmd_[2*bank], buf, CL_FALSE, 0, size, 
-      host_ptr, 0, NULL, NULL);
-
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to write buffer to FPGA");
-  }
-  //err = clFlush(cmd_[2*bank]);
-  //if (err != CL_SUCCESS) {
-  //  throw std::runtime_error("Failed to flush queue");
-  //}
-  //clWaitForEvents(1, &event);
-  //clReleaseEvent(event);
-  //DLOG_IF(INFO, VLOG_IS_ON(3)) << "writeInput:" << bank << 
-  //                                ", size=" << size << " takes " <<
-  //                                getUs() - start_ts;
+  OCL_CHECKRUN(clEnqueueWriteBuffer(cmd_[2*bank], i_buf_[bank],
+        CL_FALSE, 0, size, 
+        host_ptr, 0, NULL, NULL));
 }
 
-void IntelAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
+void IntelAgent::readOutput(void* host_ptr, int size, int bank) {
   if (size == 0) return;
-  cl_int err = clEnqueueReadBuffer(cmd_[2*bank+1], buf, CL_TRUE, 0, size, 
-      host_ptr, 0, NULL, NULL);
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to read buffer from FPGA");
-  }
+  OCL_CHECKRUN(clEnqueueReadBuffer(cmd_[2*bank+1], o_buf_[bank],
+        CL_TRUE, 0, size, 
+        host_ptr, 0, NULL, NULL));
 }
 
-void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
+void IntelAgent::start(FPGAAgent* agent) {
 
   IntelAgent* prev_agent = NULL;
   if (agent) {
@@ -83,10 +77,10 @@ void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
   // kernel execution
   for (int k = 0; k < 2; k++) {
     cl_int err = 0;
-    err  = clSetKernelArg(kernels_[2*k+0], 0, sizeof(cl_mem), &task->i_buf[k]);
-    err |= clSetKernelArg(kernels_[2*k+0], 1, sizeof(int), &task->i_size[k]);
-    err |= clSetKernelArg(kernels_[2*k+1], 0, sizeof(cl_mem), &task->o_buf[k]);
-    err |= clSetKernelArg(kernels_[2*k+1], 1, sizeof(int), &task->o_size[k]);
+    err  = clSetKernelArg(kernels_[2*k+0], 0, sizeof(cl_mem), &i_buf_[k]);
+    err |= clSetKernelArg(kernels_[2*k+0], 1, sizeof(int), &task_->i_size[k]);
+    err |= clSetKernelArg(kernels_[2*k+1], 0, sizeof(cl_mem), &o_buf_[k]);
+    err |= clSetKernelArg(kernels_[2*k+1], 1, sizeof(int), &task_->o_size[k]);
 
     if (err) {
       LOG(ERROR) << "failed to set kernel args";
@@ -108,10 +102,6 @@ void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
       LOG(ERROR) << "failed to execute kernels: " << err;
     }
   }
-  //clWaitForEvents(4, task_event);
-  //for (int k = 0; k < 4; k++) {
-  //  clReleaseEvent(task_event[k]);
-  //}
 }
 
 void IntelAgent::finish() {

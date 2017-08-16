@@ -25,9 +25,10 @@ class SWTask {
   mem_alnreg_t**  region_batch;
   mem_chain_t**   chain_batch;
 
- private:
-  FPGAAgent* agent_;
   size_t     max_i_size_;
   size_t     max_o_size_;
+
+ private:
+  FPGAAgent* agent_;
 };
 #endif

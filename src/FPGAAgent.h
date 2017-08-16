@@ -10,9 +10,9 @@ class SWTask;
 
 class FPGAAgent {
  public:
-  virtual void writeInput(cl_mem buf, void* host_ptr, int size, int bank) = 0;
-  virtual void readOutput(cl_mem buf, void* host_ptr, int size, int bank) = 0;
-  virtual void start(SWTask* task, FPGAAgent* prev_agent = NULL) = 0;
+  virtual void writeInput(void* host_ptr, int size, int bank) = 0;
+  virtual void readOutput(void* host_ptr, int size, int bank) = 0;
+  virtual void start(FPGAAgent* prev_agent = NULL) = 0;
   virtual void finish() = 0;
 };
 

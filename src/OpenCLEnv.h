@@ -14,6 +14,24 @@
 #include "kflow/Queue.h"
 #include "util.h"
 
+// helper function to check API status
+#define OCL_CHECK(err, cmd) \
+  if (err != CL_SUCCESS) { \
+      char msg[200]; \
+      sprintf(msg, "%s in %s failed with %d", cmd, __func__, err); \
+      throw std::runtime_error(msg); \
+  }
+
+#define OCL_CHECKRUN(call) \
+  { \
+    cl_int err = call; \
+    if (err != CL_SUCCESS) { \
+      char msg[200]; \
+      sprintf(msg, "%s in %s failed with %d", #call, __func__, err); \
+      throw std::runtime_error(msg); \
+    } \
+  }
+
 class OpenCLEnv 
 : public boost::basic_lockable_adapter<boost::mutex> {
  public:
