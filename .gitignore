@@ -1,4 +1,3 @@
-app
 config.mk
 *.csv
 *.html
@@ -6,6 +5,19 @@ config.mk
 *.err
 *.txt
 *.out
+*.bak
+
+# logs
 *.log*
+*.INFO*
+*.WARNING*
+*.ERROR*
+
 *.png
 *.dat
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.sam
