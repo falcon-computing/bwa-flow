@@ -32,6 +32,12 @@ class Pipeline {
   // branch stage[idx] of pipeline
   void branch(Pipeline& pipeline, int idx); 
 
+  // bind the output of pipeline to input of stage[idx]
+  void converge(Pipeline& pipeline, int idx);
+
+  // bind the output of stage[idx] to pipeline
+  void diverge(Pipeline& pipeline, int idx);
+
   template <typename T>
   bool addConst(std::string key, T val);
 
