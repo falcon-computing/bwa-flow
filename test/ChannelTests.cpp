@@ -3,12 +3,6 @@
 #include "MPIChannel.h"
 
 TEST_F(ChannelTests, ChannelSetup) {
-  int rank  = MPI::COMM_WORLD.Get_rank();
-  int nproc = MPI::COMM_WORLD.Get_size();
-
-  // run tests only if there are more than 1 proc
-  ASSERT_GT(nproc, 1);
-
   SourceChannel ch1(&link_, 0);
   SourceChannel ch2(&link_, 0);
   SinkChannel   ch3(&link_, 0);
@@ -16,6 +10,10 @@ TEST_F(ChannelTests, ChannelSetup) {
   ASSERT_GT(ch2.getId(), ch1.getId());
   ASSERT_GT(ch3.getId(), ch2.getId());
   ASSERT_GT(ch3.getId(), ch1.getId());
+
+  ASSERT_NE(ch1.getTag(ch1.req), ch2.getTag(ch2.req));
+  ASSERT_NE(ch2.getTag(ch2.req), ch3.getTag(ch3.req));
+  ASSERT_NE(ch3.getTag(ch3.req), ch1.getTag(ch1.req));
 }
 
 static void dispatch_msg(SourceChannel* ch) {
@@ -29,6 +27,11 @@ static void dispatch_msg(SourceChannel* ch) {
 }
 
 TEST_F(ChannelTests, SourceChannel) {
+  // run tests only if there are more than 1 proc
+  if (MPI::COMM_WORLD.Get_size() <= 1) {
+    return;
+  }
+
   int rank  = MPI::COMM_WORLD.Get_rank();
   int nproc = MPI::COMM_WORLD.Get_size();
 
@@ -56,6 +59,11 @@ TEST_F(ChannelTests, SourceChannel) {
 }
 
 static void gather_msg(SinkChannel* ch) {
+  // run tests only if there are more than 1 proc
+  if (MPI::COMM_WORLD.Get_size() <= 1) {
+    return;
+  }
+
   int rank  = MPI::COMM_WORLD.Get_rank();
   int nproc = MPI::COMM_WORLD.Get_size();
   int counter = 0;
@@ -77,6 +85,11 @@ static void gather_msg(SinkChannel* ch) {
 }
 
 TEST_F(ChannelTests, SinkChannel) {
+  // run tests only if there are more than 1 proc
+  if (MPI::COMM_WORLD.Get_size() <= 1) {
+    return;
+  }
+
   int rank  = MPI::COMM_WORLD.Get_rank();
   int nproc = MPI::COMM_WORLD.Get_size();
 

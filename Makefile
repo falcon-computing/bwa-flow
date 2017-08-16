@@ -55,14 +55,16 @@ GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := $(BIN_DIR)/bwa
-MPIPROG	 := $(BIN_DIR)/bwa-mpi
 TESTPROG := $(TEST_DIR)/bwa-test
 
 
 ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
+TESTOPT  := GLOG_v=3 \
+						GLOG_alsologtostderr=1
 else
 CFLAGS   := $(CFLAGS) -DNDEBUG
+TESTOPT  := 
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -123,23 +125,21 @@ LMDEPS 	 	:= $(FLMDIR)/license.o \
 		   $(FLMDIR)/lm_new.o
 endif 
 
-all:	$(PROG) $(TESTPROG)
+all:	$(PROG) $(TESTPROG) $(MPIPROG)
 
 scaleout: $(MPIPROG)
 
 test:	$(TESTPROG)
 
 runtest: 
-	GLOG_v=3 \
-	GLOG_alsologtostderr=1 \
+	$(TESTOPT) \
 	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
-	$(TESTPROG) --gtest_filter=-ChannelTests.* \
+	$(TESTPROG)  \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 runmpitest: 
-	GLOG_v=3 \
-	GLOG_alsologtostderr=1 \
+	$(TESTOPT) \
 	GLOG_log_dir=$(TEST_DIR) \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(OPENMPI_DIR)/bin/mpirun -np 4 \

@@ -4,6 +4,7 @@
 #include <boost/thread/lockable_adapter.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread.hpp>
+#include <gtest/gtest_prod.h>
 #include <unordered_set>
 
 #include "mpi.h"
@@ -35,22 +36,23 @@ class Channel
   virtual void send(const char* data, int length) = 0;
   virtual void* recv(int & length) = 0;
 
-  int getId() { return id_; }
-
   // separate two finish var because sometimes sender 
   // and receiver share the same channel object
   bool sendFinished() { return is_send_finished_; }
   bool recvFinished() { return is_recv_finished_; }
   
  protected:
-  
+  FRIEND_TEST(ChannelTests, ChannelSetup); 
+
   enum Msg {
     req    = 0,
     length = 1,
     data   = 2,
     MsgMax = data
   };
+
   int getTag(Msg m);
+  int getId() { return id_; }
 
   // static channel id
   int id_;

@@ -84,7 +84,9 @@ class PipelineTests : public BaseTests {
 class MPITests : public ::testing::Test {
  protected:
   virtual void SetUp() {
-    MPI::COMM_WORLD.Barrier();
+    if (MPI::COMM_WORLD.Get_size() > 1) {
+      MPI::COMM_WORLD.Barrier();
+    }
   }
   MPILink link_;
 };

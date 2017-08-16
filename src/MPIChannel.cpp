@@ -31,7 +31,7 @@ void MPILink::send(MPI::Intercomm comm,
     boost::lock_guard<MPILink> guard(*this);
     req = comm.Isend(buf, count,
         datatype, dest, tag);
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Send to " << dest 
+    DLOG_IF(INFO, VLOG_IS_ON(4)) << "Send to " << dest 
                << " from " << MPI::COMM_WORLD.Get_rank()
                << " tag: " << tag;
   }
@@ -50,7 +50,7 @@ void MPILink::recv(MPI::Intercomm comm, void* buf,
     req = comm.Irecv(buf, count,
         datatype, source, tag);
 
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Recv from " << source 
+    DLOG_IF(INFO, VLOG_IS_ON(4)) << "Recv from " << source 
                << " to " << MPI::COMM_WORLD.Get_rank()
                << " tag: " << tag;
   }
