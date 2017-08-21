@@ -364,7 +364,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
     bool reach_half = false;
     bool reach_end = false;
     while (i < batch_num) {
-
       if (task_num < chunk_size/2) {
         SWTask* task = task_queue.front();
         packReadData(aux, seqs+i, chains+i, alnreg+i, 
@@ -426,7 +425,8 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_num = 0;
         kernel_buffer_idx = 0;
         reach_half = false;
-        if (i == batch_num -1) {
+
+        if (i == batch_num - 1) {
           reach_end = true;
         }
         else {

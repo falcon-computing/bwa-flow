@@ -83,7 +83,7 @@ void freeAligns(mem_alnreg_v* alnreg, int batch_num) {
 void freeSeqs(bseq1_t* seqs, int batch_num) {
   for (int i = 0; i < batch_num; i++) {
     free(seqs[i].name); 
-    free(seqs[i].comment);
+    if (seqs[i].comment) free(seqs[i].comment);
     free(seqs[i].seq); 
     free(seqs[i].qual); 
 #ifdef USE_HTSLIB
