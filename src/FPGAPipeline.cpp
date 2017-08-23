@@ -140,17 +140,7 @@ inline void getChainRef(
     }
     // retrieve the reference sequence
     int rid;
-#ifndef XILINX_FPGA
-    rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-    assert(c->rid == rid);
-
-    srt = (uint64_t *)malloc(c->n * 8);
-    for (int l = 0; l < c->n; ++l)
-      srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
-    ks_introsort_64(c->n, srt);
-#else
     rseq = bns_fetch_seq_fpga(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-#endif
 
     ref[j].rmax[0] = rmax[0];
     ref[j].rmax[1] = rmax[1];
@@ -210,35 +200,13 @@ inline void packReadData(ktp_aux_t* aux,
     buffer_idx += 8;
     *((int64_t*)(&buffer[buffer_idx]))= ref[chain_idx].rmax[1];
     buffer_idx += 8;
-#ifndef XILINX_FPGA
-    for ( int i = 0; i < ref[chain_idx].rmax[1] - ref[chain_idx].rmax[0]; i++) {
-      counter8 = counter8 + 1;
-      tmp_int = tmp_int << 4 | ref[chain_idx].rseq[i];
-      if ( counter8 % 8 ==0 ) {
-        *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
-        buffer_idx += 4 ;
-      }
-    } 
-    if (counter8 % 8 !=0 ) {
-      tmp_int = tmp_int << (4*(8 - counter8 % 8));
-      *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
-      buffer_idx += 4 ;
-    }
-    counter8 = 0;
-#endif
     // record the address of seed number
     seed_num_addr = buffer_idx ;
     seed_num = 0;
     buffer_idx += 4 ; 
     // pack the seed information
     for (int seed_idx = chains->a[chain_idx].n -1 ; seed_idx >= 0 ; seed_idx--) {
-#ifndef XILINX_FPGA
-      uint32_t sorted_idx = (uint32_t)(ref[chain_idx].srt[seed_idx]);
-      // get next available seed in the current read
-      mem_seed_t* seed_array = &chains->a[chain_idx].seeds[sorted_idx];
-#else
       mem_seed_t* seed_array = &chains->a[chain_idx].seeds[seed_idx];
-#endif
       if (seed_array->qbeg > 0 ||
           seed_array->qbeg + seed_array->len != seq->l_seq) {
 
@@ -256,8 +224,6 @@ inline void packReadData(ktp_aux_t* aux,
         buffer_idx += 4;
       }
       else {
-        // no need to loop again 
-        //alnregs->a[region_num].seedcov = seed_array->len;
         // need to loop again 
         int seedcov = 0;
         for (int i =0; i < chains->a[chain_idx].n; i++ ) {
@@ -277,25 +243,10 @@ inline void packReadData(ktp_aux_t* aux,
   *((int*)(&buffer[chain_num_addr])) = chain_num ;
   *((int*)(&buffer[idx_end_addr])) = buffer_idx/4 ;
 
-#ifndef XILINX_FPGA
-  for (int i=0; i< chains->n; i++) {
-    free(ref[i].srt);
-    free(ref[i].rseq);
-  }
-#endif
   free(ref);
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
-  // set thread affinity
-  cpu_set_t cpuset;
-  pthread_t thread;
-  thread = pthread_self();
-  CPU_ZERO(&cpuset);
-  CPU_SET(0, &cpuset);
-  CPU_SET(1, &cpuset);
-  int rc = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
-
   int chunk_size = FLAGS_chunk_size;
 
   int stage_cnt = 0;

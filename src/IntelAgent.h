@@ -4,7 +4,7 @@
 
 class IntelAgent : public FPGAAgent {
  public:
-  IntelAgent(OpenCLEnv* env);
+  IntelAgent(BWAOCLEnv* env, SWTask* task);
   ~IntelAgent();
 
   void writeInput(cl_mem buf, void* host_ptr, int size, int bank);

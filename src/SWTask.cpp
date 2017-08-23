@@ -2,7 +2,7 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "OpenCLEnv.h"
+#include "BWAOCLEnv.h"
 #include "SWTask.h"
 
 #ifdef INTEL_FPGA
@@ -26,48 +26,32 @@ inline void *sw_malloc(size_t size, int data_width) {
 #endif
 
 
-SWTask::SWTask(OpenCLEnv* env, int chunk_size) {
-#ifdef INTEL_FPGA
-  agent_ = new IntelAgent(env);
-#elif XILINX_FPGA
-  agent_ = new XCLAgent(env);
-#endif
-
+SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   max_i_size_ = 32*1024*1024;
   max_o_size_ = 2*chunk_size*FPGA_RET_PARAM_NUM;
-
-#ifdef XILINX_FPGA
-  cl_mem_ext_ptr_t ext_a, ext_b;
-  ext_a.flags = XCL_MEM_DDR_BANK0; ext_a.obj = 0; ext_a.param = 0;
-  ext_b.flags = XCL_MEM_DDR_BANK2; ext_b.obj = 0; ext_b.param = 0;
-  i_buf[0] = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*max_i_size_, &ext_a, NULL);
-  i_buf[1] = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*max_i_size_, &ext_b, NULL);
-  o_buf[0] = clCreateBuffer(opencl_env->getContext(), CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*max_o_size_, &ext_a, NULL);
-  o_buf[1] = clCreateBuffer(opencl_env->getContext(), CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*max_o_size_, &ext_b, NULL);
-  for (int k = 0; k < 2; k++) {
-    i_size[k] = 0;
-    o_size[k] = 0;
-
-    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
-    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
-  }
-#elif INTEL_FPGA
-  for (int k = 0; k < 2; k++) {
-    i_size[k] = 0;
-    o_size[k] = 0;
-
-    // host buffer 
-    i_buf[k]  = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY, sizeof(int)*max_i_size_, NULL, NULL);
-    o_buf[k]  = clCreateBuffer(opencl_env->getContext(), CL_MEM_WRITE_ONLY, sizeof(int)*max_o_size_, NULL, NULL);
-
-    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
-    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
-  }
+#ifdef INTEL_FPGA
+  agent_ = new IntelAgent(env, this);
+#elif XILINX_FPGA
+  agent_ = new XCLAgent(env, this);
 #endif
+
+//#ifdef XILINX_FPGA
+  for (int k = 0; k < 2; k++) {
+    i_size[k] = 0;
+    o_size[k] = 0;
+
+    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
+    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
+  }
+//#elif INTEL_FPGA
+//  for (int k = 0; k < 2; k++) {
+//    i_size[k] = 0;
+//    o_size[k] = 0;
+//
+//    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
+//    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
+//  }
+//#endif
   region_batch = new mem_alnreg_t*[2*chunk_size];
   chain_batch  = new mem_chain_t*[2*chunk_size];
 }

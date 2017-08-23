@@ -6,7 +6,7 @@
 #include "XCLAgent.h"
 #include "SWTask.h"
 
-XCLAgent::XCLAgent(OpenCLEnv* env) {
+XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task) {
 
   cl_context context_ = env->getContext();
 
@@ -24,6 +24,17 @@ XCLAgent::XCLAgent(OpenCLEnv* env) {
     throw std::runtime_error("Failed to create kernel");
   }
   env_ = env;
+  cl_mem_ext_ptr_t ext_a, ext_b;
+  ext_a.flags = XCL_MEM_DDR_BANK0; ext_a.obj = 0; ext_a.param = 0;
+  ext_b.flags = XCL_MEM_DDR_BANK2; ext_b.obj = 0; ext_b.param = 0;
+  task->i_buf[0] = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+      sizeof(int)*task->max_i_size_, &ext_a, NULL);
+  task->i_buf[1] = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+      sizeof(int)*task->max_i_size_, &ext_b, NULL);
+  task->o_buf[0] = clCreateBuffer(context_, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
+      sizeof(int)*task->max_o_size_, &ext_a, NULL);
+  task->o_buf[1] = clCreateBuffer(context_, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
+      sizeof(int)*task->max_o_size_, &ext_b, NULL);
 }
 
 XCLAgent::~XCLAgent() {
@@ -89,15 +100,11 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     wait_list[2] = write_events_[1];
     uint64_t start_ts_compute = getUs();
     if (task->i_size[1] > 0) {
-      err = clWaitForEvents(3, wait_list);
-      //err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
-      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clWaitForEvents(2, wait_list);
-      //err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
-      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
       valid_2nd_event_ = false;
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Enqueue compute task takes " <<
@@ -105,15 +112,11 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   }
   else {
     if (task->i_size[1] > 0) {
-      err = clWaitForEvents(2, write_events_);
-      //err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
-      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clWaitForEvents(1, write_events_);
-      //err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
-      err = clEnqueueTask(cmd_, kernel_, 0, NULL, &kernel_event_);
+      err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
       valid_2nd_event_ = false;
     }
   }

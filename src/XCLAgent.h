@@ -4,7 +4,7 @@
 
 class XCLAgent : public FPGAAgent {
  public:
-  XCLAgent(OpenCLEnv* env);
+  XCLAgent(BWAOCLEnv* env, SWTask* task);
   ~XCLAgent();
 
   void writeInput(cl_mem buf, void* host_ptr, int size, int bank);
@@ -17,7 +17,7 @@ class XCLAgent : public FPGAAgent {
   cl_command_queue cmd_;
   cl_event         kernel_event_;
   cl_event         write_events_[2];
-  OpenCLEnv*       env_;
+  BWAOCLEnv*       env_;
   bool             valid_2nd_event_;
 };
 

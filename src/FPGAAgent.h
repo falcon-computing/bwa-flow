@@ -4,7 +4,7 @@
 #include <boost/thread/lockable_adapter.hpp>
 
 #include "bwa_wrapper.h"
-#include "OpenCLEnv.h"
+#include "BWAOCLEnv.h"
 
 class SWTask;
 

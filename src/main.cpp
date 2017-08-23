@@ -41,7 +41,7 @@
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
 #include "FPGAPipeline.h"
-OpenCLEnv* opencl_env;
+BWAOCLEnv* opencl_env;
 #endif
 
 // use flexlm
@@ -358,8 +358,8 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
-      opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
-      //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+      opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
+          "/pool/storage/yaoh/human_g1k_v37.fasta.pac", "sw_top");
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
         << FLAGS_fpga_path;
     }
