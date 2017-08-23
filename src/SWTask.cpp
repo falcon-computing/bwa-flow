@@ -34,8 +34,6 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 #elif XILINX_FPGA
   agent_ = new XCLAgent(env, this);
 #endif
-
-//#ifdef XILINX_FPGA
   for (int k = 0; k < 2; k++) {
     i_size[k] = 0;
     o_size[k] = 0;
@@ -43,15 +41,6 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
     i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
     o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
   }
-//#elif INTEL_FPGA
-//  for (int k = 0; k < 2; k++) {
-//    i_size[k] = 0;
-//    o_size[k] = 0;
-//
-//    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
-//    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
-//  }
-//#endif
   region_batch = new mem_alnreg_t*[2*chunk_size];
   chain_batch  = new mem_chain_t*[2*chunk_size];
 }
