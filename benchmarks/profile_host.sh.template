@@ -1,0 +1,7 @@
+tmp_dir=
+ref_dir=
+input_dir=
+ref_genome=$ref_dir/human_g1k_v37.fasta
+
+bwa=../bin/bwa
+bwa_options=
