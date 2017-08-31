@@ -15,6 +15,7 @@
 
 #include "mpi.h"
 #include "MPIChannel.h"
+#include "util.h"
 
 bool MPILink::query(MPI::Request &req) {
   boost::lock_guard<MPILink> guard(*this);
@@ -140,10 +141,16 @@ void SourceChannel::send(const char* data, int length) {
 
   link_->recv(MPI::COMM_WORLD, &req_id, 1, 
       MPI::INT, MPI::ANY_SOURCE, getTag(Msg::req));
+  
   link_->send(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, req_id, getTag(Msg::length));
+
+  uint64_t start_ts = getUs();
   link_->send(MPI::COMM_WORLD, data, length, 
       MPI::CHAR, req_id, getTag(Msg::data));
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Send "
+    << length << " bytes takes " 
+    << getUs() - start_ts << " us";
 }
 
 void SourceChannel::retire() {
@@ -171,17 +178,23 @@ void* SourceChannel::recv(int & length) {
       MPI::INT, source_rank_, getTag(Msg::req));
 
   //DLOG_IF(INFO, VLOG_IS_ON(2)) << __func__ << ":" << "receiving from " << source_rank_;
-
   link_->recv(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, source_rank_, getTag(Msg::length));
+
 
   if (length > 0) {
     // allocate return buffer for data
     // allow one extra 0 for c strings
     void* data = calloc(length+1, 1);
 
+    uint64_t start_ts = getUs();
+
     link_->recv(MPI::COMM_WORLD, data, length, 
         MPI::CHAR, source_rank_, getTag(Msg::data));
+
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Recv "
+      << length << " bytes takes " 
+      << getUs() - start_ts << " us";
 
     return data;
   }
@@ -210,8 +223,13 @@ void SinkChannel::send(const char* data, int length) {
   DLOG_IF(INFO, VLOG_IS_ON(2)) << __func__ << ":" << "sending to " << sink_rank_;
   link_->send(MPI::COMM_WORLD, &length, 1, 
       MPI::INT, sink_rank_, getTag(Msg::length));
+
+  uint64_t start_ts = getUs();
   link_->send(MPI::COMM_WORLD, data, length, 
       MPI::CHAR, sink_rank_, getTag(Msg::data));
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Send "
+    << length << " bytes takes " 
+    << getUs() - start_ts << " us";
 }
 
 void* SinkChannel::recv(int & length) {
@@ -238,7 +256,11 @@ void* SinkChannel::recv(int & length) {
     // allow one extra 0 for c strings
     void* data = calloc(length+1, 1);
 
+    uint64_t start_ts = getUs();
     link_->recv(MPI::COMM_WORLD, data, length, MPI::CHAR, req_id, getTag(Msg::data));
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Recv "
+      << length << " bytes takes " 
+      << getUs() - start_ts << " us";
 
     return data;
   }

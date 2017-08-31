@@ -313,7 +313,7 @@ int main(int argc, char *argv[]) {
   double t_real = realtime();
 
   // setup pipelines
-#if 0
+#if 1
   kestrelFlow::Pipeline compute_flow(7, FLAGS_t);
 
   kestrelFlow::Pipeline send_flow(1, 1);
@@ -337,22 +337,54 @@ int main(int argc, char *argv[]) {
 
     compute_flow.diverge(send_flow, 2);
     compute_flow.converge(recv_flow, 4);
-  }
-  else {
-    region_flow.addStage(0, &chn_recv_stage);
-    region_flow.addStage(1, &chain2reg_stage);
-    region_flow.addStage(2, &reg_send_stage);
-  }
 
-  if (rank == 0) {
     compute_flow.start();
     send_flow.start();
     recv_flow.start();
     compute_flow.wait();
   }
   else {
+#ifdef BUILD_FPGA
+    kestrelFlow::Pipeline fpga_flow(2, 1);
+
+    // Stages for FPGA acceleration of stage_2
+    ChainsPipeFPGA      chainpipe_fpga_stage; // push through
+    ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+#endif
+
+    region_flow.addStage(0, &chn_recv_stage);
+    region_flow.addStage(1, &chain2reg_stage);
+    region_flow.addStage(2, &reg_send_stage);
+
     region_flow.start();
+
+    // setup FPGA
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      try {
+        opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
+        //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+          << FLAGS_fpga_path;
+      }
+      catch (std::runtime_error &e) {
+        LOG(ERROR) << "Cannot configure FPGA bitstream";
+        DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
+        DLOG(ERROR) << "because: " << e.what();
+        return 1;
+      }
+      fpga_flow.addStage(0, &chainpipe_fpga_stage);
+      fpga_flow.addStage(1, &chain2reg_fpga_stage);
+
+      // bind the input/output queue of stage_2 in compute_flow
+      fpga_flow.branch(region_flow, 1);
+
+      fpga_flow.start();
+      fpga_flow.wait();
+    }
+
     region_flow.wait();
+
+    delete opencl_env;
   }
 #else
   kestrelFlow::Pipeline scatter_flow(3, 3);

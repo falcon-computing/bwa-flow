@@ -41,7 +41,7 @@ class SendStage : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
         // dispatch data to slaves
         ch_->send(ser_data.c_str(), length);
 
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Sending " << input.name << "-"
+        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Sending " << input.name << "-"
           << input.start_idx
           << " takes " << getUs() - start_ts << " us";
       }
@@ -79,7 +79,7 @@ class RecvStage : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
         deserialize(ser_data, length, output);
         free(ser_data);
 
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Receive " << output.name 
+        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Receive " << output.name 
           << "-" << output.start_idx 
           << " in " << getUs() - start_ts << " us";
 
