@@ -33,6 +33,7 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
   int actual_tasks = 0;
 
   uint64_t start_ts = getUs();
+  bool wrong_results = false;
   for (int k = 0; k < 2; k++) {
     int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
     short* kernel_output = task->o_data[k];
@@ -50,6 +51,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
       if (seed_idx > total_task_num || seed_idx < 0) {
         DLOG(ERROR) << "task_num = " << i << " "
                     << "seed_idx = " << seed_idx << " ";
+        wrong_results = true;
+        goto error;
       }
 
       newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
@@ -74,13 +77,28 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
       }
       newreg->seedcov = seedcov;
     }
-    // reset
-    task->i_size[k] = 0;
-    task->o_size[k] = 0;
   }
 
   if (total_task_num != actual_tasks + 1) {
     DLOG(ERROR) << "problem with seedindex";
+    wrong_results = true;
+  }
+error: 
+  if (wrong_results) {
+    // dump results   
+    FILE* fout = fopen("dump-input.dat", "wb+");
+    for (int k = 0; k < 2; k++) {
+      fwrite(task->i_data[k], sizeof(char), task->i_size[k], fout);
+    }
+    fclose(fout);
+    DLOG(INFO) << "dump input data to dump-input.dat";
+    throw std::runtime_error("wrong fpga results");
+  }
+
+  // reset
+  for (int k = 0; k < 2; k++) {
+    task->i_size[k] = 0;
+    task->o_size[k] = 0;
   }
 
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Total " << actual_tasks << " tasks in output";
@@ -401,10 +419,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
                 task_num << " tasks takes " << 
                 getUs() - last_batch_ts << " us";
 
-        uint64_t output_ts = getUs();
+        uint64_t start_ts = getUs();
 
         // start sending task to FPGA
         task->start(task_queue[1]);
+
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting task on FPGA takes " << 
+              getUs()- start_ts << " us";
 
         // circulate the task
         task_queue.push_back(task);
@@ -489,8 +510,8 @@ void ChainsToRegionsFPGA::compute(int wid) {
     SWTask* task = task_queue.front();
 
     for (int k = 0; k < 2; k++) {
-      clReleaseMemObject(task->i_buf[k]);
-      clReleaseMemObject(task->o_buf[k]);
+      //clReleaseMemObject(task->i_buf[k]);
+      //clReleaseMemObject(task->o_buf[k]);
       free(task->i_data[k]);
       free(task->o_data[k]);
     }
