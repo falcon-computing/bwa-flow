@@ -46,6 +46,24 @@ void Pipeline::branch(Pipeline& pipeline, int idx) {
   stages_[num_stages_-1]->linkStage(pipeline.stages_[idx+1]);
 }
 
+void Pipeline::converge(Pipeline& pipeline, int idx) {
+  // connect the output queue of pipeline to stage[idx]'s input
+  pipeline.queues_[pipeline.num_stages_] = queues_[idx];
+  pipeline.stages_[pipeline.num_stages_-1]->output_queue_ = queues_[idx];
+
+  // link the output stage of pipeline to stage[idx]
+  pipeline.stages_[pipeline.num_stages_-1]->linkStage(stages_[idx]);
+}
+
+void Pipeline::diverge(Pipeline& pipeline, int idx) {
+  // connect the input queue of pipeline to stage[idx]'s output
+  pipeline.queues_[0] = queues_[idx+1];
+  pipeline.stages_[0]->input_queue_ = queues_[idx+1];
+
+  // link the input stage of pipeline to stage[idx]
+  stages_[idx]->linkStage(pipeline.stages_[0]);
+}
+
 void Pipeline::finalize() {
   stages_[0]->final();
   DLOG(INFO) << "Finalized first stage";

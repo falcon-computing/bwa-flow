@@ -46,7 +46,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
         actual_tasks = seed_idx;
       }
       mem_alnreg_t *newreg = region_batch[seed_idx];
-      if (seed_idx > total_task_num || !newreg) {
+
+      if (seed_idx > total_task_num || seed_idx < 0) {
         DLOG(ERROR) << "task_num = " << i << " "
                     << "seed_idx = " << seed_idx << " ";
       }
@@ -360,8 +361,8 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
     int i = 0;
     bool reach_half = false;
+    bool reach_end  = false;
     while (i < batch_num) {
-
       if (task_num < chunk_size/2) {
         SWTask* task = task_queue.front();
         packReadData(aux, seqs+i, chains+i, alnreg+i, 
@@ -423,25 +424,32 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_num = 0;
         kernel_buffer_idx = 0;
         reach_half = false;
+
+        if (i == batch_num - 1) {
+          reach_end = true;
+        }
+        else {
+          reach_end = false;
+        }
       }
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting the remaining tasks";
 
     // finish the remain reads even with small task number 
-    SWTask* task = task_queue.front();
-    if (task_num < chunk_size/2) {
-      task->i_size[0] = kernel_buffer_idx/sizeof(int);
-      task->i_size[1] = 0;
-      task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
-      task->o_size[1] = 0;
+    if (!reach_end) {
+      SWTask* task = task_queue.front();
+      if (task_num < chunk_size/2 || reach_half == false) {
+        task->i_size[0] = kernel_buffer_idx/sizeof(int);
+        task->i_size[1] = 0;
+        task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
+        task->o_size[1] = 0;
+      }
+      else {
+        task->i_size[1] = kernel_buffer_idx/sizeof(int);
+        task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
+      }
+      task->start(task_queue[1]);
     }
-    //else if (task_num < chunk_size) {
-    else {
-      task->i_size[1] = kernel_buffer_idx/sizeof(int);
-      task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
-    }
-
-    task->start(task_queue[1]);
 
     for (int iter = 0; iter < 2; iter++) {
       SWTask* task = task_queue.front();
