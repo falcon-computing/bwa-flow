@@ -46,7 +46,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
         actual_tasks = seed_idx;
       }
       mem_alnreg_t *newreg = region_batch[seed_idx];
-      if (seed_idx > total_task_num || !newreg) {
+
+      if (seed_idx > total_task_num || seed_idx < 0) {
         DLOG(ERROR) << "task_num = " << i << " "
                     << "seed_idx = " << seed_idx << " ";
       }
