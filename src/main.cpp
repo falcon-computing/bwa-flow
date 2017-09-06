@@ -102,7 +102,7 @@ DEFINE_bool(sort, true,
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
 
-DEFINE_string(pac_path, "/pool/storage/yaoh/human_g1k_v37.fasta.pac",
+DEFINE_string(pac_path, "",
     "File path of the modified reference pac file");
 
 DEFINE_int32(chunk_size, 2000,
