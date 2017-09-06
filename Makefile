@@ -89,6 +89,11 @@ INCLUDES := $(INCLUDES) \
 LIBS	 := $(LIBS) \
 	    $(shell aocl link-config )
 else 
+
+ifeq ($(XILINX_SDX),)
+XILINX_SDX := $(XILINX_OPENCL)
+endif
+
 CFLAGS 	 := $(CFLAGS) -DXILINX_FPGA
 INCLUDES := $(INCLUDES) \
 	-I$(XILINX_SDX)/runtime/include/1_2 

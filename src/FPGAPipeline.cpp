@@ -33,6 +33,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
   int actual_tasks = 0;
 
   uint64_t start_ts = getUs();
+  bool wrong_results = false;
+  int wrong_half = -1;
   for (int k = 0; k < 2; k++) {
     int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
     short* kernel_output = task->o_data[k];
@@ -46,9 +48,13 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
         actual_tasks = seed_idx;
       }
       mem_alnreg_t *newreg = region_batch[seed_idx];
-      if (seed_idx > total_task_num || !newreg) {
+
+      if (seed_idx > total_task_num || seed_idx < 0) {
         DLOG(ERROR) << "task_num = " << i << " "
                     << "seed_idx = " << seed_idx << " ";
+        wrong_results = true;
+        wrong_half = k;
+        goto error;
       }
 
       newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
@@ -80,6 +86,23 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
 
   if (total_task_num != actual_tasks + 1) {
     DLOG(ERROR) << "problem with seedindex";
+    wrong_results = true;
+  }
+error: 
+  if (wrong_results) {
+    // dump results   
+    FILE* fout = fopen("dump-input.dat", "wb+");
+    int k = wrong_half;
+    fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
+    fclose(fout);
+    DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
+    throw std::runtime_error("wrong fpga results");
+  }
+
+  // reset
+  for (int k = 0; k < 2; k++) {
+    task->i_size[k] = 0;
+    task->o_size[k] = 0;
   }
 
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Total " << actual_tasks << " tasks in output";
@@ -200,10 +223,12 @@ inline void packReadData(ktp_aux_t* aux,
     buffer_idx += 8;
     *((int64_t*)(&buffer[buffer_idx]))= ref[chain_idx].rmax[1];
     buffer_idx += 8;
+
     // record the address of seed number
     seed_num_addr = buffer_idx ;
     seed_num = 0;
     buffer_idx += 4 ; 
+
     // pack the seed information
     for (int seed_idx = chains->a[chain_idx].n -1 ; seed_idx >= 0 ; seed_idx--) {
       mem_seed_t* seed_array = &chains->a[chain_idx].seeds[seed_idx];
