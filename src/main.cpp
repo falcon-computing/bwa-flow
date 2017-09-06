@@ -302,7 +302,8 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline scatter_flow(2, 0);
   kestrelFlow::Pipeline gather_flow(2, 0);
 #endif
-  int num_threads = FLAGS_t - FLAGS_max_fpga_thread - FLAGS_extra_thread;
+  int num_threads = FLAGS_t - FLAGS_extra_thread;
+  if (FLAGS_use_fpga)  num_threads -= FLAGS_max_fpga_thread;
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads in total";

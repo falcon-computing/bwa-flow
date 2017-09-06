@@ -14,10 +14,11 @@ XCLAgent::XCLAgent(OpenCLEnv* env) {
   cl_device_id  device_id = env->getDeviceId();
   cl_program    program   = env->getProgram();
 
-  cmd_ = clCreateCommandQueue(context_, device_id, 0, &err);
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to create a command queue context");
-  }
+  cmd_ = env->getCmdQueue();
+  //cmd_ = clCreateCommandQueue(context_, device_id, 0, &err);
+  //if (err != CL_SUCCESS) {
+  //  throw std::runtime_error("Failed to create a command queue context");
+  //}
   
   kernel_ = clCreateKernel(program, "sw_top", &err);
   if (err != CL_SUCCESS) {
