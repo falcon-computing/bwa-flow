@@ -163,13 +163,7 @@ inline void getChainRef(
     }
     // retrieve the reference sequence
     int rid;
-    rseq = bns_fetch_seq(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-    assert(c->rid == rid);
-
-    srt = (uint64_t *)malloc(c->n * 8);
-    for (int l = 0; l < c->n; ++l)
-      srt[l] = (uint64_t)c->seeds[l].score<<32 | l;
-    ks_introsort_64(c->n, srt);
+    rseq = bns_fetch_seq_fpga(aux->idx->bns, aux->idx->pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
 
     ref[j].rmax[0] = rmax[0];
     ref[j].rmax[1] = rmax[1];
@@ -192,29 +186,6 @@ inline void packReadData(ktp_aux_t* aux,
   int seed_idx = chains->a[0].n - 1;
   getChainRef(aux, seq, chains, ref);
 
-  for (int chain_idx = 0; 
-       chain_idx < chains->n; 
-       seed_idx > 0 ? seed_idx-- : seed_idx = chains->a[++chain_idx].n-1)
-  {
-      uint32_t sorted_idx = (uint32_t)(ref[chain_idx].srt[seed_idx]);
-
-    // get next available seed in the current read
-      mem_seed_t* seed_array = &chains->a[chain_idx].seeds[sorted_idx];
-      // initialize the newreg
-      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, *alnregs);
-      memset(newreg, 0, sizeof(mem_alnreg_t));
-
-      newreg->score  = seed_array->len * aux->opt->a;
-      newreg->truesc = seed_array->len * aux->opt->a;
-      newreg->qb = seed_array->qbeg;
-      newreg->rb = seed_array->rbeg;
-      newreg->qe = seed_array->qbeg + seed_array->len;
-      newreg->re = seed_array->rbeg + seed_array->len; 
-      newreg->rid = chains->a[chain_idx].rid;
-      newreg->seedlen0 = seed_array->len; 
-      newreg->frac_rep = chains->a[chain_idx].frac_rep;
-      newreg->w = aux->opt->w;
-  }
   int counter8 = 0;
   int tmp_int = 0;
   int chain_num = 0;
@@ -252,21 +223,6 @@ inline void packReadData(ktp_aux_t* aux,
     buffer_idx += 8;
     *((int64_t*)(&buffer[buffer_idx]))= ref[chain_idx].rmax[1];
     buffer_idx += 8;
-    
-    for ( int i = 0; i < ref[chain_idx].rmax[1] - ref[chain_idx].rmax[0]; i++) {
-      counter8 = counter8 + 1;
-      tmp_int = tmp_int << 4 | ref[chain_idx].rseq[i];
-      if ( counter8 % 8 ==0 ) {
-        *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
-        buffer_idx += 4 ;
-      }
-    } 
-    if (counter8 % 8 !=0 ) {
-      tmp_int = tmp_int << (4*(8 - counter8 % 8));
-      *(uint32_t*) (&buffer[buffer_idx]) = tmp_int ;
-      buffer_idx += 4 ;
-    }
-    counter8 = 0;
 
     // record the address of seed number
     seed_num_addr = buffer_idx ;
@@ -275,10 +231,7 @@ inline void packReadData(ktp_aux_t* aux,
 
     // pack the seed information
     for (int seed_idx = chains->a[chain_idx].n -1 ; seed_idx >= 0 ; seed_idx--) {
-      uint32_t sorted_idx = (uint32_t)(ref[chain_idx].srt[seed_idx]);
-      // get next available seed in the current read
-      mem_seed_t* seed_array = &chains->a[chain_idx].seeds[sorted_idx];
-     
+      mem_seed_t* seed_array = &chains->a[chain_idx].seeds[seed_idx];
       if (seed_array->qbeg > 0 ||
           seed_array->qbeg + seed_array->len != seq->l_seq) {
 
@@ -296,8 +249,16 @@ inline void packReadData(ktp_aux_t* aux,
         buffer_idx += 4;
       }
       else {
-        // no need to loop again 
-        alnregs->a[region_num].seedcov = seed_array->len;
+        // need to loop again 
+        int seedcov = 0;
+        for (int i =0; i < chains->a[chain_idx].n; i++ ) {
+          mem_seed_t *t = &chains->a[chain_idx].seeds[i];
+          if (t->qbeg >=0 && t->qbeg + t->len <=seq->l_seq &&
+              t->rbeg >= seed_array->rbeg && t->rbeg + t->len <= seed_array->rbeg + seed_array->len) {
+            seedcov += t->len;
+          }
+        }
+        alnregs->a[region_num].seedcov = seedcov;
       }
       region_num++;
     }
@@ -307,18 +268,12 @@ inline void packReadData(ktp_aux_t* aux,
   *((int*)(&buffer[chain_num_addr])) = chain_num ;
   *((int*)(&buffer[idx_end_addr])) = buffer_idx/4 ;
 
-  for (int i=0; i< chains->n; i++) {
-    free(ref[i].srt);
-    free(ref[i].rseq);
-  }
   free(ref);
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
-
   int chunk_size = FLAGS_chunk_size;
 
-  const int stage_num = 2;
   int stage_cnt = 0;
 
   // Create SWTasks
@@ -332,6 +287,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
   // elements of the Regions record
   bseq1_t* seqs;
   mem_chain_v* chains;
+  mem_alnreg_v* alnreg;
 
   int kernel_buffer_idx = 0;
   int task_num = 0;
@@ -378,15 +334,11 @@ void ChainsToRegionsFPGA::compute(int wid) {
     batch_num = record.batch_num;
     seqs = record.seqs;
     chains = record.chains;
-
-    mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(batch_num*sizeof(mem_alnreg_v));
-    for (int i = 0; i < batch_num; i++) {
-      kv_init(alnreg[i]);
-    }
+    alnreg = record.alnreg;
 
     int i = 0;
     bool reach_half = false;
-    bool reach_end  = false;
+    bool reach_end = false;
     while (i < batch_num) {
       if (task_num < chunk_size/2) {
         SWTask* task = task_queue.front();
@@ -473,6 +425,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task->i_size[1] = kernel_buffer_idx/sizeof(int);
         task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
       }
+
       task->start(task_queue[1]);
     }
 
@@ -486,7 +439,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         processOutput(task);
       }
     }
-    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Finished entire chunk";
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Finished entire batch";
 
     // reset for one batch
     task_num = 0;
@@ -527,3 +480,38 @@ void ChainsToRegionsFPGA::compute(int wid) {
     task_queue.pop_front();
   }
 }
+
+ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
+  uint64_t start_ts = getUs();
+  ChainsRecord output = record;
+  int batch_num = record.batch_num;
+  mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  mem_chain_v* chains = record.chains;
+  for (int i=0; i<batch_num; i++) {
+    int chain_idx = 0;
+    int seed_idx = chains[i].a[0].n -1;
+    kv_init(alnreg[i]);
+    for ( ; chain_idx < chains[i].n; 
+         seed_idx > 0 ? seed_idx-- : seed_idx = chains[i].a[++chain_idx].n-1) {
+      mem_seed_t* seed_array = &chains[i].a[chain_idx].seeds[seed_idx];
+      // initialize the newreg
+      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, alnreg[i]);
+      memset(newreg, 0, sizeof(mem_alnreg_t));
+      newreg->score  = seed_array->len * aux->opt->a;
+      newreg->truesc = seed_array->len * aux->opt->a;
+      newreg->qb = seed_array->qbeg;
+      newreg->rb = seed_array->rbeg;
+      newreg->qe = seed_array->qbeg + seed_array->len;
+      newreg->re = seed_array->rbeg + seed_array->len; 
+      newreg->rid = chains[i].a[chain_idx].rid;
+      newreg->seedlen0 = seed_array->len; 
+      newreg->frac_rep = chains[i].a[chain_idx].frac_rep;
+      newreg->w = aux->opt->w;
+    }
+  }
+  output.alnreg = alnreg;
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsPipeFPGA() on FPGA for "
+    << getUs() - start_ts << " us";
+  return output;
+}
+

@@ -161,11 +161,11 @@ class OpenCLEnv
     (*result)[size] = 0;
     return size;
   }
+ protected:
   cl_context    context_;      // compute context
   cl_device_id  device_id_;
   cl_program    program_;      // compute program
   cl_command_queue cmd_ = NULL;
 };
 
-extern OpenCLEnv* opencl_env;
 #endif

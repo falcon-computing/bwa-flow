@@ -3,12 +3,12 @@
 
 #include "bwa_wrapper.h"
 #include "FPGAAgent.h"
-#include "OpenCLEnv.h"
+#include "BWAOCLEnv.h"
 
 class SWTask {
 
  public:
-  SWTask(OpenCLEnv* env, int chunk_size);
+  SWTask(BWAOCLEnv* env, int chunk_size);
   ~SWTask();
 
   void start(SWTask* prev_task);
@@ -25,9 +25,9 @@ class SWTask {
   mem_alnreg_t**  region_batch;
   mem_chain_t**   chain_batch;
 
- private:
-  FPGAAgent* agent_;
   size_t     max_i_size_;
   size_t     max_o_size_;
+ private:
+  FPGAAgent* agent_;
 };
 #endif
