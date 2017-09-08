@@ -111,6 +111,9 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
+DEFINE_int32(extra_thread, 0,
+    "Adjustment to the total threads");
+
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
 
@@ -295,12 +298,7 @@ int main(int argc, char *argv[]) {
 	double t_real = realtime();
 
   int num_compute_stages = 3;
-  int num_fpga_threads = 0;
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread + 3;
-  }
-#endif
+
   if (FLAGS_offload) {
 #ifndef FPGA_TEST
     num_compute_stages = 7;
@@ -309,14 +307,11 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
-#ifdef SCALE_OUT
-  kestrelFlow::Pipeline scatter_flow(2, 0);
-  kestrelFlow::Pipeline gather_flow(2, 0);
-#endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, 
-                                     FLAGS_t - num_fpga_threads);
+  int num_threads = FLAGS_t - FLAGS_extra_thread;
+  if (FLAGS_use_fpga)  num_threads -= FLAGS_max_fpga_thread;
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
-  DLOG(INFO) << "Using " << FLAGS_t - num_fpga_threads << " threads in total";
+  DLOG(INFO) << "Using " << num_threads << " threads in total";
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
