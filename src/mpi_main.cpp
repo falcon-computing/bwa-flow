@@ -41,7 +41,7 @@
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
 #include "FPGAPipeline.h"
-OpenCLEnv* opencl_env;
+BWAOCLEnv* opencl_env;
 #endif
 
 #ifdef USELICENSE

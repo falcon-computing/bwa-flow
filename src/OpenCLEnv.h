@@ -126,6 +126,17 @@ class OpenCLEnv
     return program_;
   }
 
+  cl_command_queue getCmdQueue() {
+    if (!cmd_) {
+      cl_int err = 0;
+      cmd_ = clCreateCommandQueue(context_, device_id_, 0, &err);
+      if (err != CL_SUCCESS) {
+        throw std::runtime_error("Failed to create a command queue context");
+      }
+    }
+    return cmd_;
+  }
+
  private:
   int load_file(
       const char *filename, 
@@ -150,10 +161,11 @@ class OpenCLEnv
     (*result)[size] = 0;
     return size;
   }
+ protected:
   cl_context    context_;      // compute context
   cl_device_id  device_id_;
   cl_program    program_;      // compute program
+  cl_command_queue cmd_ = NULL;
 };
 
-extern OpenCLEnv* opencl_env;
 #endif

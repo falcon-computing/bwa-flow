@@ -444,3 +444,4 @@ uint8_t *bns_fetch_seq(const bntseq_t *bns, const uint8_t *pac, int64_t *beg, in
 	assert(seq && *end - *beg == len); // assertion failure should never happen
 	return seq;
 }
+

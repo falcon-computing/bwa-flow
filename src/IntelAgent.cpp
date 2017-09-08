@@ -6,7 +6,7 @@
 #include "IntelAgent.h"
 #include "SWTask.h"
 
-IntelAgent::IntelAgent(OpenCLEnv* env) {
+IntelAgent::IntelAgent(BWAOCLEnv* env, SWTask* task) {
 
   cl_context context_ = env->getContext();
 
@@ -30,6 +30,10 @@ IntelAgent::IntelAgent(OpenCLEnv* env) {
     kernels_[2*i+0] = clCreateKernel(program, kernel_in_name, &err);
     kernels_[2*i+1] = clCreateKernel(program, kernel_out_name, &err);
   }
+  for (int i = 0; i < 2; i++) {
+    task->i_buf[i]  = clCreateBuffer(context_, CL_MEM_READ_ONLY, sizeof(int)*task->max_i_size_, NULL, NULL);
+    task->o_buf[i]  = clCreateBuffer(context_, CL_MEM_WRITE_ONLY, sizeof(int)*task->max_o_size_, NULL, NULL);
+  }
 }
 
 IntelAgent::~IntelAgent() {
@@ -40,7 +44,7 @@ IntelAgent::~IntelAgent() {
 }
 
 void IntelAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
-  //boost::lock_guard<OpenCLEnv> guard(*env_);
+  //boost::lock_guard<BWAOCLEnv> guard(*env_);
   if (size == 0) return;
   uint64_t start_ts = getUs();
   //cl_event event;

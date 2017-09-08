@@ -41,7 +41,7 @@
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
 #include "FPGAPipeline.h"
-OpenCLEnv* opencl_env;
+BWAOCLEnv* opencl_env;
 #endif
 
 // use flexlm
@@ -102,11 +102,17 @@ DEFINE_bool(sort, true,
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
 
+DEFINE_string(pac_path, "",
+    "File path of the modified reference pac file");
+
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");
 
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
+
+DEFINE_int32(extra_thread, 0,
+    "Adjustment to the total threads");
 
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
@@ -188,6 +194,12 @@ int main(int argc, char *argv[]) {
     if (!boost::filesystem::exists(file_path)) {
       LOG(ERROR) << "Cannot find FPGA bitstream at " 
         << FLAGS_fpga_path;
+      return 1;
+    }
+    boost::filesystem::wpath pac_file_path(FLAGS_pac_path);
+    if (!boost::filesystem::exists(pac_file_path)) {
+      LOG(ERROR) << "Cannot find reference pac at " 
+        << FLAGS_pac_path;
       return 1;
     }
   }
@@ -286,12 +298,7 @@ int main(int argc, char *argv[]) {
 	double t_real = realtime();
 
   int num_compute_stages = 3;
-  int num_fpga_threads = 0;
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    num_fpga_threads = FLAGS_max_fpga_thread;
-  }
-#endif
+
   if (FLAGS_offload) {
 #ifndef FPGA_TEST
     num_compute_stages = 7;
@@ -300,14 +307,11 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
-#ifdef SCALE_OUT
-  kestrelFlow::Pipeline scatter_flow(2, 0);
-  kestrelFlow::Pipeline gather_flow(2, 0);
-#endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, 
-                                     FLAGS_t - num_fpga_threads);
+  int num_threads = FLAGS_t - FLAGS_extra_thread;
+  if (FLAGS_use_fpga)  num_threads -= FLAGS_max_fpga_thread;
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
-  DLOG(INFO) << "Using " << FLAGS_t - num_fpga_threads << " threads in total";
+  DLOG(INFO) << "Using " << num_threads << " threads in total";
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
@@ -358,8 +362,8 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
     try {
-      opencl_env = new OpenCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
-      //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+      opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
+          FLAGS_pac_path.c_str(), "sw_top");
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
         << FLAGS_fpga_path;
     }

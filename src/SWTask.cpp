@@ -2,7 +2,7 @@
 
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "OpenCLEnv.h"
+#include "BWAOCLEnv.h"
 #include "SWTask.h"
 
 #ifdef INTEL_FPGA
@@ -26,24 +26,17 @@ inline void *sw_malloc(size_t size, int data_width) {
 #endif
 
 
-SWTask::SWTask(OpenCLEnv* env, int chunk_size) {
-#ifdef INTEL_FPGA
-  agent_ = new IntelAgent(env);
-#elif XILINX_FPGA
-  agent_ = new XCLAgent(env);
-#endif
-
+SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   max_i_size_ = 32*1024*1024;
   max_o_size_ = 2*chunk_size*FPGA_RET_PARAM_NUM;
-
-
+#ifdef INTEL_FPGA
+  agent_ = new IntelAgent(env, this);
+#elif XILINX_FPGA
+  agent_ = new XCLAgent(env, this);
+#endif
   for (int k = 0; k < 2; k++) {
     i_size[k] = 0;
     o_size[k] = 0;
-
-    // host buffer 
-    i_buf[k]  = clCreateBuffer(opencl_env->getContext(), CL_MEM_READ_ONLY, sizeof(int)*max_i_size_, NULL, NULL);
-    o_buf[k]  = clCreateBuffer(opencl_env->getContext(), CL_MEM_WRITE_ONLY, sizeof(int)*max_o_size_, NULL, NULL);
 
     i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
     o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
@@ -78,7 +71,7 @@ void SWTask::start(SWTask* prev_task) {
   else {
     agent_->start(this, prev_task->agent_);
   }
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Prepare input takes " << 
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Write OpenCL buffer takes " << 
                                getUs() - start_ts << " us";
 }
 

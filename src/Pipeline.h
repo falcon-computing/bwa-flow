@@ -40,6 +40,8 @@ struct ChainsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
+  mem_alnreg_v* alnreg;
+  mem_chainref_t** chain_ref;
   const char* name = "ChainsRecord";
 };
 

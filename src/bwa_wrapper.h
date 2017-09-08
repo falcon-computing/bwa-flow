@@ -113,6 +113,7 @@ int pre_process(int argc, char *argv[], ktp_aux_t *aux, bool is_master);
 mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 
 void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
+uint8_t *bns_fetch_seq_fpga(const bntseq_t *bns, const uint8_t *pac, int64_t *beg, int64_t mid, int64_t *end, int *rid);
 
 void freeChains(mem_chain_v* chains, int batch_num);
 void freeAligns(mem_alnreg_v* alnreg, int batch_num);
