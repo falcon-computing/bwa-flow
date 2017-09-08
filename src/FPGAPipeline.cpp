@@ -156,9 +156,11 @@ inline void packReadData(ktp_aux_t* aux,
     char* buffer, 
     int &buffer_idx, 
     int &task_num, 
-    mem_alnreg_t** &region_batch,
-    mem_chain_t** &chain_batch) 
+    SWTask* task) 
 {
+  mem_alnreg_t** region_batch = task->region_batch;
+  mem_chain_t** chain_batch = task->chain_batch;
+  int chunk_size = FLAGS_chunk_size;
   mem_chainref_t* ref;
   int seed_idx = chains->a[0].n - 1;
   getChainRef(aux, seq, chains, ref);
@@ -215,6 +217,11 @@ inline void packReadData(ktp_aux_t* aux,
         *((int*)(&buffer[buffer_idx])) = task_num ; 
         buffer_idx += 4;
         task_num += 1;
+        if (task_num >= task->max_o_size_/(2*FPGA_RET_PARAM_NUM)) {
+          task->max_o_size_ = task->max_o_size_ + 1000;
+          task->o_data[0] = (short*)realloc(task->o_data[0], task->max_o_size_ * sizeof(short));
+          task->o_data[1] = (short*)realloc(task->o_data[1], task->max_o_size_ * sizeof(short));
+        }
         seed_num += 1;
         *((int64_t*)(&buffer[buffer_idx])) = seed_array->rbeg ;
         buffer_idx += 8;
@@ -242,6 +249,10 @@ inline void packReadData(ktp_aux_t* aux,
   }
   *((int*)(&buffer[chain_num_addr])) = chain_num ;
   *((int*)(&buffer[idx_end_addr])) = buffer_idx/4 ;
+  if (buffer_idx >= task->max_i_size_ * 0.9) {
+    task->max_i_size_ = (int)(task->max_i_size_ * 1.2);
+    task->i_data[0] = (char*)realloc(task->i_data[0], task->max_i_size_);
+  }
 
   free(ref);
 }
@@ -320,8 +331,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         packReadData(aux, seqs+i, chains+i, alnreg+i, 
             task->i_data[0], 
             kernel_buffer_idx, task_num,
-            task->region_batch,
-            task->chain_batch);
+            task);
         i++;
       }
       else if (task_num >= chunk_size/2 && reach_half == false) {
@@ -339,8 +349,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         packReadData(aux, seqs+i, chains+i, alnreg+i, 
             task->i_data[1], 
             kernel_buffer_idx, task_num,
-            task->region_batch,
-            task->chain_batch);
+            task);
 
         i++;
       }

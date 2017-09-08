@@ -28,7 +28,7 @@ inline void *sw_malloc(size_t size, int data_width) {
 
 SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   max_i_size_ = 32*1024*1024;
-  max_o_size_ = 2*chunk_size*FPGA_RET_PARAM_NUM;
+  max_o_size_ = 2*2*chunk_size*FPGA_RET_PARAM_NUM;
 #ifdef INTEL_FPGA
   agent_ = new IntelAgent(env, this);
 #elif XILINX_FPGA
