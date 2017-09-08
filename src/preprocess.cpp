@@ -297,6 +297,7 @@ int pre_process(int argc,
       fp_idx = gzdopen(fd, "r");
       aux->ks = kseq_init(fp_idx);
 
+#if 0 // Deprecated: do not turn on/off FPGA based on read size
       // Decide FPGA usage based on read size
       int read_length = kseq_read(aux->ks);
       if (read_length >= 250 || read_length < 100){
@@ -312,6 +313,7 @@ int pre_process(int argc,
       ko_read1 = kopen(argv[optind + 1], &fd);
       fp_idx = gzdopen(fd, "r");
       aux->ks = kseq_init(fp_idx);
+#endif
       if (optind + 2 < argc) {
         if (opt->flag&MEM_F_PE) {
           if (bwa_verbose >= 2)
