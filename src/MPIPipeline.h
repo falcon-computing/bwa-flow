@@ -24,6 +24,9 @@ class SendStage : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
         ready = this->getInput(input);
       }
       if (ready) { // record is a valid new input
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started sending "
+          << "[" << input.name << "] for one input";
+        uint64_t start_all_ts = getUs();
         uint64_t start_ts = getUs();
 
         // Serialize output record
@@ -44,10 +47,14 @@ class SendStage : public kestrelFlow::SinkStage<Record, INPUT_DEPTH> {
         DLOG_IF(INFO, VLOG_IS_ON(2)) << "Sending " << input.name << "-"
           << input.start_idx
           << " takes " << getUs() - start_ts << " us";
+
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished sending " 
+          << "[" << input.name << "] in "
+          << getUs() - start_all_ts << " us";
       }
       else {
         // this means isFinal() is true and input queue is empty
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finish sending " << input.name
+        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Finish sending " << input.name
           << ", start sending finish signals";
         ch_->retire();
       }
@@ -68,21 +75,22 @@ class RecvStage : public kestrelFlow::SourceStage<Record, INPUT_DEPTH> {
   void compute() {
     Record r;
     while (!ch_->recvFinished()) {
-      uint64_t start_ts = getUs();
-
+      Record output;
       // request new data from master
       int length = 0;
       char* ser_data = (char*)ch_->recv(length);
 
       if (length > 0) {
-        Record output;
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started receiving "
+          << "[" << output.name << "] for one input";
+        uint64_t start_ts = getUs();
+
         deserialize(ser_data, length, output);
         free(ser_data);
 
-        DLOG_IF(INFO, VLOG_IS_ON(2)) << "Receive " << output.name 
-          << "-" << output.start_idx 
-          << " in " << getUs() - start_ts << " us";
-
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished receiving " 
+          << "[" << output.name << "] in "
+          << getUs() - start_ts << " us";
         this->pushOutput(output);
       }
     }
