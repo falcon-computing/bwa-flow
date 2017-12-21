@@ -111,7 +111,7 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
-DEFINE_int32(extra_thread, 0,
+DEFINE_int32(extra_thread, 1,
     "Adjustment to the total threads");
 
 DEFINE_bool(inorder_output, false, 
@@ -360,7 +360,7 @@ int main(int argc, char *argv[]) {
 
   // Start FPGA context
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+  if (FLAGS_use_fpga) {
     try {
       opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
           FLAGS_pac_path.c_str(), "sw_top");
