@@ -8,6 +8,9 @@
 
 IntelAgent::IntelAgent(BWAOCLEnv* env, SWTask* task) {
 
+#if 1
+  DLOG(ERROR) << "Intel FPGA is not supported in this version";
+#else
   cl_context context_ = env->getContext();
 
   cl_int        err       = 0;
@@ -34,6 +37,7 @@ IntelAgent::IntelAgent(BWAOCLEnv* env, SWTask* task) {
     task->i_buf[i]  = clCreateBuffer(context_, CL_MEM_READ_ONLY, sizeof(int)*task->max_i_size_, NULL, NULL);
     task->o_buf[i]  = clCreateBuffer(context_, CL_MEM_WRITE_ONLY, sizeof(int)*task->max_o_size_, NULL, NULL);
   }
+#endif
 }
 
 IntelAgent::~IntelAgent() {
