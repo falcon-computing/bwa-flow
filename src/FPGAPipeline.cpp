@@ -283,6 +283,7 @@ inline void packReadData(ktp_aux_t* aux,
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
+  DLOG(INFO) << "start FPGA worker #" << wid;
   int chunk_size = FLAGS_chunk_size;
 
   int stage_cnt = 0;

@@ -7,6 +7,7 @@
 #include <boost/thread.hpp>
 #include <deque>
 #include <glog/logging.h>
+#include <map>
 #include <string>
 #include <stdexcept>
 
@@ -18,6 +19,7 @@
 
 #define OCL_CHECK(err, msg) { \
     if (err != CL_SUCCESS) { \
+      DLOG(ERROR) << msg << " (error code: " << err << ")"; \
       throw std::runtime_error(msg); \
     } \
   }
@@ -38,9 +40,13 @@ struct cl_device_env {
 const cl_device_env NULL_DEVICE_ENV;
 
 class OpenCLEnv 
-: public boost::basic_lockable_adapter<boost::mutex> {
+: public boost::basic_lockable_adapter<boost::mutex> 
+{
   public:
-    OpenCLEnv(const char* bin_path, const char* kernel_name) {
+    OpenCLEnv(const char* bin_path, 
+        const char* kernel_name): device_envs_()
+    {
+      boost::lock_guard<OpenCLEnv> guard(*this);
       // start platform setting up
       int err;
 
@@ -112,9 +118,10 @@ class OpenCLEnv
         throw std::runtime_error("Failed to create a device group: " +
             std::to_string((long long)err));
       }
-      DLOG(INFO) << "Found " << num_devices << " devices";
+      DLOG(INFO) << "Found " << num_devices << " devices, "
+                 << "using " << max_devices;
 
-      for (int i = 0; i < num_devices; i++) {
+      for (int i = 0; i < num_devices, i < max_devices; i++) {
         cl_int err = 0;
         int status = 0;
 
@@ -122,6 +129,7 @@ class OpenCLEnv
 
         env.device_id = device_ids[i];
         env.context = clCreateContext(0, 1, &device_ids[i], NULL, NULL, &err);
+        DLOG(INFO) << "creating context for device #" << i;
         OCL_CHECK(err, "failed to create context");
 
         env.cmd = clCreateCommandQueue(env.context, env.device_id, 0, &err);
@@ -133,7 +141,9 @@ class OpenCLEnv
 
         OCL_CHECKRUN(clBuildProgram(env.program, 0, NULL, NULL, NULL, NULL), 
             "failed to build program executable");
+
         device_envs_.push_back(env);
+        DLOG(INFO) << "setup opencl env for one device";
       }
 
       free(device_ids);
@@ -157,14 +167,24 @@ class OpenCLEnv
     // exclusive access to a device's context and queue
     cl_device_env getDevice() {
       boost::lock_guard<OpenCLEnv> guard(*this);
-      if (device_envs_.empty()) {
+      uint32_t tid = getTid();
+      if (device_registry_.count(tid)) {
+        // already allocated a device to this thread
+        DLOG(INFO) << "return allocated device for " << tid;
+        return device_registry_[tid];
+      }
+      else if (device_envs_.empty()) {
         DLOG(ERROR) << "No more device available on this platform";
         return NULL_DEVICE_ENV;
       }
-      // return next device and accumulate the index
-      cl_device_env ret = device_envs_.front();
-      device_envs_.pop_front();
-      return ret;
+      else {
+        // return next device and accumulate the index
+        cl_device_env ret = device_envs_.front();
+        device_envs_.pop_front();
+        device_registry_[tid] = ret;
+        DLOG(INFO) << "allocate one opencl device for " << tid;
+        return ret;
+      }
     }
 
     void releaseDevice(cl_device_env env) {
@@ -198,7 +218,30 @@ class OpenCLEnv
       return size;
     }
 
+    // get current thread id
+    // using the same code from googlelog/src/utilities.cc
+    // without OS checking
+    uint32_t getTid() {
+      static bool lacks_gettid = false;
+
+      if (!lacks_gettid) {
+        pid_t tid = syscall(__NR_gettid);
+        if (tid != -1) {
+          return (uint32_t)tid;
+        }
+        // Technically, this variable has to be volatile, but there is a small
+        // performance penalty in accessing volatile variables and there should
+        // not be any serious adverse effect if a thread does not immediately see
+        // the value change to "true".
+        lacks_gettid = true;
+      }
+
+      // If gettid() could not be used, we use one of the following.
+      return (uint32_t)getpid();
+    }
+
   protected:
+    std::map<uint32_t, cl_device_env> device_registry_;
     std::deque<cl_device_env> device_envs_;
 };
 
