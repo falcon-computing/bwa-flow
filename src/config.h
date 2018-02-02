@@ -12,6 +12,7 @@ DECLARE_bool(offload);
 DECLARE_bool(M);
 DECLARE_bool(sort);
 DECLARE_bool(use_fpga);
+DECLARE_int32(filter);
 DECLARE_int32(chunk_size);
 DECLARE_int32(max_fpga_thread);
 DECLARE_int32(max_num_records);
