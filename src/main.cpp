@@ -111,7 +111,7 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
-DEFINE_int32(extra_thread, 0,
+DEFINE_int32(extra_thread, 1,
     "Adjustment to the total threads");
 
 DEFINE_bool(inorder_output, false, 
@@ -136,7 +136,7 @@ DEFINE_int32(output_flag, 1,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 20, 
+DEFINE_int32(max_batch_records, 50, 
     "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
@@ -360,7 +360,7 @@ int main(int argc, char *argv[]) {
 
   // Start FPGA context
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+  if (FLAGS_use_fpga) {
     try {
       opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
           FLAGS_pac_path.c_str(), "sw_top");

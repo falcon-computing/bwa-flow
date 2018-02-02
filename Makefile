@@ -51,20 +51,24 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GTEST_DIR)/build -lgtest \
 	   -lpthread -lm -ldl -lz -lrt
 
+ifneq ($(DEBUG),)
 GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
+else
+GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')
+endif
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := $(BIN_DIR)/bwa
 TESTPROG := $(TEST_DIR)/bwa-test
 
 
-ifneq ($(DEBUG),)
-CFLAGS   := $(CFLAGS) -g
-TESTOPT  := GLOG_v=3 \
-						GLOG_alsologtostderr=1
-else
+ifeq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -DNDEBUG
 TESTOPT  := 
+else
+CFLAGS   := $(CFLAGS) -g
+TESTOPT  := GLOG_v=3 \
+	    GLOG_alsologtostderr=1
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -123,7 +127,7 @@ ifneq ($(FLMDIR),)
 # add support for flex license manage
 FLMLIB 		:= -llmgr_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub
 
-CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
+CFLAGS   	:= $(CFLAGS) -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)
 LIBS		:= $(LIBS) -L$(FLMDIR) $(FLMLIB) 
 LMDEPS 	 	:= $(FLMDIR)/license.o \
