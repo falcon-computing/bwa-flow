@@ -484,7 +484,11 @@ void SamsReorder::compute(int wid) {
         for(int i = 0; i < batch_num; i++) {
           if (seqs[i].bams) {
             for (int j =0; j < seqs[i].bams->l; j++) {
-              bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+              bam1_t* bam_record = seqs[i].bams->bams[j];
+              if (FLAGS_filter == 0 || 
+                  (bam_record->core.flag & FLAGS_filter) == 0) {
+                bam_buffer[bam_buffer_idx++] = bam_record;
+              }
             }
           }
           free(seqs[i].bams->bams);
@@ -529,7 +533,11 @@ void SamsReorder::compute(int wid) {
       for(int i = 0; i < batch_num; i++) {
         if (seqs[i].bams) {
           for (int j =0; j < seqs[i].bams->l; j++) {
-            bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+            bam1_t* bam_record = seqs[i].bams->bams[j];
+            if (FLAGS_filter == 0 || 
+                (bam_record->core.flag & FLAGS_filter) == 0) {
+              bam_buffer[bam_buffer_idx++] = bam_record;
+            }
           }
         }
         free(seqs[i].bams->bams);

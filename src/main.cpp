@@ -46,7 +46,7 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lm/license.h"
 #endif
 
 #ifdef USELICENSE
@@ -85,13 +85,16 @@ DEFINE_string(R, "", "-R arg in original BWA");
 DEFINE_int32(t, boost::thread::hardware_concurrency(),
     "-t arg in original BWA, total number of parallel threads");
 
-DEFINE_bool(M, false, "-M arg in original BWA");
+DEFINE_bool(M, true, "-M arg in original BWA");
 
 // Parameters
 DEFINE_bool(offload, true,
     "Use three compute pipeline stages to enable offloading"
     "workload to accelerators. "
     "If disabled, --use_fpga, --fpga_path will be discard");
+
+DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
+    "on the FLAG field, similar to the -F argument in samtools");
 
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
@@ -151,9 +154,9 @@ int main(int argc, char *argv[]) {
   version_str << "Falcon BWA-MEM Version: " << VERSION;
 
   // Initialize Google Flags
-  gflags::SetVersionString(version_str.str());
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  google::SetVersionString(version_str.str());
+  google::SetUsageMessage(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
