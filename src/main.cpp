@@ -46,7 +46,7 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lm/license.h"
 #endif
 
 #ifdef USELICENSE
@@ -154,9 +154,9 @@ int main(int argc, char *argv[]) {
   version_str << "Falcon BWA-MEM Version: " << VERSION;
 
   // Initialize Google Flags
-  gflags::SetVersionString(version_str.str());
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  google::SetVersionString(version_str.str());
+  google::SetUsageMessage(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);

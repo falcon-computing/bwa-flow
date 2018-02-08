@@ -48,21 +48,22 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
-	   -L$(GTEST_DIR)/build -lgtest \
+	   -L$(GTEST_DIR)/lib -lgtest \
 	   -lpthread -lm -ldl -lz -lrt
 
-ifneq ($(DEBUG),)
-GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
+ifeq ($(RELEASE),)
+GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)-dev
 else
-GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')
+GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')-dist
 endif
 CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 PROG	 := $(BIN_DIR)/bwa
 TESTPROG := $(TEST_DIR)/bwa-test
 
+DEPS	 := ./deps/.ready
 
-ifeq ($(DEBUG),)
+ifneq ($(RELEASE),)
 CFLAGS   := $(CFLAGS) -DNDEBUG
 TESTOPT  := 
 else
@@ -123,6 +124,7 @@ TEST_DEPOBJS := $(TEST_DEPOBJS) \
 endif
 
 # check FLMDIR
+ifneq ($(RELEASE),)
 ifneq ($(FLMDIR),)
 # add support for flex license manage
 FLMLIB 		:= -llmgr_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub
@@ -133,8 +135,12 @@ LIBS		:= $(LIBS) -L$(FLMDIR) $(FLMLIB)
 LMDEPS 	 	:= $(FLMDIR)/license.o \
 		   $(FLMDIR)/lm_new.o
 endif 
+endif
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
+
+dist:
+	aws s3 cp bin/bwa s3://fcs-genome-build/bwa/bwa-$(GIT_VERSION)
 
 scaleout: $(MPIPROG)
 
@@ -155,6 +161,9 @@ runmpitest:
 	--mca orte_base_help_aggregate 0 \
 	$(TESTPROG) --gtest_filter=ChannelTests.* \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
+
+$(DEPS): ./deps/get-all.sh
+	./deps/get-all.sh
 
 $(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
 	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)

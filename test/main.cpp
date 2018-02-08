@@ -13,6 +13,9 @@ DEFINE_bool(offload, true,
     "workload to accelerators. "
     "If disabled, --use_fpga, --fpga_path will be discard");
 
+DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
+    "on the FLAG field, similar to the -F argument in samtools");
+
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
 
