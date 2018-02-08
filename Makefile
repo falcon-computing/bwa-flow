@@ -51,13 +51,6 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -L$(GTEST_DIR)/lib -lgtest \
 	   -lpthread -lm -ldl -lz -lrt
 
-ifeq ($(RELEASE),)
-GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)-dev
-else
-GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')-dist
-endif
-CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
-
 PROG	 := $(BIN_DIR)/bwa
 TESTPROG := $(TEST_DIR)/bwa-test
 
@@ -78,6 +71,8 @@ INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
 LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
 endif 
 
+GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')
+
 ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
@@ -93,6 +88,7 @@ INCLUDES := $(INCLUDES) \
 	    $(shell aocl compile-config )
 LIBS	 := $(LIBS) \
 	    $(shell aocl link-config )
+GIT_VERSION := $(GIT_VERSION)-intel
 else 
 
 ifeq ($(XILINX_SDX),)
@@ -107,8 +103,16 @@ LIBS	 := $(LIBS) \
 
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/XCLAgent.o
+
+GIT_VERSION := $(GIT_VERSION)-xlnx
 endif
 endif
+
+ifeq ($(RELEASE),)
+GIT_VERSION := $(GIT_VERSION)-dev
+endif
+
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 ifneq ($(OPENMPI_DIR),)
 CFLAGS 	 := $(CFLAGS) -DUSE_MPI
@@ -127,19 +131,19 @@ endif
 ifneq ($(RELEASE),)
 ifneq ($(FLMDIR),)
 # add support for flex license manage
-FLMLIB 		:= -llmgr_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub
+FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
 
 CFLAGS   	:= $(CFLAGS) -DUSELICENSE
-INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)
-LIBS		:= $(LIBS) -L$(FLMDIR) $(FLMLIB) 
-LMDEPS 	 	:= $(FLMDIR)/license.o \
-		   $(FLMDIR)/lm_new.o
+INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
+LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
+LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
+		   $(FLMDIR)/lib/lm_new.o
 endif 
 endif
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
 
-dist:
+dist:   $(PROG)
 	aws s3 cp bin/bwa s3://fcs-genome-build/bwa/bwa-$(GIT_VERSION)
 
 scaleout: $(MPIPROG)
