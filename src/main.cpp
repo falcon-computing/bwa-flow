@@ -46,7 +46,7 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lm/license.h"
 #endif
 
 #ifdef USELICENSE
@@ -85,13 +85,16 @@ DEFINE_string(R, "", "-R arg in original BWA");
 DEFINE_int32(t, boost::thread::hardware_concurrency(),
     "-t arg in original BWA, total number of parallel threads");
 
-DEFINE_bool(M, false, "-M arg in original BWA");
+DEFINE_bool(M, true, "-M arg in original BWA");
 
 // Parameters
 DEFINE_bool(offload, true,
     "Use three compute pipeline stages to enable offloading"
     "workload to accelerators. "
     "If disabled, --use_fpga, --fpga_path will be discard");
+
+DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
+    "on the FLAG field, similar to the -F argument in samtools");
 
 DEFINE_bool(use_fpga, false,
     "Enable FPGA accelerator for SmithWaterman computation");
@@ -111,7 +114,7 @@ DEFINE_int32(chunk_size, 2000,
 DEFINE_int32(max_fpga_thread, 1,
     "Max number of threads for FPGA worker");
 
-DEFINE_int32(extra_thread, 0,
+DEFINE_int32(extra_thread, 1,
     "Adjustment to the total threads");
 
 DEFINE_bool(inorder_output, false, 
@@ -136,7 +139,7 @@ DEFINE_int32(output_flag, 1,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 20, 
+DEFINE_int32(max_batch_records, 50, 
     "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
@@ -151,9 +154,9 @@ int main(int argc, char *argv[]) {
   version_str << "Falcon BWA-MEM Version: " << VERSION;
 
   // Initialize Google Flags
-  gflags::SetVersionString(version_str.str());
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  google::SetVersionString(version_str.str());
+  google::SetUsageMessage(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
@@ -360,7 +363,7 @@ int main(int argc, char *argv[]) {
 
   // Start FPGA context
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+  if (FLAGS_use_fpga) {
     try {
       opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
           FLAGS_pac_path.c_str(), "sw_top");

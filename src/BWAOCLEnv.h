@@ -35,7 +35,7 @@ class BWAOCLEnv :public OpenCLEnv{
      if (err != CL_SUCCESS) {
        throw std::runtime_error("Failed to create a command queue context!");
      }
-
+#ifdef XILINX_FPGA
      cl_mem_ext_ptr_t ext_c, ext_d;
      ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
      ext_d.flags = XCL_MEM_DDR_BANK3; ext_d.obj = 0; ext_d.param = 0;
@@ -57,11 +57,16 @@ class BWAOCLEnv :public OpenCLEnv{
      free(pac);
      clReleaseEvent(event[0]);
      clReleaseEvent(event[1]);
+#else
+    DLOG(ERROR) << "This feature is currently only supported in Xilinx";
+#endif
   }
   ~BWAOCLEnv(){
     clReleaseCommandQueue(command_);
+#ifdef XILINX_FPGA
     clReleaseMemObject(pac_input_a_);
     clReleaseMemObject(pac_input_b_);
+#endif
    // clReleaseProgram(program_);
    // clReleaseContext(context_);
   }

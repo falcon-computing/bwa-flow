@@ -1,9 +1,9 @@
 BOOST_DIR=/usr
-GFLAGS_DIR=/usr
-GLOG_DIR=/usr
-GTEST_DIR=
-OPENMPI_DIR=
+GLOG_DIR=./deps/glog-0.3.3
+GFLAGS_DIR=./deps/gflags
+GTEST_DIR=./deps/googletest
 HTSLIB_PATH=
+OPENMPI_DIR=
 
 #BUILD_FPGA=1
 #DEBUG=1
