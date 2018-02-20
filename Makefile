@@ -13,6 +13,7 @@ CFLAGS 	:= -std=c++0x -fPIC -O3
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/Pipeline.o \
+	   $(SRC_DIR)/config.o \
 	   $(SRC_DIR)/util.o
 
 STDOBJS := $(SRC_DIR)/main.o 
@@ -169,22 +170,22 @@ runmpitest:
 $(DEPS): ./deps/get-all.sh
 	./deps/get-all.sh
 
-$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
+$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS) $(DEPS)
 	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
 
-$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
+$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS) $(DEPS)
 	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
 
-$(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
+$(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS) $(DEPS)
 	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 
 
-$(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
+$(SRC_DIR)/%.o:	$(SRC_DIR)/%.c $(DEPS)
 	$(CC) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h
+$(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h $(DEPS)
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h
+$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h $(DEPS)
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:
