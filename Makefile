@@ -12,6 +12,7 @@ CFLAGS 	:= -std=c++0x -fPIC -O3
 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
+	   $(SRC_DIR)/config.o \
 	   $(SRC_DIR)/Pipeline.o \
 	   $(SRC_DIR)/util.o
 
@@ -25,6 +26,7 @@ TESTOBJS:= $(TEST_DIR)/main.o \
 	   $(TEST_DIR)/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
+	   	$(SRC_DIR)/config.o \
 	   	$(SRC_DIR)/preprocess.o \
 	   	$(SRC_DIR)/wrappered_mem.o \
 	   	$(SRC_DIR)/util.o
