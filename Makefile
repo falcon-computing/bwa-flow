@@ -8,11 +8,11 @@ KFLOW_DIR 	:= $(MKFILE_DIR)/kflow
 SRC_DIR   	:= $(MKFILE_DIR)/src
 TEST_DIR	:= $(MKFILE_DIR)/test
 
-CFLAGS 	:= -std=c++0x -fPIC -O3 
+CFLAGS 	:= -std=c++0x -fPIC
 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
-		 $(SRC_DIR)/config.o \
+	   $(SRC_DIR)/config.o \
 	   $(SRC_DIR)/Pipeline.o \
 	   $(SRC_DIR)/util.o
 
@@ -58,13 +58,12 @@ TESTPROG := $(TEST_DIR)/bwa-test
 
 DEPS	 := ./deps/.ready
 
-ifneq ($(RELEASE),)
-CFLAGS   := $(CFLAGS) -DNDEBUG
-TESTOPT  := 
-else
+ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
 TESTOPT  := GLOG_v=3 \
 	    GLOG_alsologtostderr=1
+else
+CFLAGS   := $(CFLAGS) -O3
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -79,6 +78,13 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
+	    $(SRC_DIR)/SWTask.o
+
+TESTOBJS := $(TESTOBJS) \
+	    $(TEST_DIR)/FPGATests.o
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	   	$(SRC_DIR)/FPGAPipeline.o \
 	    $(SRC_DIR)/SWTask.o
 
 ifneq ($(ALTERAOCLSDKROOT),)
@@ -106,6 +112,9 @@ LIBS	 := $(LIBS) \
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/XCLAgent.o
 
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	    $(SRC_DIR)/XCLAgent.o
+
 GIT_VERSION := $(GIT_VERSION)-xlnx
 endif
 endif
@@ -131,16 +140,14 @@ endif
 
 # check FLMDIR
 ifneq ($(RELEASE),)
-ifneq ($(FLMDIR),)
 # add support for flex license manage
 FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
 
-CFLAGS   	:= $(CFLAGS) -DUSELICENSE
+CFLAGS   	:= $(CFLAGS) -NDEBUG -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
 LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
 LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
 		   $(FLMDIR)/lib/lm_new.o
-endif 
 endif
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)

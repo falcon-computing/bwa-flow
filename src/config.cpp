@@ -15,11 +15,6 @@ DEFINE_int32(t, boost::thread::hardware_concurrency(),
 DEFINE_bool(M, true, "-M arg in original BWA");
 
 // Parameters
-DEFINE_bool(offload, true,
-    "Use three compute pipeline stages to enable offloading"
-    "workload to accelerators. "
-    "If disabled, --use_fpga, --fpga_path will be discard");
-
 DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
     "on the FLAG field, similar to the -F argument in samtools");
 
@@ -31,9 +26,6 @@ DEFINE_bool(sort, true,
 
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
-
-DEFINE_string(pac_path, "",
-    "File path of the modified reference pac file");
 
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");
@@ -68,3 +60,14 @@ DEFINE_int32(output_flag, 1,
 
 DEFINE_int32(max_batch_records, 40, 
     "Flag to specify how many batch to buffer before sort");
+
+// deprecated
+DEFINE_bool(offload, true,
+    "(deprecated) Use three compute pipeline stages to enable offloading"
+    "workload to accelerators. "
+    "If disabled, --use_fpga, --fpga_path will be discard");
+
+DEFINE_string(pac_path, "",
+    "(deprecated) File path of the modified reference pac file");
+
+

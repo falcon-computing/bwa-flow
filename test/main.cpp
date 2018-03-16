@@ -8,6 +8,10 @@
 #include "config.h"
 #include "TestCommon.h"
 
+#ifdef XILINX_FPGA
+#include "FPGATests.h"
+#endif
+
 // Parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;

@@ -99,8 +99,17 @@ bool Pipeline::addStage(int idx,
   }
 
   // bind input queue for stage if the stage requires it
-  if (idx > 0 && IN_DEPTH > 0) {
-    stage->input_queue_ = queues_[idx];
+  if (IN_DEPTH > 0) {
+    if (idx > 0) {
+      stage->input_queue_ = queues_[idx];
+    }
+    else {
+      // create an input queue
+      boost::shared_ptr<QueueBase> input_queue(
+          new Queue<U, IN_DEPTH>);
+      queues_[idx] = input_queue;
+      stage->input_queue_ = input_queue;
+    }
   }
 
   // create output queue for the stage if it requires it

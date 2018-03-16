@@ -296,8 +296,9 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga) {
     try {
-      opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
-          FLAGS_pac_path.c_str(), "sw_top");
+      opencl_env = new BWAOCLEnv(
+          FLAGS_fpga_path.c_str(),
+          "sw_top");
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
         << FLAGS_fpga_path;
     }

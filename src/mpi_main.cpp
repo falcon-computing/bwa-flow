@@ -35,7 +35,7 @@
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lm/license.h"
 #endif
 
 #ifdef BUILD_FPGA
