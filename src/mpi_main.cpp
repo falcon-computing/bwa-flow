@@ -259,8 +259,8 @@ int main(int argc, char *argv[]) {
   double t_real = realtime();
 
   // setup pipelines
-#if 0
-  kestrelFlow::Pipeline compute_flow(7, FLAGS_t);
+#if 1
+  kestrelFlow::Pipeline compute_flow(7, FLAGS_t-2);
 
   kestrelFlow::Pipeline send_flow(1, 1);
   kestrelFlow::Pipeline recv_flow(1, 1);
@@ -283,22 +283,69 @@ int main(int argc, char *argv[]) {
 
     compute_flow.diverge(send_flow, 2);
     compute_flow.converge(recv_flow, 4);
-  }
-  else {
-    region_flow.addStage(0, &chn_recv_stage);
-    region_flow.addStage(1, &chain2reg_stage);
-    region_flow.addStage(2, &reg_send_stage);
-  }
 
-  if (rank == 0) {
     compute_flow.start();
     send_flow.start();
     recv_flow.start();
     compute_flow.wait();
   }
   else {
+    region_flow.addStage(0, &chn_recv_stage);
+    region_flow.addStage(1, &chain2reg_stage);
+    region_flow.addStage(2, &reg_send_stage);
+
     region_flow.start();
+
+#ifdef BUILD_FPGA
+    kestrelFlow::Pipeline fpga_flow(2, 1);
+
+    // Stages for FPGA acceleration of stage_2
+    ChainsPipeFPGA      chainpipe_fpga_stage; // push through
+    ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+
+    // setup FPGA
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      try {
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
+        boost::filesystem::wpath file_path(FLAGS_fpga_path);
+        if (!boost::filesystem::exists(file_path)) {
+          throw std::runtime_error("cannot find FPGA bitstream at "+
+              FLAGS_fpga_path);
+        }
+        boost::filesystem::wpath pac_file_path(FLAGS_pac_path);
+        if (!boost::filesystem::exists(pac_file_path)) {
+          throw std::runtime_error("cannot find reference pac at "+
+              FLAGS_pac_path);
+        }
+
+        opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
+            FLAGS_pac_path.c_str(), "sw_top");
+
+        //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+          << FLAGS_fpga_path;
+
+        fpga_flow.addStage(0, &chainpipe_fpga_stage);
+        fpga_flow.addStage(1, &chain2reg_fpga_stage);
+
+        // bind the input/output queue of stage_2 in compute_flow
+        fpga_flow.branch(region_flow, 1);
+
+        fpga_flow.start();
+        fpga_flow.wait();
+      }
+      catch (std::runtime_error &e) {
+        DLOG(ERROR) << "Cannot configure FPGA bitstream "
+          << "because: " << e.what();
+        DLOG(ERROR) << "Using CPU instead";
+      }
+    }
+#endif
     region_flow.wait();
+
+#ifdef BUILD_FPGA
+    if (opencl_env) delete opencl_env;
+#endif
   }
 #else
   kestrelFlow::Pipeline scatter_flow(3, 3);

@@ -243,7 +243,7 @@ inline void packReadData(ktp_aux_t* aux,
         buffer_idx += 4;
         task_num += 1;
         if (task_num >= task->max_o_size_/(2*FPGA_RET_PARAM_NUM)) {
-          task->max_o_size_ = task->max_o_size_ + 1000;
+          task->max_o_size_ = 2*task->max_o_size_;
           task->o_data[0] = (short*)realloc(task->o_data[0], task->max_o_size_ * sizeof(short));
           task->o_data[1] = (short*)realloc(task->o_data[1], task->max_o_size_ * sizeof(short));
         }
@@ -274,8 +274,8 @@ inline void packReadData(ktp_aux_t* aux,
   }
   *((int*)(&buffer[chain_num_addr])) = chain_num ;
   *((int*)(&buffer[idx_end_addr])) = buffer_idx/4 ;
-  if (buffer_idx >= task->max_i_size_ * 0.9) {
-    task->max_i_size_ = (int)(task->max_i_size_ * 1.2);
+  if (buffer_idx >= task->max_i_size_ * 0.8) {
+    task->max_i_size_ = (int)(task->max_i_size_ * 2);
     task->i_data[0] = (char*)realloc(task->i_data[0], task->max_i_size_);
   }
 

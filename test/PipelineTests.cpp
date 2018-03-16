@@ -117,7 +117,7 @@ static inline void check_bam(bam1_t& base, bam1_t& test) {
 
 static inline void check_bams(bams_t& base, bams_t& test) {
   ASSERT_EQ(base.l, test.l); 
-  EXPECT_EQ(1, base.l);
+  EXPECT_LE(1, base.l);
   for (int i = 0; i < base.l; i ++) {
     check_bam(*base.bams[i], *test.bams[i]);
   }
