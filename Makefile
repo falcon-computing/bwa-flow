@@ -143,7 +143,7 @@ ifneq ($(RELEASE),)
 # add support for flex license manage
 FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
 
-CFLAGS   	:= $(CFLAGS) -NDEBUG -DUSELICENSE
+CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
 LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
 LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
