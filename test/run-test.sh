@@ -2,6 +2,8 @@
 CURR_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 source $CURR_DIR/global.bash
 
+$CURR_DIR/data/get-data.sh
+
 $bats_bin $CURR_DIR/env.bats
 
 samples=( $(ls -1 $data_dir/*.fastq.gz | sed -e 'N;s/^\(.*\).*\n\1.*$/\1/') )
