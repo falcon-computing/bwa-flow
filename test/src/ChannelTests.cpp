@@ -1,5 +1,5 @@
 #include <iostream>
-#include "test/TestCommon.h"
+#include "TestCommon.h"
 #include "MPIChannel.h"
 
 TEST_F(ChannelTests, ChannelSetup) {

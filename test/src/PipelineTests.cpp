@@ -1,6 +1,6 @@
 #include "kflow/Pipeline.h"
 #include "Pipeline.h"
-#include "test/TestCommon.h"
+#include "TestCommon.h"
 
 TEST_F(PipelineTests, NewSeqRead) {
   // KseqsRead       kread_stage;

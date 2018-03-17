@@ -1,8 +1,8 @@
 #define TEST_FRIENDS_LIST \
           FRIEND_TEST(FPGATests, FPGATest); 
 
-#include "test/TestCommon.h"
-#include "test/FPGATests.h"
+#include "TestCommon.h"
+#include "FPGATests.h"
 
 #include "bwa_wrapper.h"
 #include "kflow/Stage.h"

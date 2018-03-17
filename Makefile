@@ -19,11 +19,11 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 STDOBJS := $(SRC_DIR)/main.o 
 
 MPIOBJS := $(SRC_DIR)/MPIChannel.o \
-					 $(SRC_DIR)/mpi_main.o
+	   $(SRC_DIR)/mpi_main.o
 
-TESTOBJS:= $(TEST_DIR)/main.o \
-	   $(TEST_DIR)/PipelineTests.o \
-	   $(TEST_DIR)/UtilTests.o
+TESTOBJS:= $(TEST_DIR)/src/main.o \
+	   $(TEST_DIR)/src/PipelineTests.o \
+	   $(TEST_DIR)/src/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
 	   	$(SRC_DIR)/config.o \
@@ -54,7 +54,7 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -lpthread -lm -ldl -lz -lrt
 
 PROG	 := $(BIN_DIR)/bwa
-TESTPROG := $(TEST_DIR)/bwa-test
+TESTPROG := $(TEST_DIR)/bin/bwa-test
 
 DEPS	 := ./deps/.ready
 
@@ -81,7 +81,7 @@ OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/SWTask.o
 
 TESTOBJS := $(TESTOBJS) \
-	    $(TEST_DIR)/FPGATests.o
+	    $(TEST_DIR)/src/FPGATests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/FPGAPipeline.o \
@@ -132,7 +132,7 @@ MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 
 TESTOBJS:= $(TESTOBJS) \
-	   $(TEST_DIR)/ChannelTests.o
+	   $(TEST_DIR)/src/ChannelTests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/MPIChannel.o
@@ -161,14 +161,14 @@ test:	$(TESTPROG)
 
 runtest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(TESTPROG)  \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 runmpitest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(OPENMPI_DIR)/bin/mpirun -np 4 \
 	--mca orte_base_help_aggregate 0 \
@@ -193,7 +193,7 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h
+$(TEST_DIR)/src/%.o: $(TEST_DIR)/src/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:
@@ -201,7 +201,7 @@ $(BWA_DIR)/libbwa.a:
 
 clean:
 	rm -f $(SRC_DIR)/*.o
-	rm -f $(TEST_DIR)/*.o
+	rm -f $(TEST_DIR)/src/*.o
 	rm -f $(PROG) $(MPIPROG) $(TESTPROG)
 
 .PHONY: all scaleout test runtest clean

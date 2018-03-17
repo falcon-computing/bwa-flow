@@ -1,7 +1,7 @@
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "test/TestCommon.h"
+#include "TestCommon.h"
 
 TEST_F(UtilTests, SeqTest) {
   int test_num = batch_num > 4096 ? 4096 : batch_num;
