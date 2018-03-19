@@ -3,7 +3,6 @@
 
 #include <boost/atomic.hpp>
 #include <boost/type_traits.hpp>
-#include <gtest/gtest.h>
 #include <typeinfo>
 
 #include "Common.h"

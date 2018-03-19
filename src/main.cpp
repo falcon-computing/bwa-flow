@@ -301,18 +301,18 @@ int main(int argc, char *argv[]) {
           "sw_top");
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
         << FLAGS_fpga_path;
+
+#ifndef FPGA_TEST
+      fpga_flow.start();
+      fpga_flow.wait();
+#endif
+      delete opencl_env;
     }
     catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot configure FPGA bitstream";
+      LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
       DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
       DLOG(ERROR) << "because: " << e.what();
-      return 1;
     }
-#ifndef FPGA_TEST
-    fpga_flow.start();
-    fpga_flow.wait();
-#endif
-    delete opencl_env;
   }
 #endif
   compute_flow.wait();
