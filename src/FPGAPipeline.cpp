@@ -410,13 +410,12 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_num = 0;
         kernel_buffer_idx = 0;
         reach_half = false;
-
-        if (i == batch_num - 1) {
-          reach_end = true;
-        }
-        else {
-          reach_end = false;
-        }
+      }
+      if (i == batch_num - 1) {
+        reach_end = true;
+      }
+      else {
+        reach_end = false;
       }
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting the remaining tasks";

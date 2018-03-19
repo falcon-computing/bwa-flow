@@ -8,24 +8,25 @@ KFLOW_DIR 	:= $(MKFILE_DIR)/kflow
 SRC_DIR   	:= $(MKFILE_DIR)/src
 TEST_DIR	:= $(MKFILE_DIR)/test
 
-CFLAGS 	:= -std=c++0x -fPIC -O3 
+CFLAGS 	:= -std=c++0x -fPIC
 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
-	   $(SRC_DIR)/Pipeline.o \
 	   $(SRC_DIR)/config.o \
+	   $(SRC_DIR)/Pipeline.o \
 	   $(SRC_DIR)/util.o
 
 STDOBJS := $(SRC_DIR)/main.o 
 
 MPIOBJS := $(SRC_DIR)/MPIChannel.o \
-					 $(SRC_DIR)/mpi_main.o
+	   $(SRC_DIR)/mpi_main.o
 
-TESTOBJS:= $(TEST_DIR)/main.o \
-	   $(TEST_DIR)/PipelineTests.o \
-	   $(TEST_DIR)/UtilTests.o
+TESTOBJS:= $(TEST_DIR)/src/main.o \
+	   $(TEST_DIR)/src/PipelineTests.o \
+	   $(TEST_DIR)/src/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
+	   	$(SRC_DIR)/config.o \
 	   	$(SRC_DIR)/preprocess.o \
 	   	$(SRC_DIR)/wrappered_mem.o \
 	   	$(SRC_DIR)/util.o
@@ -53,17 +54,16 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 	   -lpthread -lm -ldl -lz -lrt
 
 PROG	 := $(BIN_DIR)/bwa
-TESTPROG := $(TEST_DIR)/bwa-test
+TESTPROG := $(TEST_DIR)/bin/bwa-test
 
 DEPS	 := ./deps/.ready
 
-ifneq ($(RELEASE),)
-CFLAGS   := $(CFLAGS) -DNDEBUG
-TESTOPT  := 
-else
+ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
 TESTOPT  := GLOG_v=3 \
 	    GLOG_alsologtostderr=1
+else
+CFLAGS   := $(CFLAGS) -O3
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -78,6 +78,13 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
+	    $(SRC_DIR)/SWTask.o
+
+TESTOBJS := $(TESTOBJS) \
+	    $(TEST_DIR)/src/FPGATests.o
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	   	$(SRC_DIR)/FPGAPipeline.o \
 	    $(SRC_DIR)/SWTask.o
 
 ifneq ($(ALTERAOCLSDKROOT),)
@@ -105,6 +112,9 @@ LIBS	 := $(LIBS) \
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/XCLAgent.o
 
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	    $(SRC_DIR)/XCLAgent.o
+
 GIT_VERSION := $(GIT_VERSION)-xlnx
 endif
 endif
@@ -122,7 +132,7 @@ MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 
 TESTOBJS:= $(TESTOBJS) \
-	   $(TEST_DIR)/ChannelTests.o
+	   $(TEST_DIR)/src/ChannelTests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/MPIChannel.o
@@ -130,16 +140,14 @@ endif
 
 # check FLMDIR
 ifneq ($(RELEASE),)
-ifneq ($(FLMDIR),)
 # add support for flex license manage
 FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
 
-CFLAGS   	:= $(CFLAGS) -DUSELICENSE
+CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
 LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
 LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
 		   $(FLMDIR)/lib/lm_new.o
-endif 
 endif
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
@@ -153,14 +161,14 @@ test:	$(TESTPROG)
 
 runtest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(TESTPROG)  \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 runmpitest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(OPENMPI_DIR)/bin/mpirun -np 4 \
 	--mca orte_base_help_aggregate 0 \
@@ -185,7 +193,7 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c $(DEPS)
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h $(DEPS)
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h $(DEPS)
+$(TEST_DIR)/src/%.o: $(TEST_DIR)/src/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:
@@ -193,7 +201,7 @@ $(BWA_DIR)/libbwa.a:
 
 clean:
 	rm -f $(SRC_DIR)/*.o
-	rm -f $(TEST_DIR)/*.o
+	rm -f $(TEST_DIR)/src/*.o
 	rm -f $(PROG) $(MPIPROG) $(TESTPROG)
 
 .PHONY: all scaleout test runtest clean

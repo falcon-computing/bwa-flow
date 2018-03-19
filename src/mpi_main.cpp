@@ -35,7 +35,7 @@
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lm/license.h"
 #endif
 
 #ifdef BUILD_FPGA
@@ -312,14 +312,9 @@ int main(int argc, char *argv[]) {
           throw std::runtime_error("cannot find FPGA bitstream at "+
               FLAGS_fpga_path);
         }
-        boost::filesystem::wpath pac_file_path(FLAGS_pac_path);
-        if (!boost::filesystem::exists(pac_file_path)) {
-          throw std::runtime_error("cannot find reference pac at "+
-              FLAGS_pac_path);
-        }
 
         opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
-            FLAGS_pac_path.c_str(), "sw_top");
+             "sw_top");
 
         //agent = new FPGAAgent(FLAGS_fpga_path.c_str(), chunk_size);
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
