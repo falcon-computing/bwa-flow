@@ -136,12 +136,6 @@ int main(int argc, char *argv[]) {
         << FLAGS_fpga_path;
       return 1;
     }
-    boost::filesystem::wpath pac_file_path(FLAGS_pac_path);
-    if (!boost::filesystem::exists(pac_file_path)) {
-      LOG(ERROR) << "Cannot find reference pac at " 
-        << FLAGS_pac_path;
-      return 1;
-    }
   }
   else {
     FLAGS_use_fpga = false;
@@ -302,8 +296,9 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
   if (FLAGS_use_fpga) {
     try {
-      opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
-          FLAGS_pac_path.c_str(), "sw_top");
+      opencl_env = new BWAOCLEnv(
+          FLAGS_fpga_path.c_str(),
+          "sw_top");
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
         << FLAGS_fpga_path;
     }
