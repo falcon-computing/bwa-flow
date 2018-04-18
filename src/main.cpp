@@ -132,14 +132,16 @@ int main(int argc, char *argv[]) {
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
-      LOG(ERROR) << "Cannot find FPGA bitstream at " 
+      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
         << FLAGS_fpga_path;
-      return 1;
+      FLAGS_use_fpga = false;
     }
   }
   else {
     FLAGS_use_fpga = false;
   }
+  // force turn off FPGA
+  FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
