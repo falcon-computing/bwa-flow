@@ -138,16 +138,12 @@ TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/MPIChannel.o
 endif
 
-# check FLMDIR
 ifneq ($(RELEASE),)
-# add support for flex license manage
-FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
-
+# add support for falcon license client
 CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
-LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
-LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
-		   $(FLMDIR)/lib/lm_new.o
+LIBS 	 	:= -L$(FLMDIR)/lib -lfalcon_license \
+		   $(LIBS) 
 endif
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
@@ -178,11 +174,11 @@ runmpitest:
 $(DEPS): ./deps/get-all.sh
 	./deps/get-all.sh
 
-$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
+$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS)
+	$(PP) $(OBJS) $(STDOBJS) -o $@ $(LIBS)
 
-$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
+$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS)
+	$(PP) $(OBJS) $(MPIOBJS) -o $@ $(MPILIBS) $(LIBS)
 
 $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
 	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 
