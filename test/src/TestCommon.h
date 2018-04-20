@@ -186,6 +186,7 @@ class MPITests : public ::testing::Test {
 class ChannelTests : public MPITests {
   ;
 };
+#endif
 
 inline std::string get_absolute_path(std::string path) {
   boost::filesystem::wpath file_path(path);
@@ -210,8 +211,6 @@ inline std::string get_bin_dir() {
   boost::filesystem::wpath bin_path(get_absolute_path(ss.str()));
   return bin_path.parent_path().string();
 }
-
-#endif
 
 static inline void check_bam_core(bam1_core_t &base, bam1_core_t &test) {
     EXPECT_EQ(base.tid, test.tid);
@@ -240,7 +239,7 @@ static inline void check_bam(bam1_t& base, bam1_t& test) {
 
 static inline void check_bams(bams_t& base, bams_t& test) {
   ASSERT_EQ(base.l, test.l); 
-  EXPECT_EQ(1, base.l);
+  //EXPECT_EQ(1, base.l);
   for (int i = 0; i < base.l; i ++) {
     check_bam(*base.bams[i], *test.bams[i]);
   }
