@@ -23,7 +23,7 @@ TEST_F(PipelineTests, Seq2BamsCompute) {
 
   // compute original results
   bseq1_t* base = bwa_mem(seqs, test_num);
-  
+
   // test pipeline with single thread
   SeqsToChains    stage_1(1);
   ChainsToRegions stage_2(1);
