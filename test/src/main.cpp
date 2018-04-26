@@ -57,6 +57,13 @@ int main(int argc, char *argv[]) {
   if (!g_seqs) {
     throw std::runtime_error("cannot read sequence");
   }
+  if (!aux->copy_comment) {
+    for (int i = 0; i < g_batch_num; i++) {
+      free(g_seqs[i].comment);
+      g_seqs[i].comment = 0;
+    }
+    VLOG(2) << "Do not append seq comment";
+  }
 
   // run all tests
   int ret = RUN_ALL_TESTS();
