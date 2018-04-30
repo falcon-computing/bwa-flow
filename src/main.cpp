@@ -46,32 +46,7 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "falcon-lm/license.h"
-#endif
-
-#ifdef USELICENSE
-void licence_check_out() {
-  // initialize for licensing. call once
-  fc_license_init();
-
-  // get a feature
-  int status = 0;
-  while (-4 == (status = fc_license_checkout(FALCON_DNA, 0))) {
-    LOG(INFO) << "Reached maximum allowed instances on this machine, "
-      << "wait for 30 seconds. Please press CTRL+C to exit.";
-    boost::this_thread::sleep_for(boost::chrono::seconds(30));
-  }
-  if (status) {
-    throw std::runtime_error(std::to_string((long long)status));
-  }
-}
-
-void licence_check_in() {
-  fc_license_checkin(FALCON_DNA);
-
-  // cleanup for licensing. call once
-  fc_license_cleanup();
-}
+#include "falcon-lic/license.h"
 #endif
 
 // global parameters
@@ -99,12 +74,19 @@ int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
 
 #ifdef USELICENSE
-  try {
-    // check license
-    licence_check_out();
-  }
-  catch (std::runtime_error &e) {
-    LOG(ERROR) << "Cannot connect to the license server: " << e.what();
+  namespace fc   = falconlic;
+#if DEPLOYMENT == aws
+  fc::enable_aws();
+#elif DEPLOYMENT == hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
+
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
+    LOG(ERROR) << "Cannot authorize software usage: " << licret;
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return -1;
   }
@@ -141,7 +123,7 @@ int main(int argc, char *argv[]) {
     FLAGS_use_fpga = false;
   }
   // force turn off FPGA
-  FLAGS_use_fpga = false;
+  //FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
@@ -344,11 +326,6 @@ int main(int argc, char *argv[]) {
   free(aux->opt);
   bwa_idx_destroy(aux->idx);
   delete aux;
-
-#ifdef USELICENSE
-  // release license
-  licence_check_in();
-#endif
 
   return 0;
 }

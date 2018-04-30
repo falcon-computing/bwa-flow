@@ -1,5 +1,11 @@
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 MKFILE_DIR  := $(dir $(MKFILE_PATH))
+
+GLOG_DIR    := ./deps/glog-0.3.3
+GFLAGS_DIR  := ./deps/gflags
+GTEST_DIR   := ./deps/googletest
+FLMDIR      := ./deps/falcon-lic
+
 include $(MKFILE_DIR)/config.mk
 
 BIN_DIR   	:= $(MKFILE_DIR)/bin
@@ -123,8 +129,6 @@ ifeq ($(RELEASE),)
 GIT_VERSION := $(GIT_VERSION)-dev
 endif
 
-CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
-
 ifneq ($(OPENMPI_DIR),)
 CFLAGS 	 := $(CFLAGS) -DUSE_MPI
 INCLUDES := $(INCLUDES) -I$(OPENMPI_DIR)/include
@@ -138,17 +142,19 @@ TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/MPIChannel.o
 endif
 
-# check FLMDIR
 ifneq ($(RELEASE),)
-# add support for flex license manage
-FLMLIB 		:= -llmgr_pic_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub_pic
-
+# add support for falcon license client
 CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
 INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
-LIBS		:= $(LIBS) -L$(FLMDIR)/lib $(FLMLIB) 
-LMDEPS 	 	:= $(FLMDIR)/lib/license.o \
-		   $(FLMDIR)/lib/lm_new.o
+LIBS 	 	:= -L$(FLMDIR)/lib -lfalcon_license \
+		   $(LIBS) 
+ifneq ($(DEPLOYMENT),) # config license client for a cloud
+CFLAGS       := $(CFLAGS) -DDEPLOYMENT=$(DEPLOYMENT)
+GIT_VERSION  := $(GIT_VERSION)-$(DEPLOYMENT)
 endif
+endif
+
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
 
@@ -178,11 +184,11 @@ runmpitest:
 $(DEPS): ./deps/get-all.sh
 	./deps/get-all.sh
 
-$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
+$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS)
+	$(PP) $(OBJS) $(STDOBJS) -o $@ $(LIBS)
 
-$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
+$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS)
+	$(PP) $(OBJS) $(MPIOBJS) -o $@ $(MPILIBS) $(LIBS)
 
 $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
 	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 

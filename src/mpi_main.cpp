@@ -35,38 +35,13 @@
 
 // use flexlm
 #ifdef USELICENSE
-#include "falcon-lm/license.h"
+#include "falcon-lic/license.h"
 #endif
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
 #include "FPGAPipeline.h"
 BWAOCLEnv* opencl_env;
-#endif
-
-#ifdef USELICENSE
-void licence_check_out() {
-  // initialize for licensing. call once
-  fc_license_init();
-
-  // get a feature
-  int status = 0;
-  while (-4 == (status = fc_license_checkout(FALCON_DNA, 0))) {
-    LOG(INFO) << "Reached maximum allowed instances on this machine, "
-      << "wait for 30 seconds. Please press CTRL+C to exit.";
-    boost::this_thread::sleep_for(boost::chrono::seconds(30));
-  }
-  if (status) {
-    throw std::runtime_error(std::to_string((long long)status));
-  }
-}
-
-void licence_check_in() {
-  fc_license_checkin(FALCON_DNA);
-
-  // cleanup for licensing. call once
-  fc_license_cleanup();
-}
 #endif
 
 // global parameters
@@ -105,13 +80,12 @@ int main(int argc, char *argv[]) {
 
 #ifdef USELICENSE
   if (rank == 0) {
-    try {
-      // check license
-      licence_check_out();
-    }
-    catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot connect to the license server: " << e.what();
+    int licret = falconlic::license_verify();
+    if (licret != falconlic::success) {
+      LOG(ERROR) << "Cannot authorize software usage: " << licret;
       LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+
+      MPI_Finalize();
       return -1;
     }
   }
@@ -348,13 +322,6 @@ int main(int argc, char *argv[]) {
   free(aux->opt);
   bwa_idx_destroy(aux->idx);
   delete aux;
-
-#ifdef USELICENSE
-  if (rank == 0) {
-    // release license
-    licence_check_in();
-  }
-#endif
 
   MPI_Finalize();
 
