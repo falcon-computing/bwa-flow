@@ -74,8 +74,18 @@ int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
 
 #ifdef USELICENSE
-  int licret = falconlic::license_verify();
-  if (licret != falconlic::success) {
+  namespace fc   = falconlic;
+#if DEPLOYMENT == aws
+  fc::enable_aws();
+#elif DEPLOYMENT == hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
+
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
     LOG(ERROR) << "Cannot authorize software usage: " << licret;
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return -1;
