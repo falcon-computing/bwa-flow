@@ -329,8 +329,8 @@ int main(int argc, char *argv[]) {
     delete aux;
   }
   catch (...) {
-    DLOG(ERROR) << "Encountered an internal issue: BWA-FLOW-01";
-    DLOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    LOG(ERROR) << "Encountered an internal issue.";
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return 1;
   }
 
