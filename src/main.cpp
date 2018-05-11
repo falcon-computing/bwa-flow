@@ -253,80 +253,87 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
 #endif
 
-  // Bind global vars to each pipeline
-  compute_flow.addConst("sam_dir", sam_dir);
-
-  compute_flow.addStage(0, &kread_stage);
-  compute_flow.addStage(1, &k2b_stage);
-  compute_flow.addStage(2, &seq2chain_stage);
-  compute_flow.addStage(3, &chain2reg_stage);
-  compute_flow.addStage(4, &reg2sam_stage);
-  compute_flow.addStage(5, &reorder_stage);
-  compute_flow.addStage(6, &write_stage);
-
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    fpga_flow.addStage(0, &chainpipe_fpga_stage);
-    fpga_flow.addStage(1, &chain2reg_fpga_stage);
-
-    // bind the input/output queue of stage_2 in compute_flow
-    fpga_flow.branch(compute_flow, 3);
-  }
-#endif
+  try {
+    // Bind global vars to each pipeline
+    compute_flow.addConst("sam_dir", sam_dir);
   
-  t_real = realtime();
-  compute_flow.start();
-
-  // Start FPGA context
+    compute_flow.addStage(0, &kread_stage);
+    compute_flow.addStage(1, &k2b_stage);
+    compute_flow.addStage(2, &seq2chain_stage);
+    compute_flow.addStage(3, &chain2reg_stage);
+    compute_flow.addStage(4, &reg2sam_stage);
+    compute_flow.addStage(5, &reorder_stage);
+    compute_flow.addStage(6, &write_stage);
+  
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    try {
-      opencl_env = new BWAOCLEnv(
-          FLAGS_fpga_path.c_str(),
-          "sw_top");
-      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-        << FLAGS_fpga_path;
-
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      fpga_flow.addStage(0, &chainpipe_fpga_stage);
+      fpga_flow.addStage(1, &chain2reg_fpga_stage);
+  
+      // bind the input/output queue of stage_2 in compute_flow
+      fpga_flow.branch(compute_flow, 3);
+    }
+#endif
+    
+    t_real = realtime();
+    compute_flow.start();
+  
+    // Start FPGA context
+#ifdef BUILD_FPGA
+    if (FLAGS_use_fpga) {
+      try {
+        opencl_env = new BWAOCLEnv(
+            FLAGS_fpga_path.c_str(),
+            "sw_top");
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+          << FLAGS_fpga_path;
+  
 #ifndef FPGA_TEST
-      fpga_flow.start();
-      fpga_flow.wait();
+        fpga_flow.start();
+        fpga_flow.wait();
 #endif
-      delete opencl_env;
+        delete opencl_env;
+      }
+      catch (std::runtime_error &e) {
+        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
+        DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
+        DLOG(ERROR) << "because: " << e.what();
+      }
     }
-    catch (std::runtime_error &e) {
-      LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
-      DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
-      DLOG(ERROR) << "because: " << e.what();
-    }
-  }
 #endif
-  compute_flow.wait();
-
-  kseq_destroy(aux->ks);
-  err_gzclose(fp_idx); 
-  kclose(ko_read1);
-
-  if (aux->ks2) {
-    kseq_destroy(aux->ks2);
-    err_gzclose(fp2_read2); kclose(ko_read2);
-  }
-
-  std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-  std::cerr << "Real time: " << realtime() - t_real << " sec, "
-            << "CPU time: " << cputime() << " sec" 
-            << std::endl;
-
-  //err_fflush(stdout);
-  //err_fclose(stdout);
-
-  free(bwa_pg);
-
+    compute_flow.wait();
+  
+    kseq_destroy(aux->ks);
+    err_gzclose(fp_idx); 
+    kclose(ko_read1);
+  
+    if (aux->ks2) {
+      kseq_destroy(aux->ks2);
+      err_gzclose(fp2_read2); kclose(ko_read2);
+    }
+  
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
+    std::cerr << "Real time: " << realtime() - t_real << " sec, "
+              << "CPU time: " << cputime() << " sec" 
+              << std::endl;
+  
+    //err_fflush(stdout);
+    //err_fclose(stdout);
+  
+    free(bwa_pg);
+  
 #ifdef USE_HTSLIB
-  bam_hdr_destroy(aux->h);
+    bam_hdr_destroy(aux->h);
 #endif
-  free(aux->opt);
-  bwa_idx_destroy(aux->idx);
-  delete aux;
+    free(aux->opt);
+    bwa_idx_destroy(aux->idx);
+    delete aux;
+  }
+  catch (...) {
+    LOG(ERROR) << "Encountered an internal issue.";
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    return 1;
+  }
 
   return 0;
 }

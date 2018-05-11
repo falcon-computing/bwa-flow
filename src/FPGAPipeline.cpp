@@ -421,7 +421,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting the remaining tasks";
 
     // finish the remain reads even with small task number 
-    if (!reach_end) {
+    if (!reach_end && task_num != 0) {
       SWTask* task = task_queue.front();
       if (task_num < chunk_size/2 || reach_half == false) {
         task->i_size[0] = kernel_buffer_idx/sizeof(int);
