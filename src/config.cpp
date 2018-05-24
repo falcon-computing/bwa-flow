@@ -14,6 +14,119 @@ DEFINE_int32(t, boost::thread::hardware_concurrency(),
 
 DEFINE_bool(M, true, "-M arg in original BWA");
 
+DEFINE_int32(k, 0, "-k arg in original BWA, minimum seed length");
+
+DEFINE_bool(1, false, "-1 flag in original BWA, flag for *no_mt_io*");
+
+DEFINE_string(x, "",
+              "-x arg in original BWA, read type. Setting -x changes multiple parameters unless overriden");
+
+DEFINE_int32(w, 0, 
+             "-w arg in original BWA, band width for banded alignment");
+
+DEFINE_int32(A, 0,
+             "-A arg in original BWA, score for a sequence match, which scales options -TdBOELU unless overridden");
+
+DEFINE_int32(B, 0,
+             "-B arg in original BWA, penalty for a mismatch");
+
+DEFINE_int32(T, 0,
+             "-T arg in original BWA, minimum score to output");
+
+DEFINE_int32(U, 0,
+             "-U arg in original BWA, penalty for an unpaired read pair");
+
+DEFINE_bool(P, false,
+            "-P flag in original BWA, skip pairing; mate rescue performed unless -S also in use");
+
+DEFINE_bool(a, false,
+            "-a flag in original BWA, output all alignments for SE or unpaired PE");
+
+DEFINE_bool(p, false,
+            "-p flag in original BWA, smart pairing (ignoring in2.fq)");
+
+DEFINE_bool(S, false,
+            "-S flag in original BWA, skip mate rescue");
+
+DEFINE_bool(Y, false,
+            "-Y flag in original BWA, use soft clipping for supplementary alignments");
+
+DEFINE_bool(V, false,
+            "-V flag in original BWA, output the reference FASTA header in the XR tag");
+
+DEFINE_int32(c, 0,
+           "-c INT in original BWA, skip seeds with more than INT occurrences");
+
+DEFINE_int32(d, 0,
+             "-d arg in original BWA, off-diagonal X-dropoff");
+
+#if 0
+//Overrided by FLAGS_v from glog
+DEFINE_bool(v, 1, "-v arg in original BWA, verbose level")
+#endif
+
+DEFINE_bool(j, false,
+            "-j flag in original BWA, treat ALT contigs as part of the primary assembly (i.e. ignore <idxbase>.alt file)");
+
+DEFINE_double(r, 0,
+             "-r FLOAT in original BWA, look for internal seeds inside a seed longer than {-k} * FLOAT");
+
+DEFINE_double(D, 0,
+             "-D FLOAT in original BWA, drop chains shorter than FLOAT fraction of the longest overlapping chain");
+
+DEFINE_int32(m, 0,
+             "-m INT in original BWA, perform at most INT rounds of mate rescues for each read");
+
+DEFINE_int32(s, 0,
+             "(deprecated) -s INT in original BWA, look for internal seeds inside a seed with less than INT occ");
+
+DEFINE_int32(G, 0,
+             "-G arg in original BWA"); // no description in original bwa codes
+
+DEFINE_int32(N, 0, 
+             "-N arg in original BWA"); // no description in original bwa codes
+
+DEFINE_int32(W, 0,
+             "-M INT in original BWA, discard a chain if seeded bases shorter than INT");
+
+DEFINE_int32(y, 0,
+             "-y arg in original BWA, seed occurrence for the 3rd round seeding");
+
+DEFINE_bool(C, false,
+             "-C flag in original BWA, append FASTA/FASTQ comment to SAM output");
+
+DEFINE_int32(K, 0,
+             "-K arg in original BWA, fixed chunk size"); // no description in original bwa codes
+
+DEFINE_double(X, 0,
+              "-X arg in original BWA"); // no description in original bwa codes
+
+#ifdef USE_HTSLIB
+DEFINE_int32(o, 0,
+             "-o arg in original BWA, 0 - BAM (compressed), 1 - BAM (uncompressed), 2 - SAM");
+#endif
+
+DEFINE_string(h, "",
+              "-h arg in original BWA, if there are <INT hits with score >80%% of the max score, output all in XA [%d,%d]");
+
+DEFINE_int32(Q, 0,
+             "-Q arg in original BWA");
+
+DEFINE_string(O, "",
+             "-O arg in original BWA, gap open penalties for deletions and insertions");
+
+DEFINE_string(E, "",
+              "-E arg in original BWA, gap extension penalty; a gap of size k cost '{-O} + {-E}*k'");
+
+DEFINE_string(L, "",
+              "-L arg in original BWA, penalty for 5'- and 3'-end clipping");
+
+DEFINE_string(H, "",
+              "-H STR/FILE in original BWA, insert STR to header if it starts with @; or insert lines in FILE");
+
+DEFINE_string(I, "",
+              "-I arg in original BWA\nspecify the mean, standard deviation (10%% of the mean if absent), max\n(4 sigma from the mean if absent) and min of the insert size distribution.\nFR orientation only.");
+
 // Parameters
 DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
     "on the FLAG field, similar to the -F argument in samtools");

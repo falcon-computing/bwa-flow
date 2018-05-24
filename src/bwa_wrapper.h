@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <string>
+#include <vector>
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
@@ -109,6 +110,7 @@ int kclose(void *a);
 }
 
 int pre_process(int argc, char *argv[], ktp_aux_t *aux, bool is_master);
+int pack_bwa_mem_args(std::vector<const char*> & bwa_mem_args);
 
 mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
 
