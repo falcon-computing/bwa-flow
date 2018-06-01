@@ -2,10 +2,11 @@
 #define SW_TASK_H
 
 #include "bwa_wrapper.h"
+#include "Task.h"
 #include "FPGAAgent.h"
 #include "BWAOCLEnv.h"
 
-class SWTask {
+class SWTask : public Task {
 
  public:
   SWTask(BWAOCLEnv* env, int chunk_size);

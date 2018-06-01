@@ -14,7 +14,7 @@ KFLOW_DIR 	:= $(MKFILE_DIR)/kflow
 SRC_DIR   	:= $(MKFILE_DIR)/src
 TEST_DIR	:= $(MKFILE_DIR)/test
 
-CFLAGS 	:= -std=c++0x -fPIC
+CFLAGS 	:= -g --debug -std=c++0x -fPIC
 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
@@ -84,14 +84,16 @@ ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
-	    $(SRC_DIR)/SWTask.o
+	    $(SRC_DIR)/SWTask.o \
+	    $(SRC_DIR)/SMemTask.o
 
 TESTOBJS := $(TESTOBJS) \
 	    $(TEST_DIR)/src/FPGATests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/FPGAPipeline.o \
-	    $(SRC_DIR)/SWTask.o
+	    $(SRC_DIR)/SWTask.o \
+	    $(SRC_DIR)/SMemTask.o
 
 ifneq ($(ALTERAOCLSDKROOT),)
 CFLAGS 	 := $(CFLAGS) -DINTEL_FPGA
@@ -116,10 +118,12 @@ LIBS	 := $(LIBS) \
 	-L$(XILINX_SDX)/runtime/lib/x86_64 -lxilinxopencl
 
 OBJS	 := $(OBJS) \
-	    $(SRC_DIR)/XCLAgent.o
+	    $(SRC_DIR)/XCLAgent.o \
+	    $(SRC_DIR)/SMemXCLAgent.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
-	    $(SRC_DIR)/XCLAgent.o
+	    $(SRC_DIR)/XCLAgent.o \
+	    $(SRC_DIR)/SMemXCLAgent.o
 
 GIT_VERSION := $(GIT_VERSION)-xlnx
 endif
@@ -191,6 +195,7 @@ $(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS)
 	$(PP) $(OBJS) $(MPIOBJS) -o $@ $(MPILIBS) $(LIBS)
 
 $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
+	mkdir -p $(TEST_DIR)/bin
 	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 
 
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c

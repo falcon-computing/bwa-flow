@@ -123,8 +123,6 @@ int main(int argc, char *argv[]) {
   else {
     FLAGS_use_fpga = false;
   }
-  // force turn off FPGA
-  FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
@@ -219,11 +217,8 @@ int main(int argc, char *argv[]) {
   int num_compute_stages = 3;
 
   if (FLAGS_offload) {
-#ifndef FPGA_TEST
     num_compute_stages = 7;
-#else
-    num_compute_stages = 8;
-#endif
+    //num_compute_stages = 8;
   }
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
@@ -231,6 +226,7 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads in total";
+  DLOG(INFO) << "Using " << FLAGS_max_fpga_thread << " for fpga";
 
   // Stages for bwa file in/out
   SeqsRead        read_stage;
@@ -246,11 +242,14 @@ int main(int argc, char *argv[]) {
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
 
 #ifdef BUILD_FPGA
-  kestrelFlow::Pipeline fpga_flow(2, 1);
+  // Stages for FPGA acceleration of stage_1
+  kestrelFlow::Pipeline fpga_smem_flow(1, 1);
+  SeqsToChainsFPGA      seq2chain_fpga_stage(FLAGS_max_fpga_thread);
 
   // Stages for FPGA acceleration of stage_2
-  ChainsPipeFPGA      chainpipe_fpga_stage; // push through
-  ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+  kestrelFlow::Pipeline fpga_flow(2, 1);
+  ChainsPipeFPGA        chainpipe_fpga_stage; // push through
+  ChainsToRegionsFPGA   chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
 #endif
 
   try {
@@ -267,36 +266,48 @@ int main(int argc, char *argv[]) {
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      fpga_flow.addStage(0, &chainpipe_fpga_stage);
-      fpga_flow.addStage(1, &chain2reg_fpga_stage);
-  
-      // bind the input/output queue of stage_2 in compute_flow
-      fpga_flow.branch(compute_flow, 3);
+      fpga_smem_flow.addStage(0, &seq2chain_fpga_stage);
+      // bind the input/output queue of stage_1 in compute_flow
+      fpga_smem_flow.branch(compute_flow, 2);
     }
+
+    //if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+    //  fpga_flow.addStage(0, &chainpipe_fpga_stage);
+    //  fpga_flow.addStage(1, &chain2reg_fpga_stage);
+  
+    //  // bind the input/output queue of stage_2 in compute_flow
+    //  fpga_flow.branch(compute_flow, 3);
+    //}
 #endif
     
     t_real = realtime();
     compute_flow.start();
-  
-    // Start FPGA context
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
+      // Start FPGA context
       try {
         opencl_env = new BWAOCLEnv(
             FLAGS_fpga_path.c_str(),
-            "sw_top");
+            "mem_collect_intv_fpga");
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-          << FLAGS_fpga_path;
-  
-#ifndef FPGA_TEST
-        fpga_flow.start();
-        fpga_flow.wait();
-#endif
-        delete opencl_env;
+                                     << FLAGS_fpga_path;
       }
       catch (std::runtime_error &e) {
         LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
         DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
+        DLOG(ERROR) << "because: " << e.what();
+      }
+
+      try {
+        //fpga_flow.start();
+        fpga_smem_flow.start();
+        fpga_smem_flow.wait();
+        //fpga_flow.wait();
+
+        delete opencl_env;
+      }
+      catch (std::runtime_error &e) {
+        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Error in FPGA execution";
         DLOG(ERROR) << "because: " << e.what();
       }
     }

@@ -31,5 +31,15 @@ class ChainsToRegionsFPGA
   void processOutput(SWTask* task);
 };
 
+class SeqsToChainsFPGA
+: public kestrelFlow::MapStage<
+      SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH> {
+ public:
+  SeqsToChainsFPGA(int n=1) : kestrelFlow::MapStage<
+      SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n, false) {;}
+
+  ChainsRecord compute(SeqsRecord const & record);
+};
+
 #endif
 

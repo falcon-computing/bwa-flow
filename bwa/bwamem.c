@@ -365,6 +365,82 @@ mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	return chain;
 }
 
+mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf)
+{
+#if 0
+	mem_chain_v chain;
+	kv_init(chain);
+	if (len < opt->min_seed_len) return chain; // if the query is shorter than the seed length, no match
+
+	smem_aux_t *aux;
+	aux = buf? (smem_aux_t*)buf : smem_aux_init();
+	//mem_collect_intv(opt, bwt, len, seq, aux);
+	//use the new method
+	mem_collect_intv_new(opt, bwt, len, seq, aux);
+#endif
+
+	int i, b, e, l_rep;
+	int64_t l_pac = bns->l_pac;
+	mem_chain_v chain;
+	kbtree_t(chn) *tree;
+	smem_aux_t *aux = (smem_aux_t*)buf;
+
+	kv_init(chain);
+	if (len < opt->min_seed_len) return chain; // if the query is shorter than the seed length, no match
+	tree = kb_init(chn, KB_DEFAULT_SIZE);
+
+	for (i = 0, b = e = l_rep = 0; i < aux->mem.n; ++i) { // compute frac_rep
+		bwtintv_t *p = &aux->mem.a[i];
+		int sb = (p->info>>32), se = (uint32_t)p->info;
+		if (p->x[2] <= opt->max_occ) continue;
+		if (sb > e) l_rep += e - b, b = sb, e = se;
+		else e = e > se? e : se;
+	}
+	l_rep += e - b;
+	for (i = 0; i < aux->mem.n; ++i) {
+		bwtintv_t *p = &aux->mem.a[i];
+		int step, count, slen = (uint32_t)p->info - (p->info>>32); // seed length
+		int64_t k;
+		// if (slen < opt->min_seed_len) continue; // ignore if too short or too repetitive
+		step = p->x[2] > opt->max_occ? p->x[2] / opt->max_occ : 1;
+		for (k = count = 0; k < p->x[2] && count < opt->max_occ; k += step, ++count) {
+			mem_chain_t tmp, *lower, *upper;
+			mem_seed_t s;
+			int rid, to_add = 0;
+			s.rbeg = tmp.pos = bwt_sa(bwt, p->x[0] + k); // this is the base coordinate in the forward-reverse reference
+			s.qbeg = p->info>>32;
+			s.score= s.len = slen;
+			rid = bns_intv2rid(bns, s.rbeg, s.rbeg + s.len);
+			if (rid < 0) continue; // bridging multiple reference sequences or the forward-reverse boundary; TODO: split the seed; don't discard it!!!
+			if (kb_size(tree)) {
+				kb_intervalp(chn, tree, &tmp, &lower, &upper); // find the closest chain
+				if (!lower || !test_and_merge(opt, l_pac, lower, &s, rid)) to_add = 1;
+			} else to_add = 1;
+			if (to_add) { // add the seed as a new chain
+				tmp.n = 1; tmp.m = 4;
+				tmp.seeds = calloc(tmp.m, sizeof(mem_seed_t));
+				tmp.seeds[0] = s;
+				tmp.rid = rid;
+				tmp.is_alt = !!bns->anns[rid].is_alt;
+				kb_putp(chn, tree, &tmp);
+			}
+		}
+	}
+	if (buf == 0) smem_aux_destroy(aux);
+
+	kv_resize(mem_chain_t, chain, kb_size(tree));
+
+	#define traverse_func(p_) (chain.a[chain.n++] = *(p_))
+	__kb_traverse(mem_chain_t, tree, traverse_func);
+	#undef traverse_func
+
+	for (i = 0; i < chain.n; ++i) chain.a[i].frac_rep = (float)l_rep / len;
+	if (bwa_verbose >= 4) printf("* fraction of repetitive seeds: %.3f\n", (float)l_rep / len);
+
+	kb_destroy(chn, tree);
+	return chain;
+}
+
 /********************
  * Filtering chains *
  ********************/

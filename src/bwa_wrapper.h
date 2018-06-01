@@ -42,11 +42,16 @@ public:
 #endif
 };
 
+#if 0
 class smem_aux_t {
  public:
   int id_read;
 	bwtintv_v mem, mem1, *tmpv[2];
 };
+#endif
+typedef struct {
+	bwtintv_v mem, mem1, *tmpv[2];
+} smem_aux_t;
 
 /************
  * Chaining *
@@ -85,8 +90,10 @@ int ksprintf(kstring_t *s, const char *fmt, ...);
 void *kopen(const char *fn, int *_fd);
 
 void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
+void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
 
 mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
+mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
 
 int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a);
 

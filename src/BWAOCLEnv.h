@@ -27,53 +27,100 @@
 
 class BWAOCLEnv : public OpenCLEnv{
  public:
-  BWAOCLEnv(
-      const char* bin_path, 
-      const char* kernel_name) :OpenCLEnv(bin_path, kernel_name) 
+  BWAOCLEnv(const char* bin_path, 
+            const char* kernel_name)
+  : OpenCLEnv(bin_path, kernel_name) 
   {
+    initPAC();
+    initBWT();
+  }
+
+  ~BWAOCLEnv() {
+    releasePAC();
+    releaseBWT();
+  }
+
+  void initPAC() {
+#ifdef XILINX_FPGA
     // get full pac array from pac
     char* pac;
     int64_t pac_size = get_full_pac(pac);
 
-    int err = 0;
-    command_ = clCreateCommandQueue(context_, device_id_, 0, &err);
-    if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to create a command queue context!");
-    }
-#ifdef XILINX_FPGA
+    cl_int err = 0;
     cl_mem_ext_ptr_t ext_c, ext_d;
     ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
     ext_d.flags = XCL_MEM_DDR_BANK3; ext_d.obj = 0; ext_d.param = 0;
 
-    pac_input_a_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-        pac_size, &ext_c, &err);
-    pac_input_b_ = clCreateBuffer(context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-        pac_size, &ext_d, &err);
+    pac_input_a_ = clCreateBuffer( context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+                                   pac_size, &ext_c, &err);
+    pac_input_b_ = clCreateBuffer( context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+                                   pac_size, &ext_d, &err);
     if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to create reference OpenCL buffer!");
+      throw std::runtime_error("Failed to create PAC reference OpenCL buffer!");
     }
+    
     cl_event event[2];
-    err = clEnqueueWriteBuffer(command_, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
-    err = clEnqueueWriteBuffer(command_, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
-    clWaitForEvents(2, event);
+    cl_command_queue command = getCmdQueue();
+    err  = clEnqueueWriteBuffer(command, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
+    err |= clEnqueueWriteBuffer(command, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
+    err |= clWaitForEvents(2, event);
     if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to write reference to DDR!");
+      throw std::runtime_error("Failed to write PAC reference to DDR!");
     }
-    free(pac);
     clReleaseEvent(event[0]);
     clReleaseEvent(event[1]);
+    clFinish(command);
+
+    free(pac);
 #else
     DLOG(ERROR) << "This feature is currently only supported in Xilinx";
 #endif
   }
-  ~BWAOCLEnv(){
-    clReleaseCommandQueue(command_);
+
+  void releasePAC() {
 #ifdef XILINX_FPGA
     clReleaseMemObject(pac_input_a_);
     clReleaseMemObject(pac_input_b_);
 #endif
-   // clReleaseProgram(program_);
-   // clReleaseContext(context_);
+  }
+
+  void initBWT() {
+    uint32_t *bwt      = aux->idx->bwt->bwt;
+    size_t    bwt_size = aux->idx->bwt->bwt_size*sizeof(uint32_t);
+
+    cl_int err = 0;
+    cl_mem_ext_ptr_t ext[4];
+    ext[0].flags = XCL_MEM_DDR_BANK1; ext[0].obj = 0; ext[0].param=0;
+    ext[1].flags = XCL_MEM_DDR_BANK2; ext[1].obj = 0; ext[1].param=0;
+    ext[2].flags = XCL_MEM_DDR_BANK3; ext[2].obj = 0; ext[2].param=0;
+    ext[3].flags = XCL_MEM_DDR_BANK0; ext[3].obj = 0; ext[3].param=0;
+
+    for (int i = 0; i < 16; i++) {
+      bwt_[i] = clCreateBuffer( context_,
+                                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+                                bwt_size,
+                                &(ext[ (int)(i/4) ]),
+                                &err );
+    if (err != CL_SUCCESS)
+      throw std::runtime_error("Failed to create BWT reference OpenCL buffer!");
+    }
+
+    cl_event bwt_events[16];
+    cl_command_queue command = getCmdQueue();
+    for (int i = 0; i < 16; i++) {
+      err |= clEnqueueWriteBuffer( command, bwt_[i], CL_FALSE, 0, bwt_size,
+                                   bwt, 0, NULL, &bwt_events[i]);
+    }
+
+    err |= clWaitForEvents(16, bwt_events);
+    if (err != CL_SUCCESS)
+      throw std::runtime_error("Failed to write BWT reference to DDR");
+    for (int i = 0; i < 16; i++) clReleaseEvent(bwt_events[i]);
+    clFinish(command);
+  }
+
+  void releaseBWT() {
+    for (int i = 0; i < 16; i++) clReleaseMemObject(bwt_[i]);
   }
 
   static int64_t get_full_pac(char* &pac) { 
@@ -97,9 +144,10 @@ class BWAOCLEnv : public OpenCLEnv{
     return pac_size;
   }
 
-  cl_command_queue command_;
+ public:
   cl_mem pac_input_a_;
   cl_mem pac_input_b_;
+  cl_mem bwt_[16];
 };
 
 extern BWAOCLEnv* opencl_env;

@@ -68,8 +68,9 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
   }
 }
 
-void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
+void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 
+  SWTask *task = (SWTask *)i_task;
   XCLAgent* prev_agent = NULL;
   if (agent) {
     prev_agent = (XCLAgent*)agent;

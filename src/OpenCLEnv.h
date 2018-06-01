@@ -19,7 +19,7 @@ class OpenCLEnv
  public:
    OpenCLEnv(const char* bin_path, const char* kernel_name) {
      // start platform setting up
-     int err;
+     cl_int err;
 
      cl_platform_id* platform_id = new cl_platform_id[2];
 
@@ -129,13 +129,14 @@ class OpenCLEnv
   cl_command_queue getCmdQueue() {
     if (!cmd_) {
       cl_int err = 0;
-      cmd_ = clCreateCommandQueue(context_, device_id_, 0, &err);
+      cmd_ = clCreateCommandQueue(context_, device_id_, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a command queue context");
       }
     }
     return cmd_;
   }
+
 
  private:
   int load_file(
