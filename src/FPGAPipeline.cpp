@@ -525,7 +525,8 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
 }
 
 ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
-  static int entry_id = 0;
+  static int seqs_record_id = -1;
+  seqs_record_id++;
 
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SeqsToChains() on FPGA";
 
@@ -554,9 +555,7 @@ ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
       // chn = mem_chain(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);         // the 0 should be reconsidered
 #if 1
       smem_aux_t *smem_aux = smem_aux_init();
-      uint64_t tic = getUs();
       mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
-      small_timer += (getUs() - tic);
       chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
       smem_aux_destroy(smem_aux);
 #endif
@@ -630,6 +629,11 @@ ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
         // postprocess
         mem_chain_v chn;
         bseq1_t *seqs = &srseqs[i];
+        if (smem_aux->mem.n > task->max_intv_alloc_) {
+          smem_aux->mem.a = temp;
+          mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+          DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord " << seqs_record_id << " overflowed. Redo on CPU";
+        }
         chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
         smem_aux->mem.a = temp;
         smem_aux_destroy(smem_aux);
@@ -666,6 +670,11 @@ ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
       // postprocess
       mem_chain_v chn;
       bseq1_t *seqs = &srseqs[i];
+      if (smem_aux->mem.n > task->max_intv_alloc_) {
+        smem_aux->mem.a = temp;
+        mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+        DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord " << seqs_record_id << " overflowed. Redo on CPU";
+      }
       chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
       smem_aux->mem.a = temp;
       smem_aux_destroy(smem_aux);
