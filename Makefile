@@ -1,5 +1,6 @@
-MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-MKFILE_DIR  := $(dir $(MKFILE_PATH))
+#MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+#MKFILE_DIR  := $(dir $(MKFILE_PATH))
+MKFILE_DIR  := .
 
 GLOG_DIR    := ./deps/glog-0.3.3
 GFLAGS_DIR  := ./deps/gflags

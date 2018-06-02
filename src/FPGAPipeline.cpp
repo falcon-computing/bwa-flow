@@ -594,8 +594,12 @@ ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
       }
       for (int j = 0; j < seqs->l_seq; ++j) // convert to 2-bit encoding if we have not done so
         seqs->seq[j] = seqs->seq[j] < 4? seqs->seq[j] : nst_nt4_table[(int)seqs->seq[j]];
-      memcpy( &(task->i_seq_data[i2*150]), seqs->seq, seqs->l_seq*sizeof(char) );
-      memset( &(task->i_seq_data[i2*150+seqs->l_seq]), 0, std::max(150-(int)(seqs->l_seq), 0)*sizeof(char) );
+      if (seqs->l_seq < aux->opt->min_seed_len) {
+        memset( &(task->i_seq_data[i2*max_seq_len]), UCHAR_MAX, max_seq_len*sizeof(char) );
+      } else {
+        memcpy( &(task->i_seq_data[i2*max_seq_len]), seqs->seq, seqs->l_seq*sizeof(char) );
+        memset( &(task->i_seq_data[i2*max_seq_len+seqs->l_seq]), UCHAR_MAX, std::max(max_seq_len-(int)(seqs->l_seq), 0)*sizeof(char) );
+      }
     }
     task->i_seq_num = task_size;
     task->i_seq_base_idx = i1*max_task_size;
