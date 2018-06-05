@@ -16,6 +16,7 @@
 #include "bwa/kseq.h"
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "allocation_wrapper.h"
 
 extern unsigned char nst_nt4_table[256];
 

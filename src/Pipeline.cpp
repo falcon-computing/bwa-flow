@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "bwa/utils.h"
 #include "kflow/Queue.h"
@@ -24,6 +25,7 @@
 #include "config.h"
 #include "Pipeline.h"  
 #include "util.h"
+#include "allocation_wrapper.h"
 
 // Comparator function for bam1_t records
 #ifdef USE_HTSLIB
@@ -187,6 +189,11 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   int batch_num = input.batch_num;
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
 
   for (int i = 0; i < batch_num; i++) {
     mem_chain_v chains = seq2chain(aux, &seqs[i]);

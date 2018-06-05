@@ -1,7 +1,10 @@
+#include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "allocation_wrapper.h"
 #include "BWAOCLEnv.h"
 #include "SWTask.h"
 
@@ -17,6 +20,10 @@ inline void *sw_malloc(size_t size, int data_width) {
   size_t aligned_size = data_width*((size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
   void *result = NULL;
   posix_memalign(&result, AOCL_ALIGNMENT, aligned_size);
+  if (NULL == result) {
+    LOG(ERROR) << strerror(errno) << " due to out-of-memory";
+    exit(EXIT_FAILURE);
+  }
   return result;
 }
 #else
@@ -34,6 +41,11 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 #elif XILINX_FPGA
   agent_ = new XCLAgent(env, this);
 #endif
+  if (NULL == agent_) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   for (int k = 0; k < 2; k++) {
     i_size[k] = 0;
     o_size[k] = 0;
@@ -42,7 +54,17 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
     o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
   }
   region_batch = new mem_alnreg_t*[2*chunk_size];
+  if (NULL == region_batch) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   chain_batch  = new mem_chain_t*[2*chunk_size];
+  if (NULL == chain_batch) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
 }
 
 SWTask::~SWTask() {

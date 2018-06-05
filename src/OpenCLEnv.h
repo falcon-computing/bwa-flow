@@ -13,6 +13,7 @@
 
 #include "kflow/Queue.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 class OpenCLEnv 
 : public boost::basic_lockable_adapter<boost::mutex> {

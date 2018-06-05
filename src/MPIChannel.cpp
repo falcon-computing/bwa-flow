@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "allocation_wrapper.h"
 
 #include "mpi.h"
 #include "MPIChannel.h"

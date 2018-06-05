@@ -6,11 +6,8 @@
 #include "bwa/bntseq.h"
 #include "bwa/utils.h"
 
-#ifdef USE_MALLOC_WRAPPERS
-#  include "malloc_wrap.h"
-#endif
-
 #include "util.h"
+#include "allocation_wrapper.h"
 
 template <typename T>
 void assertEQ(int i, int j, const char* msg, T const &a, T const &b) {
