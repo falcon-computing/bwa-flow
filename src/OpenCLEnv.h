@@ -129,7 +129,7 @@ class OpenCLEnv
   cl_command_queue getCmdQueue() {
     if (!cmd_) {
       cl_int err = 0;
-      cmd_ = clCreateCommandQueue(context_, device_id_, 0, &err);
+      cmd_ = clCreateCommandQueue(context_, device_id_, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a command queue context");
       }
