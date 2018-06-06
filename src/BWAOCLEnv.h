@@ -36,10 +36,6 @@ class BWAOCLEnv : public OpenCLEnv{
     int64_t pac_size = get_full_pac(pac);
 
     int err = 0;
-    command_ = clCreateCommandQueue(context_, device_id_, 0, &err);
-    if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to create a command queue context!");
-    }
 #ifdef XILINX_FPGA
     cl_mem_ext_ptr_t ext_c, ext_d;
     ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
@@ -53,8 +49,9 @@ class BWAOCLEnv : public OpenCLEnv{
       throw std::runtime_error("Failed to create reference OpenCL buffer!");
     }
     cl_event event[2];
-    err = clEnqueueWriteBuffer(command_, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
-    err = clEnqueueWriteBuffer(command_, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
+    cl_command_queue command = getCmdQueue();
+    err = clEnqueueWriteBuffer(command, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
+    err = clEnqueueWriteBuffer(command, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
     clWaitForEvents(2, event);
     if (err != CL_SUCCESS) {
       throw std::runtime_error("Failed to write reference to DDR!");
@@ -67,13 +64,10 @@ class BWAOCLEnv : public OpenCLEnv{
 #endif
   }
   ~BWAOCLEnv(){
-    clReleaseCommandQueue(command_);
 #ifdef XILINX_FPGA
     clReleaseMemObject(pac_input_a_);
     clReleaseMemObject(pac_input_b_);
 #endif
-   // clReleaseProgram(program_);
-   // clReleaseContext(context_);
   }
 
   static int64_t get_full_pac(char* &pac) { 
@@ -97,7 +91,6 @@ class BWAOCLEnv : public OpenCLEnv{
     return pac_size;
   }
 
-  cl_command_queue command_;
   cl_mem pac_input_a_;
   cl_mem pac_input_b_;
 };

@@ -25,21 +25,38 @@
 void ChainsToRegionsFPGA::processOutput(SWTask* task) {
   // finish task and get output buffers
   task->finish();
-
-  mem_alnreg_t** region_batch = task->region_batch;
-  mem_chain_t**  chain_batch = task->chain_batch;
-
+restart:
   int total_task_num = (task->o_size[0]+task->o_size[1])/FPGA_RET_PARAM_NUM;
   int actual_tasks = 0;
 
   uint64_t start_ts = getUs();
   bool wrong_results = false;
   int wrong_half = -1;
+
+  // check fpga results correctness
+  for (int k = 0; k < 2; k++) {
+    int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
+    short* kernel_output = task->o_data[k];
+    for (int i = 0; i < task_num; i++) {
+      int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+        kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+      if (seed_idx > actual_tasks)
+        actual_tasks = seed_idx;
+      if (seed_idx > total_task_num || seed_idx < 0) {
+        DLOG(WARNING) << "Incurred wrong fpga results. Redo.";
+        task->redo();
+        goto restart;
+      }
+    }
+  }
+
+  // apply fpga results
+  mem_alnreg_t** region_batch = task->region_batch;
+  mem_chain_t**  chain_batch = task->chain_batch;
   for (int k = 0; k < 2; k++) {
     int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
     short* kernel_output = task->o_data[k];
 
-    //DLOG_IF(INFO, VLOG_IS_ON(3)) << "output " << k << " task num = " << task_num;
     for (int i = 0; i < task_num; i++) {
       int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
         kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
@@ -55,6 +72,9 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
         wrong_results = true;
         wrong_half = k;
         goto error;
+        //DLOG(WARNING) << "Incurred wrong fpga results. Redo.";
+        //task->redo();
+        //goto restart;
       }
 
       newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
@@ -80,8 +100,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
       newreg->seedcov = seedcov;
     }
     // reset
-    task->i_size[k] = 0;
-    task->o_size[k] = 0;
+    // task->i_size[k] = 0;
+    // task->o_size[k] = 0;
   }
 
   if (total_task_num != actual_tasks + 1) {
@@ -473,18 +493,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
   // delete everything
   while (!task_queue.empty()) {
     SWTask* task = task_queue.front();
-
-    for (int k = 0; k < 2; k++) {
-      clReleaseMemObject(task->i_buf[k]);
-      clReleaseMemObject(task->o_buf[k]);
-      free(task->i_data[k]);
-      free(task->o_data[k]);
-    }
-    
-    delete task->region_batch;
-    delete task->chain_batch;
     delete task;
-
     task_queue.pop_front();
   }
 }
