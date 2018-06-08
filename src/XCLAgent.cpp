@@ -3,6 +3,8 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread.hpp>
 
+#include <glog/logging.h>
+
 #include "XCLAgent.h"
 #include "SWTask.h"
 
@@ -39,8 +41,8 @@ XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task) {
 }
 
 XCLAgent::~XCLAgent() {
-  clReleaseCommandQueue(cmd_);
   clReleaseKernel(kernel_);
+  DLOG(INFO) << "XCLAgent is destroyed";
 }
 
 void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
@@ -134,4 +136,7 @@ void XCLAgent::finish() {
   if (valid_2nd_event_) {
     clReleaseEvent(write_events_[1]);
   }
+  kernel_event_ = NULL;
+  write_events_[0] = NULL;
+  write_events_[1] = NULL;
 }

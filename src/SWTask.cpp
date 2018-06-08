@@ -46,7 +46,18 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 }
 
 SWTask::~SWTask() {
+  delete region_batch;
+  delete chain_batch;
+
+  for (int k = 0; k < 2; k++) {
+    free(i_data[k]);
+    free(o_data[k]);
+
+    clReleaseMemObject(i_buf[k]);
+    clReleaseMemObject(o_buf[k]);
+  }
   delete agent_;
+  DLOG(INFO) << "SWTask is destroyed";
 }
 
 void SWTask::start(SWTask* prev_task) {

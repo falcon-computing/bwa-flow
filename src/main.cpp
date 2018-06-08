@@ -33,6 +33,7 @@
 #define VERSION "untracked"
 #endif
 
+#include "blaze/ReserveClient.h"
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "Pipeline.h"
@@ -124,7 +125,7 @@ int main(int argc, char *argv[]) {
     FLAGS_use_fpga = false;
   }
   // force turn off FPGA
-  FLAGS_use_fpga = false;
+  //FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
@@ -253,6 +254,11 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
 #endif
 
+  // reservation client
+  // we don't release it so that it will be collected with program finishes
+  // this way we guarantee that OpenCL env is released
+  //blaze::ReserveClient* reservation;
+
   try {
     // Bind global vars to each pipeline
     compute_flow.addConst("sam_dir", sam_dir);
@@ -277,32 +283,31 @@ int main(int argc, char *argv[]) {
     
     t_real = realtime();
     compute_flow.start();
-  
+
     // Start FPGA context
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       try {
-        opencl_env = new BWAOCLEnv(
-            FLAGS_fpga_path.c_str(),
-            "sw_top");
+        opencl_env  = new BWAOCLEnv(FLAGS_fpga_path.c_str(), "sw_top");
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
           << FLAGS_fpga_path;
   
 #ifndef FPGA_TEST
         fpga_flow.start();
         fpga_flow.wait();
-#endif
         delete opencl_env;
+#endif
       }
       catch (std::runtime_error &e) {
         LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
         DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
         DLOG(ERROR) << "because: " << e.what();
+        return 1;
       }
     }
 #endif
     compute_flow.wait();
-  
+
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 
     kclose(ko_read1);
@@ -316,9 +321,6 @@ int main(int argc, char *argv[]) {
     std::cerr << "Real time: " << realtime() - t_real << " sec, "
               << "CPU time: " << cputime() << " sec" 
               << std::endl;
-  
-    //err_fflush(stdout);
-    //err_fclose(stdout);
   
     free(bwa_pg);
   

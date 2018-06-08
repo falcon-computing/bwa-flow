@@ -474,15 +474,15 @@ void ChainsToRegionsFPGA::compute(int wid) {
   while (!task_queue.empty()) {
     SWTask* task = task_queue.front();
 
-    for (int k = 0; k < 2; k++) {
-      clReleaseMemObject(task->i_buf[k]);
-      clReleaseMemObject(task->o_buf[k]);
-      free(task->i_data[k]);
-      free(task->o_data[k]);
-    }
-    
-    delete task->region_batch;
-    delete task->chain_batch;
+    //for (int k = 0; k < 2; k++) {
+    //  clReleaseMemObject(task->i_buf[k]);
+    //  clReleaseMemObject(task->o_buf[k]);
+    //  free(task->i_data[k]);
+    //  free(task->o_data[k]);
+    //}
+    //
+    //delete task->region_batch;
+    //delete task->chain_batch;
     delete task;
 
     task_queue.pop_front();

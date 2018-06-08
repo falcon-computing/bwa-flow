@@ -41,6 +41,7 @@ TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
 INCLUDES:= -I$(MKFILE_DIR) \
 	   -I$(SRC_DIR) \
 	   -I$(KFLOW_DIR)/include \
+	   -I/curr/diwu/prog/blaze/build/install/include \
 	   -I$(BOOST_DIR)/include \
 	   -I$(GLOG_DIR)/include \
 	   -I$(GFLAGS_DIR)/include \
@@ -54,6 +55,8 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_iostreams \
 		-lboost_filesystem \
 		-lboost_regex \
+	   -L/curr/diwu/prog/blaze/build/install/lib -lblaze -lblaze_message \
+	   -lprotobuf \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
 	   -L$(GTEST_DIR)/lib -lgtest \

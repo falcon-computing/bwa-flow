@@ -11,105 +11,123 @@
 
 #include <CL/opencl.h>
 
+#include "blaze/ReserveClient.h"
 #include "kflow/Queue.h"
+#include "SimpleTimer.h"
 #include "util.h"
 
 class OpenCLEnv 
-: public boost::basic_lockable_adapter<boost::mutex> {
+: public boost::basic_lockable_adapter<boost::mutex>,
+  public blaze::ReserveClient
+{
  public:
-   OpenCLEnv(const char* bin_path, const char* kernel_name) {
-     // start platform setting up
-     int err;
+  OpenCLEnv(const char* bin_path, const char* kernel_name):
+    blaze::ReserveClient("BWA_SW", 1027)
+  {
+    SimpleTimer timer("OpenCL setup");
+    // start platform setting up
+    int err;
 
-     cl_platform_id* platform_id = new cl_platform_id[2];
+    cl_platform_id* platform_id = new cl_platform_id[2];
 
-     char cl_platform_vendor[1001];
-     char cl_platform_name[1001];
+    char cl_platform_vendor[1001];
+    char cl_platform_name[1001];
 
-     cl_uint num_platforms = 0;
+    cl_uint num_platforms = 0;
 
-     // Connect to first platform
-     err = clGetPlatformIDs(2, platform_id, &num_platforms);
+    // Connect to first platform
+    err = clGetPlatformIDs(2, platform_id, &num_platforms);
 
-     if (err != CL_SUCCESS) {
-       throw std::runtime_error(
-           "Failed to find an OpenCL platform!");
-     }
-     DLOG(INFO) << "Found " << num_platforms << " opencl platforms";
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error(
+          "Failed to find an OpenCL platform!");
+    }
+    DLOG(INFO) << "Found " << num_platforms << " opencl platforms";
 
-     int platform_idx;
-     for (int i = 0; i < num_platforms; i++) {
-       char cl_platform_name[1001];
+    int platform_idx;
+    for (int i = 0; i < num_platforms; i++) {
+      char cl_platform_name[1001];
 
-       err = clGetPlatformInfo(
-           platform_id[i], 
-           CL_PLATFORM_NAME, 
-           1000, 
-           (void *)cl_platform_name,NULL);
+      err = clGetPlatformInfo(
+          platform_id[i], 
+          CL_PLATFORM_NAME, 
+          1000, 
+          (void *)cl_platform_name,NULL);
 
-       DLOG(INFO) << "Found platform " << cl_platform_name;
+      DLOG(INFO) << "Found platform " << cl_platform_name;
 
-       if (err != CL_SUCCESS) {
-         throw std::runtime_error(
-             "clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
-       }
+      if (err != CL_SUCCESS) {
+        throw std::runtime_error(
+            "clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
+      }
 
-       if (strstr(cl_platform_name, "Xilinx") != NULL || 
-           strstr(cl_platform_name, "Intel") != NULL ||
-           strstr(cl_platform_name, "Altera") != NULL) {
-         // found platform
-         platform_idx = i;
-         DLOG(INFO) << "Selecting platform " << cl_platform_name;
-         break;
-       }
-     }
+      if (strstr(cl_platform_name, "Xilinx") != NULL || 
+          strstr(cl_platform_name, "Intel") != NULL ||
+          strstr(cl_platform_name, "Altera") != NULL) {
+        // found platform
+        platform_idx = i;
+        DLOG(INFO) << "Selecting platform " << cl_platform_name;
+        break;
+      }
+    }
 
-     // Connect to a compute device
-     err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id_, NULL);
+    // Connect to a compute device
+    err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR, 1, &device_id_, NULL);
 
-     if (err != CL_SUCCESS) {
-       throw std::runtime_error("Failed to create a device group: " +
-           std::to_string((long long)err));
-     }
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to create a device group: " +
+          std::to_string((long long)err));
+    }
 
-     // Create a compute context 
-     context_ = clCreateContext(0, 1, &device_id_, NULL, NULL, &err);
+    // Create a compute context 
+    context_ = clCreateContext(0, 1, &device_id_, NULL, NULL, &err);
 
-     if (!context_) {
-       throw std::runtime_error("Failed to create a compute context!");
-     }
+    if (!context_) {
+      throw std::runtime_error("Failed to create a compute context!");
+    }
 
-     // Load binary from disk
-     unsigned char *kernelbinary;
+    // Load binary from disk
+    unsigned char *kernelbinary;
 
-     int n_i = load_file(bin_path, (char **) &kernelbinary);
+    int n_i = load_file(bin_path, (char **) &kernelbinary);
 
-     if (n_i < 0) {
-       throw std::runtime_error(
-           "failed to load kernel from xclbin");
-     }
-     size_t n_t = n_i;
+    if (n_i < 0) {
+      throw std::runtime_error(
+          "failed to load kernel from xclbin");
+    }
+    size_t n_t = n_i;
 
-     int status = 0;
+    int status = 0;
 
-     // Create the compute program from offline
-     program_ = clCreateProgramWithBinary(context_, 1, &device_id_, &n_t,
-         (const unsigned char **) &kernelbinary, &status, &err);
+    // Create the compute program from offline
+    program_ = clCreateProgramWithBinary(context_, 1, &device_id_, &n_t,
+        (const unsigned char **) &kernelbinary, &status, &err);
 
-     if ((!program_) || (err!=CL_SUCCESS)) {
-       throw std::runtime_error(
-           "Failed to create compute program from binary");
-     }
+    if ((!program_) || (err!=CL_SUCCESS)) {
+      throw std::runtime_error(
+          "Failed to create compute program from binary");
+    }
 
-     // Build the program executable
-     err = clBuildProgram(program_, 0, NULL, NULL, NULL, NULL);
+    // Build the program executable
+    err = clBuildProgram(program_, 0, NULL, NULL, NULL, NULL);
 
-     if (err != CL_SUCCESS) {
-       throw std::runtime_error("Failed to build program executable!");
-     }
-   }
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to build program executable!");
+    }
+
+    cmd_ = clCreateCommandQueue(context_, device_id_, 0, &err);
+    if (err != CL_SUCCESS) {
+      throw std::runtime_error("Failed to create a command queue context");
+    }
+  }
 
   ~OpenCLEnv() {
+    release();
+    DLOG(INFO) << "OpenCLEnv is destroyed";
+  }
+
+  virtual void release() {
+    clReleaseCommandQueue(cmd_);
     clReleaseProgram(program_);
     clReleaseContext(context_);
   }
@@ -127,13 +145,6 @@ class OpenCLEnv
   }
 
   cl_command_queue getCmdQueue() {
-    if (!cmd_) {
-      cl_int err = 0;
-      cmd_ = clCreateCommandQueue(context_, device_id_, 0, &err);
-      if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create a command queue context");
-      }
-    }
     return cmd_;
   }
 

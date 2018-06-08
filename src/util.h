@@ -11,6 +11,7 @@
 #include "bwa/bwamem.h"
 #include "bwa_wrapper.h"
 #include "Pipeline.h"  
+#include "SimpleTimer.h"
 
 class resultsError : public std::runtime_error {
  public:
