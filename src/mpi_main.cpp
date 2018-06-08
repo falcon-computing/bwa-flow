@@ -79,15 +79,22 @@ int main(int argc, char *argv[]) {
   int rank = MPI::COMM_WORLD.Get_rank();
 
 #ifdef USELICENSE
-  if (rank == 0) {
-    int licret = falconlic::license_verify();
-    if (licret != falconlic::success) {
-      LOG(ERROR) << "Cannot authorize software usage: " << licret;
-      LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+  namespace fc   = falconlic;
+#ifdef DEPLOY_aws
+  fc::enable_aws();
+#endif
+#ifdef DEPLOY_hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
 
-      MPI_Finalize();
-      return -1;
-    }
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
+    LOG(ERROR) << "Cannot authorize software usage: " << licret;
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    return -1;
   }
 #endif
 
