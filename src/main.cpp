@@ -14,6 +14,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #ifdef NDEBUG
@@ -37,6 +38,7 @@
 #include "config.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -98,6 +100,11 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};
@@ -282,11 +289,14 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       try {
-        opencl_env = new BWAOCLEnv(
-            FLAGS_fpga_path.c_str(),
-            "sw_top");
+        opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
+        if (NULL == opencl_env) {
+          LOG(ERROR) << strerror(errno) << " due to "
+                     << ((errno==12) ? "out-of-memory" : "internal failure") ;
+          exit(EXIT_FAILURE);
+        }
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-          << FLAGS_fpga_path;
+                                     << FLAGS_fpga_path;
   
 #ifndef FPGA_TEST
         fpga_flow.start();

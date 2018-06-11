@@ -11,6 +11,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #include "mpi.h"
@@ -28,6 +29,7 @@
 #include "MPIPipeline.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifndef VERSION
 #define VERSION "untracked"
@@ -103,6 +105,11 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};

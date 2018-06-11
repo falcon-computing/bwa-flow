@@ -11,11 +11,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 #include <vector>
 
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 #include "Pipeline.h"
 #include "FPGAPipeline.h"
 #include "SWTask.h"
@@ -292,6 +294,11 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
   for (int i = 0; i < 2; i++) {
     SWTask* task = new SWTask(opencl_env, chunk_size);
+    if (NULL == task) {
+      LOG(ERROR) << strerror(errno) << " due to "
+                 << ((errno==12) ? "out-of-memory" : "internal failure") ;
+      exit(EXIT_FAILURE);
+    }
     task_queue.push_back(task);
   }
 
@@ -494,6 +501,11 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
   ChainsRecord output = record;
   int batch_num = record.batch_num;
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   mem_chain_v* chains = record.chains;
   for (int i=0; i<batch_num; i++) {
     int chain_idx = 0;

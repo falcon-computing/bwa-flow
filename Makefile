@@ -20,7 +20,8 @@ OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
 	   $(SRC_DIR)/config.o \
 	   $(SRC_DIR)/Pipeline.o \
-	   $(SRC_DIR)/util.o
+	   $(SRC_DIR)/util.o \
+	   $(SRC_DIR)/allocation_wrapper.o
 
 STDOBJS := $(SRC_DIR)/main.o 
 
@@ -35,7 +36,8 @@ TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
 	   	$(SRC_DIR)/config.o \
 	   	$(SRC_DIR)/preprocess.o \
 	   	$(SRC_DIR)/wrappered_mem.o \
-	   	$(SRC_DIR)/util.o
+	   	$(SRC_DIR)/util.o \
+	   	$(SRC_DIR)/allocation_wrapper.o
 
 
 INCLUDES:= -I$(MKFILE_DIR) \

@@ -15,6 +15,7 @@
 #include "config.h"
 #include "OpenCLEnv.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 // NOTE: the FPGA kernel requires a different layout for the pac
 // buffer, hence the _set_pac() and _get_pac() macros are different
