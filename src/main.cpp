@@ -192,6 +192,9 @@ int main(int argc, char *argv[]) {
   bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
 #endif
 
+
+  // Pack all the bwa mem args
+  pack_bwa_mem_args( bwa_args );
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 

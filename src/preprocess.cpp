@@ -67,6 +67,49 @@ static void update_a(mem_opt_t *opt, const mem_opt_t *opt0) {
 	}
 }
 
+int pack_bwa_mem_args(std::vector<const char*> & bwa_mem_args) {
+  if (FLAGS_k) bwa_mem_args.push_back("-k"), bwa_mem_args.push_back(std::to_string(FLAGS_k).c_str());
+  if (FLAGS_1) bwa_mem_args.push_back("-1");
+  if (!FLAGS_x.empty()) bwa_mem_args.push_back("-x"), bwa_mem_args.push_back(FLAGS_x.c_str());
+  if (FLAGS_w) bwa_mem_args.push_back("-w"), bwa_mem_args.push_back(std::to_string(FLAGS_w).c_str());
+  if (FLAGS_A) bwa_mem_args.push_back("-A"), bwa_mem_args.push_back(std::to_string(FLAGS_A).c_str());
+  if (FLAGS_B) bwa_mem_args.push_back("-B"), bwa_mem_args.push_back(std::to_string(FLAGS_B).c_str());
+  if (FLAGS_T) bwa_mem_args.push_back("-T"), bwa_mem_args.push_back(std::to_string(FLAGS_T).c_str());
+  if (FLAGS_U) bwa_mem_args.push_back("-U"), bwa_mem_args.push_back(std::to_string(FLAGS_U).c_str());
+  if (FLAGS_P) bwa_mem_args.push_back("-P");
+  if (FLAGS_a) bwa_mem_args.push_back("-a");
+  if (FLAGS_p) bwa_mem_args.push_back("-p");
+  if (FLAGS_S) bwa_mem_args.push_back("-S");
+  if (FLAGS_Y) bwa_mem_args.push_back("-Y");
+  if (FLAGS_V) bwa_mem_args.push_back("-V");
+  if (FLAGS_c) bwa_mem_args.push_back("-c"), bwa_mem_args.push_back(std::to_string(FLAGS_c).c_str()); 
+  if (FLAGS_d) bwa_mem_args.push_back("-d"), bwa_mem_args.push_back(std::to_string(FLAGS_d).c_str()); 
+  if (FLAGS_j) bwa_mem_args.push_back("-j");
+  if (FLAGS_r) bwa_mem_args.push_back("-r"), bwa_mem_args.push_back(std::to_string(FLAGS_r).c_str());
+  if (FLAGS_D) bwa_mem_args.push_back("-D"), bwa_mem_args.push_back(std::to_string(FLAGS_D).c_str());
+  if (FLAGS_m) bwa_mem_args.push_back("-m"), bwa_mem_args.push_back(std::to_string(FLAGS_m).c_str());
+  if (FLAGS_s) bwa_mem_args.push_back("-s"), bwa_mem_args.push_back(std::to_string(FLAGS_s).c_str());
+  if (FLAGS_G) bwa_mem_args.push_back("-G"), bwa_mem_args.push_back(std::to_string(FLAGS_G).c_str());
+  if (FLAGS_N) bwa_mem_args.push_back("-N"), bwa_mem_args.push_back(std::to_string(FLAGS_N).c_str());
+  if (FLAGS_W) bwa_mem_args.push_back("-W"), bwa_mem_args.push_back(std::to_string(FLAGS_W).c_str());
+  if (FLAGS_y) bwa_mem_args.push_back("-y"), bwa_mem_args.push_back(std::to_string(FLAGS_y).c_str());
+  if (FLAGS_C) bwa_mem_args.push_back("-C");
+  if (FLAGS_K) bwa_mem_args.push_back("-K"), bwa_mem_args.push_back(std::to_string(FLAGS_K).c_str());
+  if (FLAGS_X) bwa_mem_args.push_back("-X"), bwa_mem_args.push_back(std::to_string(FLAGS_X).c_str());
+#ifdef USE_HTSLIB
+  if (FLAGS_o) bwa_mem_args.push_back("-o"), bwa_mem_args.push_back(std::to_string(FLAGS_o).c_str());
+#endif
+  if (!FLAGS_h.empty()) bwa_mem_args.push_back("-h"), bwa_mem_args.push_back(FLAGS_h.c_str());
+  if (FLAGS_Q) bwa_mem_args.push_back("-Q"), bwa_mem_args.push_back(std::to_string(FLAGS_Q).c_str());
+  if (!FLAGS_O.empty()) bwa_mem_args.push_back("-O"), bwa_mem_args.push_back(FLAGS_O.c_str());
+  if (!FLAGS_E.empty()) bwa_mem_args.push_back("-E"), bwa_mem_args.push_back(FLAGS_E.c_str());
+  if (!FLAGS_L.empty()) bwa_mem_args.push_back("-L"), bwa_mem_args.push_back(FLAGS_L.c_str());
+  if (!FLAGS_H.empty()) bwa_mem_args.push_back("-H"), bwa_mem_args.push_back(FLAGS_H.c_str());
+  if (!FLAGS_I.empty()) bwa_mem_args.push_back("-I"), bwa_mem_args.push_back(FLAGS_I.c_str());
+
+  return 0;
+}
+
 int pre_process(int argc,
     char *argv[],
     ktp_aux_t* aux,
