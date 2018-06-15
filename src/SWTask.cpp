@@ -68,6 +68,14 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 }
 
 SWTask::~SWTask() {
+  delete region_batch;
+  delete chain_batch;
+  for (int k = 0; k < 2; k++) {
+    clReleaseMemObject(i_buf[k]);
+    clReleaseMemObject(o_buf[k]);
+    free(i_data[k]);
+    free(o_data[k]);
+  }
   delete agent_;
 }
 
@@ -108,4 +116,14 @@ void SWTask::finish() {
 
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Read OpenCL buffer takes " 
                                << getUs() - start_ts << " us";
+}
+
+void SWTask::redo() {
+  ((XCLAgent *)agent_)->fence();
+  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
+  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+  agent_->start(this, NULL);
+  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
+  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+  agent_->finish();
 }
