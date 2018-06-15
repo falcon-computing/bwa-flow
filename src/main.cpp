@@ -130,8 +130,8 @@ int main(int argc, char *argv[]) {
   else {
     FLAGS_use_fpga = false;
   }
-  // force turn off FPGA
-  FLAGS_use_fpga = false;
+  // // force turn off FPGA
+  // FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
