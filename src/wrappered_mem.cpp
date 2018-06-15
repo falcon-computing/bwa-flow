@@ -16,9 +16,7 @@
 #include "bwa/utils.h"
 #include "bwa_wrapper.h"
 
-#ifdef USE_MALLOC_WRAPPERS
-#  include "malloc_wrap.h"
-#endif
+#include "allocation_wrapper.h"
 
 mem_chain_v seq2chain(
     ktp_aux_t *aux,

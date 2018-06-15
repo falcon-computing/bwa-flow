@@ -16,6 +16,7 @@
 #include "config.h"
 #include "kflow/Queue.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #define OCL_CHECK(err, msg) { \
     if (err != CL_SUCCESS) { \

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #ifdef NDEBUG
@@ -37,6 +38,7 @@
 #include "config.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -46,98 +48,13 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
-#endif
-
-#ifdef USELICENSE
-void licence_check_out() {
-  // initialize for licensing. call once
-  fc_license_init();
-
-  // get a feature
-  int status = 0;
-  while (-4 == (status = fc_license_checkout(FALCON_DNA, 0))) {
-    LOG(INFO) << "Reached maximum allowed instances on this machine, "
-      << "wait for 30 seconds. Please press CTRL+C to exit.";
-    boost::this_thread::sleep_for(boost::chrono::seconds(30));
-  }
-  if (status) {
-    throw std::runtime_error(std::to_string((long long)status));
-  }
-}
-
-void licence_check_in() {
-  fc_license_checkin(FALCON_DNA);
-
-  // cleanup for licensing. call once
-  fc_license_cleanup();
-}
+#include "falcon-lic/license.h"
 #endif
 
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
-
-// Original BWA parameters
-DEFINE_string(R, "", "-R arg in original BWA");
-
-DEFINE_int32(t, boost::thread::hardware_concurrency(),
-    "-t arg in original BWA, total number of parallel threads");
-
-DEFINE_bool(M, false, "-M arg in original BWA");
-
-// Parameters
-DEFINE_bool(offload, true,
-    "Use three compute pipeline stages to enable offloading"
-    "workload to accelerators. "
-    "If disabled, --use_fpga, --fpga_path will be discard");
-
-DEFINE_bool(use_fpga, false,
-    "Enable FPGA accelerator for SmithWaterman computation");
-
-DEFINE_bool(sort, true,
-    "Enable in-memory sorting of output bam file");
-
-DEFINE_string(fpga_path, "",
-    "File path of the SmithWaterman FPGA bitstream");
-
-DEFINE_string(pac_path, "",
-    "File path of the modified reference pac file");
-
-DEFINE_int32(chunk_size, 2000,
-    "Size of each batch send to the FPGA accelerator");
-
-DEFINE_int32(max_fpga_thread, 1,
-    "Max number of threads for FPGA worker");
-
-DEFINE_int32(extra_thread, 1,
-    "Adjustment to the total threads");
-
-DEFINE_bool(inorder_output, false, 
-    "Whether keep the sequential ordering of the sam file");
-
-DEFINE_string(output_dir, "",
-    "If not empty the output will be redirect to --output_dir");
-
-DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 1");
-
-DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 2");
-
-DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 3");
-
-DEFINE_int32(output_nt, 3,
-    "Total number of parallel threads to use for output stage");
-
-DEFINE_int32(output_flag, 1, 
-    "Flag to specify output format: "
-    "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
-
-DEFINE_int32(max_batch_records, 20, 
-    "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
 
@@ -151,20 +68,28 @@ int main(int argc, char *argv[]) {
   version_str << "Falcon BWA-MEM Version: " << VERSION;
 
   // Initialize Google Flags
-  gflags::SetVersionString(version_str.str());
-  gflags::SetUsageMessage(argv[0]);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  google::SetVersionString(version_str.str());
+  google::SetUsageMessage(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
 
 #ifdef USELICENSE
-  try {
-    // check license
-    licence_check_out();
-  }
-  catch (std::runtime_error &e) {
-    LOG(ERROR) << "Cannot connect to the license server: " << e.what();
+  namespace fc   = falconlic;
+#ifdef DEPLOY_aws
+  fc::enable_aws();
+#endif
+#ifdef DEPLOY_hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
+
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
+    LOG(ERROR) << "Cannot authorize software usage: " << licret;
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return -1;
   }
@@ -175,6 +100,11 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};
@@ -192,20 +122,16 @@ int main(int argc, char *argv[]) {
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
     boost::filesystem::wpath file_path(FLAGS_fpga_path);
     if (!boost::filesystem::exists(file_path)) {
-      LOG(ERROR) << "Cannot find FPGA bitstream at " 
+      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
         << FLAGS_fpga_path;
-      return 1;
-    }
-    boost::filesystem::wpath pac_file_path(FLAGS_pac_path);
-    if (!boost::filesystem::exists(pac_file_path)) {
-      LOG(ERROR) << "Cannot find reference pac at " 
-        << FLAGS_pac_path;
-      return 1;
+      FLAGS_use_fpga = false;
     }
   }
   else {
     FLAGS_use_fpga = false;
   }
+  // force turn off FPGA
+  FLAGS_use_fpga = false;
 #endif
 
   // Get output file folder
@@ -266,6 +192,9 @@ int main(int argc, char *argv[]) {
   bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
 #endif
 
+
+  // Pack all the bwa mem args
+  pack_bwa_mem_args( bwa_args );
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 
@@ -334,84 +263,90 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
 #endif
 
-  // Bind global vars to each pipeline
-  compute_flow.addConst("sam_dir", sam_dir);
-
-  compute_flow.addStage(0, &kread_stage);
-  compute_flow.addStage(1, &k2b_stage);
-  compute_flow.addStage(2, &seq2chain_stage);
-  compute_flow.addStage(3, &chain2reg_stage);
-  compute_flow.addStage(4, &reg2sam_stage);
-  compute_flow.addStage(5, &reorder_stage);
-  compute_flow.addStage(6, &write_stage);
-
-#ifdef BUILD_FPGA
-  if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    fpga_flow.addStage(0, &chainpipe_fpga_stage);
-    fpga_flow.addStage(1, &chain2reg_fpga_stage);
-
-    // bind the input/output queue of stage_2 in compute_flow
-    fpga_flow.branch(compute_flow, 3);
-  }
-#endif
+  try {
+    // Bind global vars to each pipeline
+    compute_flow.addConst("sam_dir", sam_dir);
   
-  t_real = realtime();
-  compute_flow.start();
-
-  // Start FPGA context
+    compute_flow.addStage(0, &kread_stage);
+    compute_flow.addStage(1, &k2b_stage);
+    compute_flow.addStage(2, &seq2chain_stage);
+    compute_flow.addStage(3, &chain2reg_stage);
+    compute_flow.addStage(4, &reg2sam_stage);
+    compute_flow.addStage(5, &reorder_stage);
+    compute_flow.addStage(6, &write_stage);
+  
 #ifdef BUILD_FPGA
-  if (FLAGS_use_fpga) {
-    try {
-      opencl_env = new BWAOCLEnv(FLAGS_fpga_path.c_str(),
-          FLAGS_pac_path.c_str(), "sw_top");
-      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-        << FLAGS_fpga_path;
+    if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
+      fpga_flow.addStage(0, &chainpipe_fpga_stage);
+      fpga_flow.addStage(1, &chain2reg_fpga_stage);
+  
+      // bind the input/output queue of stage_2 in compute_flow
+      fpga_flow.branch(compute_flow, 3);
     }
-    catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot configure FPGA bitstream";
-      DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
-      DLOG(ERROR) << "because: " << e.what();
-      return 1;
-    }
+#endif
+    
+    t_real = realtime();
+    compute_flow.start();
+  
+    // Start FPGA context
+#ifdef BUILD_FPGA
+    if (FLAGS_use_fpga) {
+      try {
+        opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
+        if (NULL == opencl_env) {
+          LOG(ERROR) << strerror(errno) << " due to "
+                     << ((errno==12) ? "out-of-memory" : "internal failure") ;
+          exit(EXIT_FAILURE);
+        }
+        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+                                     << FLAGS_fpga_path;
+  
 #ifndef FPGA_TEST
-    fpga_flow.start();
-    fpga_flow.wait();
+        fpga_flow.start();
+        fpga_flow.wait();
 #endif
-    delete opencl_env;
-  }
+        delete opencl_env;
+      }
+      catch (std::runtime_error &e) {
+        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
+        DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
+        DLOG(ERROR) << "because: " << e.what();
+      }
+    }
 #endif
-  compute_flow.wait();
-
-  kseq_destroy(aux->ks);
-  err_gzclose(fp_idx); 
-  kclose(ko_read1);
-
-  if (aux->ks2) {
-    kseq_destroy(aux->ks2);
-    err_gzclose(fp2_read2); kclose(ko_read2);
-  }
-
-  std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-  std::cerr << "Real time: " << realtime() - t_real << " sec, "
-            << "CPU time: " << cputime() << " sec" 
-            << std::endl;
-
-  //err_fflush(stdout);
-  //err_fclose(stdout);
-
-  free(bwa_pg);
-
+    compute_flow.wait();
+  
+    kseq_destroy(aux->ks);
+    err_gzclose(fp_idx); 
+    kclose(ko_read1);
+  
+    if (aux->ks2) {
+      kseq_destroy(aux->ks2);
+      err_gzclose(fp2_read2); kclose(ko_read2);
+    }
+  
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
+    std::cerr << "Real time: " << realtime() - t_real << " sec, "
+              << "CPU time: " << cputime() << " sec" 
+              << std::endl;
+  
+    //err_fflush(stdout);
+    //err_fclose(stdout);
+  
+    free(bwa_pg);
+  
 #ifdef USE_HTSLIB
-  bam_hdr_destroy(aux->h);
+    bam_hdr_destroy(aux->h);
 #endif
-  free(aux->opt);
-  bwa_idx_destroy(aux->idx);
-  delete aux;
-
-#ifdef USELICENSE
-  // release license
-  licence_check_in();
-#endif
+    free(aux->opt);
+    bwa_idx_destroy(aux->idx);
+    delete aux;
+  }
+  catch (...) {
+    LOG(ERROR) << "Encountered an internal issue.";
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    return 1;
+  }
 
   return 0;
 }

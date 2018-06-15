@@ -1,55 +1,7 @@
 #include "bwa_wrapper.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "test/TestCommon.h"
-
-static inline void check_bseq(bseq1_t& base, bseq1_t& test) {
-  ASSERT_EQ(base.l_seq, test.l_seq);
-  // seq may not be encoded as string
-  for (int i = 0; i < base.l_seq; i++) {
-    EXPECT_EQ(base.seq[i], test.seq[i]);
-  }
-  
-  EXPECT_STREQ(base.name, test.name);
-  EXPECT_STREQ(base.comment, test.comment);
-  EXPECT_STREQ(base.qual, test.qual);
-}
-
-static inline void check_mem_chain(mem_chain_t& c1, mem_chain_t& c2) {
-  // check result match for mem_chain_t
-  EXPECT_EQ(c1.n, c2.n);
-  EXPECT_EQ(c1.m, c2.m);
-  EXPECT_EQ(c1.first, c2.first);
-  EXPECT_EQ(c1.rid, c2.rid);
-  EXPECT_EQ(c1.w, c2.w);
-  EXPECT_EQ(c1.kept, c2.kept);
-  EXPECT_EQ(c1.is_alt, c2.is_alt);
-  EXPECT_EQ(c1.frac_rep, c2.frac_rep);
-  EXPECT_EQ(c1.pos, c2.pos);
-}
-
-static void check_mem_alnreg(mem_alnreg_t& a1, mem_alnreg_t& a2) {
-  EXPECT_EQ(a1.rb, a2.rb);
-  EXPECT_EQ(a1.re, a2.re);
-  EXPECT_EQ(a1.qb, a2.qb);
-  EXPECT_EQ(a1.qe, a2.qe);
-	EXPECT_EQ(a1.rid, a2.rid);
-	EXPECT_EQ(a1.score, a2.score);
-	EXPECT_EQ(a1.truesc, a2.truesc);
-	EXPECT_EQ(a1.sub, a2.sub);
-	EXPECT_EQ(a1.alt_sc, a2.alt_sc);
-	EXPECT_EQ(a1.csub, a2.csub);
-	EXPECT_EQ(a1.sub_n, a2.sub_n);
-	EXPECT_EQ(a1.w, a2.w);
-	EXPECT_EQ(a1.seedcov, a2.seedcov);
-	EXPECT_EQ(a1.secondary, a2.secondary);
-	EXPECT_EQ(a1.secondary_all, a2.secondary_all);
-	EXPECT_EQ(a1.seedlen0, a2.seedlen0);
-  EXPECT_EQ(a1.n_comp, a2.n_comp);
-  EXPECT_EQ(a1.is_alt, a2.is_alt);
-	EXPECT_EQ(a1.frac_rep, a2.frac_rep);
-	EXPECT_EQ(a1.hash, a2.hash);
-}
+#include "TestCommon.h"
 
 TEST_F(UtilTests, SeqTest) {
   int test_num = batch_num > 4096 ? 4096 : batch_num;

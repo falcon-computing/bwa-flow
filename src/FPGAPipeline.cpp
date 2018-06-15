@@ -11,11 +11,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 #include <vector>
 
 #include "bwa_wrapper.h"
 #include "config.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 #include "Pipeline.h"
 #include "FPGAPipeline.h"
 #include "SWTask.h"
@@ -293,6 +295,11 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
   for (int i = 0; i < 2; i++) {
     SWTask* task = new SWTask(opencl_env, chunk_size);
+    if (NULL == task) {
+      LOG(ERROR) << strerror(errno) << " due to "
+                 << ((errno==12) ? "out-of-memory" : "internal failure") ;
+      exit(EXIT_FAILURE);
+    }
     task_queue.push_back(task);
   }
 
@@ -411,19 +418,18 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_num = 0;
         kernel_buffer_idx = 0;
         reach_half = false;
-
-        if (i == batch_num - 1) {
-          reach_end = true;
-        }
-        else {
-          reach_end = false;
-        }
+      }
+      if (i == batch_num - 1) {
+        reach_end = true;
+      }
+      else {
+        reach_end = false;
       }
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Starting the remaining tasks";
 
     // finish the remain reads even with small task number 
-    if (!reach_end) {
+    if (!reach_end && task_num != 0) {
       SWTask* task = task_queue.front();
       if (task_num < chunk_size/2 || reach_half == false) {
         task->i_size[0] = kernel_buffer_idx/sizeof(int);
@@ -496,6 +502,11 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
   ChainsRecord output = record;
   int batch_num = record.batch_num;
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   mem_chain_v* chains = record.chains;
   for (int i=0; i<batch_num; i++) {
     int chain_idx = 0;

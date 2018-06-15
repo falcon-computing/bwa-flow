@@ -11,6 +11,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #include "mpi.h"
@@ -28,6 +29,7 @@
 #include "MPIPipeline.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifndef VERSION
 #define VERSION "untracked"
@@ -35,7 +37,7 @@
 
 // use flexlm
 #ifdef USELICENSE
-#include "license.h"
+#include "falcon-lic/license.h"
 #endif
 
 #ifdef BUILD_FPGA
@@ -44,89 +46,10 @@
 BWAOCLEnv* opencl_env;
 #endif
 
-#ifdef USELICENSE
-void licence_check_out() {
-  // initialize for licensing. call once
-  fc_license_init();
-
-  // get a feature
-  int status = 0;
-  while (-4 == (status = fc_license_checkout(FALCON_DNA, 0))) {
-    LOG(INFO) << "Reached maximum allowed instances on this machine, "
-      << "wait for 30 seconds. Please press CTRL+C to exit.";
-    boost::this_thread::sleep_for(boost::chrono::seconds(30));
-  }
-  if (status) {
-    throw std::runtime_error(std::to_string((long long)status));
-  }
-}
-
-void licence_check_in() {
-  fc_license_checkin(FALCON_DNA);
-
-  // cleanup for licensing. call once
-  fc_license_cleanup();
-}
-#endif
-
 // global parameters
 gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
-
-// Original BWA parameters
-DEFINE_string(R, "", "-R arg in original BWA");
-
-DEFINE_int32(t, boost::thread::hardware_concurrency(),
-    "-t arg in original BWA, total number of parallel threads");
-
-DEFINE_bool(M, false, "-M arg in original BWA");
-
-// Parameters
-DEFINE_bool(offload, true,
-    "Use three compute pipeline stages to enable offloading"
-    "workload to accelerators. "
-    "If disabled, --use_fpga, --fpga_path will be discard");
-
-DEFINE_bool(use_fpga, false,
-    "Enable FPGA accelerator for SmithWaterman computation");
-
-DEFINE_bool(sort, true,
-    "Enable in-memory sorting of output bam file");
-
-DEFINE_string(fpga_path, "",
-    "File path of the SmithWaterman FPGA bitstream");
-
-DEFINE_int32(chunk_size, 2000,
-    "Size of each batch send to the FPGA accelerator");
-
-DEFINE_int32(max_fpga_thread, 1,
-    "Max number of threads for FPGA worker");
-
-DEFINE_bool(inorder_output, false, 
-    "Whether keep the sequential ordering of the sam file");
-
-DEFINE_string(output_dir, "",
-    "If not empty the output will be redirect to --output_dir");
-
-DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 1");
-
-DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 2");
-
-DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
-    "Total number of parallel threads to use for stage 3");
-
-DEFINE_int32(output_nt, 2,
-    "Total number of parallel threads to use for output stage");
-
-DEFINE_int32(output_flag, 1, 
-    "Flag to specify output format: "
-    "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
-
-DEFINE_int32(max_batch_records, 20, 
-    "Flag to specify how many batch to buffer before sort");
 
 int main(int argc, char *argv[]) {
 
@@ -158,16 +81,22 @@ int main(int argc, char *argv[]) {
   int rank = MPI::COMM_WORLD.Get_rank();
 
 #ifdef USELICENSE
-  if (rank == 0) {
-    try {
-      // check license
-      licence_check_out();
-    }
-    catch (std::runtime_error &e) {
-      LOG(ERROR) << "Cannot connect to the license server: " << e.what();
-      LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
-      return -1;
-    }
+  namespace fc   = falconlic;
+#ifdef DEPLOY_aws
+  fc::enable_aws();
+#endif
+#ifdef DEPLOY_hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
+
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
+    LOG(ERROR) << "Cannot authorize software usage: " << licret;
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    return -1;
   }
 #endif
 
@@ -176,6 +105,11 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};
@@ -402,13 +336,6 @@ int main(int argc, char *argv[]) {
   free(aux->opt);
   bwa_idx_destroy(aux->idx);
   delete aux;
-
-#ifdef USELICENSE
-  if (rank == 0) {
-    // release license
-    licence_check_in();
-  }
-#endif
 
   MPI_Finalize();
 

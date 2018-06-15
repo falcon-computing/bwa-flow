@@ -1,5 +1,11 @@
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 MKFILE_DIR  := $(dir $(MKFILE_PATH))
+
+GLOG_DIR    := ./deps/glog-0.3.3
+GFLAGS_DIR  := ./deps/gflags
+GTEST_DIR   := ./deps/googletest
+FLMDIR      := ./deps/falcon-lic
+
 include $(MKFILE_DIR)/config.mk
 
 BIN_DIR   	:= $(MKFILE_DIR)/bin
@@ -8,26 +14,30 @@ KFLOW_DIR 	:= $(MKFILE_DIR)/kflow
 SRC_DIR   	:= $(MKFILE_DIR)/src
 TEST_DIR	:= $(MKFILE_DIR)/test
 
-CFLAGS 	:= -std=c++0x -fPIC -O3 
+CFLAGS 	:= -std=c++0x -fPIC
 
 OBJS	:= $(SRC_DIR)/wrappered_mem.o \
 	   $(SRC_DIR)/preprocess.o \
+	   $(SRC_DIR)/config.o \
 	   $(SRC_DIR)/Pipeline.o \
-	   $(SRC_DIR)/util.o
+	   $(SRC_DIR)/util.o \
+	   $(SRC_DIR)/allocation_wrapper.o
 
 STDOBJS := $(SRC_DIR)/main.o 
 
 MPIOBJS := $(SRC_DIR)/MPIChannel.o \
-					 $(SRC_DIR)/mpi_main.o
+	   $(SRC_DIR)/mpi_main.o
 
-TESTOBJS:= $(TEST_DIR)/main.o \
-	   $(TEST_DIR)/PipelineTests.o \
-	   $(TEST_DIR)/UtilTests.o
+TESTOBJS:= $(TEST_DIR)/src/main.o \
+	   $(TEST_DIR)/src/PipelineTests.o \
+	   $(TEST_DIR)/src/UtilTests.o
 
 TEST_DEPOBJS := $(SRC_DIR)/Pipeline.o \
+	   	$(SRC_DIR)/config.o \
 	   	$(SRC_DIR)/preprocess.o \
 	   	$(SRC_DIR)/wrappered_mem.o \
-	   	$(SRC_DIR)/util.o
+	   	$(SRC_DIR)/util.o \
+	   	$(SRC_DIR)/allocation_wrapper.o
 
 
 INCLUDES:= -I$(MKFILE_DIR) \
@@ -48,23 +58,20 @@ LIBS	:= -L$(BWA_DIR) -lbwa \
 		-lboost_regex \
 	   -L$(GLOG_DIR)/lib -lglog \
 	   -L$(GFLAGS_DIR)/lib -lgflags \
-	   -L$(GTEST_DIR)/build -lgtest \
+	   -L$(GTEST_DIR)/lib -lgtest \
 	   -lpthread -lm -ldl -lz -lrt
 
-GIT_VERSION := $(shell git describe --abbrev=5 --dirty --always --tags)
-CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
-
 PROG	 := $(BIN_DIR)/bwa
-TESTPROG := $(TEST_DIR)/bwa-test
+TESTPROG := $(TEST_DIR)/bin/bwa-test
 
+DEPS	 := ./deps/.ready
 
 ifneq ($(DEBUG),)
 CFLAGS   := $(CFLAGS) -g
 TESTOPT  := GLOG_v=3 \
-						GLOG_alsologtostderr=1
+	    GLOG_alsologtostderr=1
 else
-CFLAGS   := $(CFLAGS) -DNDEBUG
-TESTOPT  := 
+CFLAGS   := $(CFLAGS) -O3
 endif
 
 ifneq ($(HTSLIB_PATH),)
@@ -73,10 +80,19 @@ INCLUDES := $(INCLUDES) -I$(HTSLIB_PATH)
 LIBS     := $(LIBS) -L$(HTSLIB_PATH) -lhts 
 endif 
 
+GIT_VERSION := $(shell git describe --tags | sed 's/\(.*\)-.*/\1/')
+
 ifneq ($(BUILD_FPGA),)
 CFLAGS 	 := $(CFLAGS) -DBUILD_FPGA
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/FPGAPipeline.o \
+	    $(SRC_DIR)/SWTask.o
+
+TESTOBJS := $(TESTOBJS) \
+	    $(TEST_DIR)/src/FPGATests.o
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	   	$(SRC_DIR)/FPGAPipeline.o \
 	    $(SRC_DIR)/SWTask.o
 
 ifneq ($(ALTERAOCLSDKROOT),)
@@ -88,6 +104,7 @@ INCLUDES := $(INCLUDES) \
 	    $(shell aocl compile-config )
 LIBS	 := $(LIBS) \
 	    $(shell aocl link-config )
+GIT_VERSION := $(GIT_VERSION)-intel
 else 
 
 ifeq ($(XILINX_SDX),)
@@ -102,7 +119,16 @@ LIBS	 := $(LIBS) \
 
 OBJS	 := $(OBJS) \
 	    $(SRC_DIR)/XCLAgent.o
+
+TEST_DEPOBJS := $(TEST_DEPOBJS) \
+	    $(SRC_DIR)/XCLAgent.o
+
+GIT_VERSION := $(GIT_VERSION)-xlnx
 endif
+endif
+
+ifeq ($(RELEASE),)
+GIT_VERSION := $(GIT_VERSION)-dev
 endif
 
 ifneq ($(OPENMPI_DIR),)
@@ -112,25 +138,30 @@ MPILIBS	 := -L$(OPENMPI_DIR)/lib -lmpi_cxx -lmpi
 MPIPROG	 := ./bin/bwa-mpi
 
 TESTOBJS:= $(TESTOBJS) \
-	   $(TEST_DIR)/ChannelTests.o
+	   $(TEST_DIR)/src/ChannelTests.o
 
 TEST_DEPOBJS := $(TEST_DEPOBJS) \
 	   	$(SRC_DIR)/MPIChannel.o
 endif
 
-# check FLMDIR
-ifneq ($(FLMDIR),)
-# add support for flex license manage
-FLMLIB 		:= -llmgr_trl -lcrvs -lsb -lnoact -llmgr_dongle_stub
-
+ifneq ($(RELEASE),)
+# add support for falcon license client
 CFLAGS   	:= $(CFLAGS) -DNDEBUG -DUSELICENSE
-INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)
-LIBS		:= $(LIBS) -L$(FLMDIR) $(FLMLIB) 
-LMDEPS 	 	:= $(FLMDIR)/license.o \
-		   $(FLMDIR)/lm_new.o
-endif 
+INCLUDES 	:= $(INCLUDES) -I$(FLMDIR)/include
+LIBS 	 	:= -L$(FLMDIR)/lib -lfalcon_license \
+		   $(LIBS) 
+ifneq ($(DEPLOYMENT),) # config license client for a cloud
+CFLAGS       := $(CFLAGS) -DDEPLOY_$(DEPLOYMENT)
+GIT_VERSION  := $(GIT_VERSION)-$(DEPLOYMENT)
+endif
+endif
+
+CFLAGS	:= $(CFLAGS) -DVERSION=\"$(GIT_VERSION)\"
 
 all:	$(PROG) $(TESTPROG) $(MPIPROG)
+
+dist:   $(PROG)
+	aws s3 cp bin/bwa s3://fcs-genome-build/bwa/bwa-$(GIT_VERSION)
 
 scaleout: $(MPIPROG)
 
@@ -138,25 +169,28 @@ test:	$(TESTPROG)
 
 runtest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(TESTPROG)  \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
 runmpitest: 
 	$(TESTOPT) \
-	GLOG_log_dir=$(TEST_DIR) \
+	GLOG_log_dir=$(TEST_DIR)/bin \
 	LD_LIBRARY_PATH=$(OPENMPI_DIR)/lib:$(LD_LIBRARY_PATH) \
 	$(OPENMPI_DIR)/bin/mpirun -np 4 \
 	--mca orte_base_help_aggregate 0 \
 	$(TESTPROG) --gtest_filter=ChannelTests.* \
 	mem $(REF_GENOME) $(TEST_FASTQ1) $(TEST_FASTQ2)
 
-$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(STDOBJS) $(LMDEPS) -o $@ $(LIBS)
+$(DEPS): ./deps/get-all.sh
+	./deps/get-all.sh
 
-$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS) $(LMDEPS)
-	$(PP) $(OBJS) $(MPIOBJS) $(LMDEPS) -o $@ $(MPILIBS) $(LIBS)
+$(PROG): $(BWA_DIR)/libbwa.a $(OBJS) $(STDOBJS)
+	$(PP) $(OBJS) $(STDOBJS) -o $@ $(LIBS)
+
+$(MPIPROG): $(BWA_DIR)/libbwa.a $(MPIOBJS) $(OBJS)
+	$(PP) $(OBJS) $(MPIOBJS) -o $@ $(MPILIBS) $(LIBS)
 
 $(TESTPROG): $(TESTOBJS) $(TEST_DEPOBJS)
 	$(PP) $(TESTOBJS) $(TEST_DEPOBJS) -o $@ $(MPILIBS) $(LIBS) 
@@ -167,7 +201,7 @@ $(SRC_DIR)/%.o:	$(SRC_DIR)/%.c
 $(SRC_DIR)/%.o:	$(SRC_DIR)/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
-$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp $(SRC_DIR)/*.h
+$(TEST_DIR)/src/%.o: $(TEST_DIR)/src/%.cpp $(SRC_DIR)/*.h
 	$(PP) -c $(CFLAGS) $(INCLUDES) $< -o $@
 
 $(BWA_DIR)/libbwa.a:
@@ -175,7 +209,7 @@ $(BWA_DIR)/libbwa.a:
 
 clean:
 	rm -f $(SRC_DIR)/*.o
-	rm -f $(TEST_DIR)/*.o
+	rm -f $(TEST_DIR)/src/*.o
 	rm -f $(PROG) $(MPIPROG) $(TESTPROG)
 
 .PHONY: all scaleout test runtest clean

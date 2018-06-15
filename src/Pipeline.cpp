@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "bwa/utils.h"
 #include "kflow/Queue.h"
@@ -24,6 +25,7 @@
 #include "config.h"
 #include "Pipeline.h"  
 #include "util.h"
+#include "allocation_wrapper.h"
 
 // Comparator function for bam1_t records
 #ifdef USE_HTSLIB
@@ -187,6 +189,11 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   int batch_num = input.batch_num;
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
 
   for (int i = 0; i < batch_num; i++) {
     mem_chain_v chains = seq2chain(aux, &seqs[i]);
@@ -450,6 +457,11 @@ void SamsReorder::compute(int wid) {
   int bam_buffer_idx = 0;
   int batch_records = 0;
   int bam_buffer_order = 0;
+
+  // bams->l may be larger than 1
+  // the bam_buffer needs to be realloc
+  int max_buffer_records = 0;
+
   BamsRecord output;
 #else
   SeqsRecord output;
@@ -477,14 +489,23 @@ void SamsReorder::compute(int wid) {
         int batch_num = record.batch_num;
         bseq1_t* seqs = record.seqs;
     
-        if(!bam_buffer) {
-          bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*3 )
-              *sizeof(bam1_t*));
+        if (!bam_buffer) {
+          max_buffer_records = max_batch_records*batch_num*2;
+          bam_buffer = (bam1_t**)malloc(max_buffer_records*sizeof(bam1_t*));
         }
-        for(int i = 0; i < batch_num; i++) {
+        for (int i = 0; i < batch_num; i++) {
           if (seqs[i].bams) {
             for (int j =0; j < seqs[i].bams->l; j++) {
-              bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+              bam1_t* bam_record = seqs[i].bams->bams[j];
+              if (FLAGS_filter == 0 || 
+                  (bam_record->core.flag & FLAGS_filter) == 0) 
+              {
+                if (bam_buffer_idx >= max_buffer_records) {
+                  max_buffer_records *= 2;
+                  bam_buffer = (bam1_t**)realloc(bam_buffer, max_buffer_records*sizeof(bam1_t*)); 
+                }
+                bam_buffer[bam_buffer_idx++] = bam_record;
+              }
             }
           }
           free(seqs[i].bams->bams);
@@ -521,15 +542,25 @@ void SamsReorder::compute(int wid) {
       int batch_num = record.batch_num;
       bseq1_t* seqs = record.seqs;
   
-      if(!bam_buffer) {
+      if (!bam_buffer) {
         // in case bams->l is not 1 
-        bam_buffer = (bam1_t**)malloc((max_batch_records*batch_num*3 )
-            *sizeof(bam1_t*));
+        max_buffer_records = max_batch_records*batch_num*2;
+        bam_buffer = (bam1_t**)malloc(max_buffer_records*sizeof(bam1_t*));
       }
       for(int i = 0; i < batch_num; i++) {
         if (seqs[i].bams) {
           for (int j =0; j < seqs[i].bams->l; j++) {
-            bam_buffer[bam_buffer_idx++] = seqs[i].bams->bams[j];
+            bam1_t* bam_record = seqs[i].bams->bams[j];
+            if (FLAGS_filter == 0 || 
+                (bam_record->core.flag & FLAGS_filter) == 0) 
+            {
+              if (bam_buffer_idx >= max_buffer_records) {
+                max_buffer_records *= 2;
+                bam_buffer = (bam1_t**)realloc(bam_buffer, max_buffer_records*sizeof(bam1_t*));
+                DLOG(INFO) << "realloc() bam_buffer to " << max_buffer_records;
+              }
+              bam_buffer[bam_buffer_idx++] = bam_record;
+            }
           }
         }
         free(seqs[i].bams->bams);
