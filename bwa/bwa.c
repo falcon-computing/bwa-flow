@@ -254,7 +254,7 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
         fseek(fp, 0, SEEK_END);
         ref_size = ftell(fp);
         fclose(fp);
-        if ((float)sa_size/4.0/(float)ref_size < 0.995) {
+        if ((float)sa_size/4.0/(float)ref_size < 0.95) {
           fprintf(stderr, "[W::%s] Using an SA file with sampling rate below 1/4, which may harm performance\n", __func__);
           fprintf(stderr, "[W::%s] Recommend to generate a new SA file by prepare-ref.sh for better performance\n", __func__);
         }
