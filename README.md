@@ -1,18 +1,17 @@
 ### Compilation
+1. Use cmake to ompile. This will compile bwa, kflow and bwa-flow automatically
 ```
-> mv ./config.mk.template ./config.mk # with corresponding modifications
-```
-1. Setting up dependencies    
-
-    - Build FPGA: add `BUILD_FPGA=1` in *config.mk*
-    - Makefile will automatically read `$ALTERAOCLSDKROOT` and `$XILINX_SDX` and determine with platform to build
-    - Build MPI: add `OPENMPI_DIR` in *config.mk*
-    - Add Falcon LM license: set `FLMDIR` in *config.mk*
-
-3. Compile, this will compile bwa, kflow and bwa-flow automatically
-```
+> mkdir build && cd build
+> cmake ..
 > make all
 ```
+2. Setting up options
+
+    - Build with FPGA: add `-DUSE_FPGA=On` after `cmake` command
+    - Build with HTS : add `-DUSE_HTSLIB=On` after `cmake` command
+    - Build in Debug mode: add `-DCMAKE_BUILD_TYPE=Debug` after `cmake` command
+
+
 
 ### Execution
 
