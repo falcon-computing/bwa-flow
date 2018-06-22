@@ -6,7 +6,6 @@ ExternalProject_Add(falconlm-download
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/falconlm/install"
     BUILD_COMMAND ""
     INSTALL_COMMAND "")
-message(STATUS "${CMAKE_BINARY_DIR}")
 
 add_custom_target(FalconLM)
 add_dependencies(FalconLM falconlm-download)

@@ -1,4 +1,4 @@
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Og -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wall")
 
 if ( USE_HTSLIB )
@@ -20,7 +20,3 @@ set_target_properties(cbwa PROPERTIES OUTPUT_NAME bwa)
 if ( USE_HTSLIB )
   add_dependencies(cbwa HTS)
 endif()
-add_custom_command(TARGET cbwa POST_BUILD
-  COMMAND "mv"             ARGS  libbwa.a ~libbwa.a
-  COMMAND "${CMAKE_AR}"    ARGS  -csru libbwa.a CMakeFiles/cbwa.dir/*.o
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIRECTORY}")
