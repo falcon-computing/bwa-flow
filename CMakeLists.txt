@@ -5,39 +5,45 @@ set(CMAKE_CXX_COMPILER "g++")
 
 cmake_minimum_required(VERSION 2.8.12)
 
-project(fcs-bwa-flow)
+project(bwa-flow)
+
 
 # set up dependency
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package( Boost 1.53.0 REQUIRED
               COMPONENTS system thread iostreams filesystem regex )
 find_package( ZLIB         REQUIRED )
 find_package( Threads      REQUIRED )
+
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package( Google       REQUIRED )
 find_package( FalconLM     REQUIRED )
 
 
+if ( NOT DEFINED USE_HTSLIB )
+  message( STATUS "Using HTS library by default." )
+  set( USE_HTSLIB On )
+endif()
 if ( USE_HTSLIB )
   find_package( HTS        REQUIRED )
 endif()
 
-if ( USE_FPGA )
-  if ( DEFINED ENV{XILINX_SDX} )
-    set ( FPGA_TYPE "xlnx" )
-    find_package( Xilinx REQUIRED )
-    set( FPGA_INCLUDE_DIRS "${Xilinx_INCLUDE_DIRS}" )
-    set( FPGA_LIBRARY_DIRS "${Xilinx_LIBRARY_DIRS}")
-    set( FPGA_LIBRARIES "${Xilinx_LIBRARIES}")
-  elseif ( DEFINED ENV{ALTERAOCLSDKROOT} )
-    set ( FPGA_TYPE "intel" )
-    find_package( IntelAltera REQUIRED )
-    set( FPGA_INCLUDE_DIRS "${IntelAltera_INCLUDE_DIRS}" )
-    set( FPGA_LIBRARY_DIRS "${IntelAltera_LIBRARY_DIRS}")
-    set( FPGA_LIBRARIES "${IntelAltera_LIBRARIES}")
-    else()
-    message( SEND_ERROR "No OpenCL library set up. Build without using FPGA." )
-    set( USE_FPGA Off )
-  endif()
+if ( DEFINED ENV{XILINX_SDX} )
+  set( USE_FPGA On )
+  set( FPGA_TYPE "xlnx" )
+  find_package( Xilinx REQUIRED )
+  set( FPGA_INCLUDE_DIRS "${Xilinx_INCLUDE_DIRS}" )
+  set( FPGA_LIBRARY_DIRS "${Xilinx_LIBRARY_DIRS}")
+  set( FPGA_LIBRARIES "${Xilinx_LIBRARIES}")
+elseif ( DEFINED ENV{ALTERAOCLSDKROOT} )
+  set( USE_FPGA On )
+  set( FPGA_TYPE "intel" )
+  find_package( IntelAltera REQUIRED )
+  set( FPGA_INCLUDE_DIRS "${IntelAltera_INCLUDE_DIRS}" )
+  set( FPGA_LIBRARY_DIRS "${IntelAltera_LIBRARY_DIRS}")
+  set( FPGA_LIBRARIES "${IntelAltera_LIBRARIES}")
+else()
+  message( STATUS "No OpenCL module loaded. Build without using FPGA." )
+  set( USE_FPGA Off )
 endif()
 
 
@@ -45,8 +51,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 
 # set up debug/release mode
 if (NOT CMAKE_BUILD_TYPE)
-  # message(STATUS "No build type selected, default to Debug")
-  # set(CMAKE_BUILD_TYPE "Debug")
   message(STATUS "No build type selected, default to Debug")
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
