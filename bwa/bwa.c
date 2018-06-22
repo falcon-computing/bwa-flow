@@ -236,8 +236,10 @@ char *bwa_idx_infer_prefix(const char *hint)
 
 bwt_t *bwa_idx_load_bwt(const char *hint)
 {
+        uint64_t sa_size, ref_size;
 	char *tmp, *prefix;
 	bwt_t *bwt;
+        FILE *fp;
 	prefix = bwa_idx_infer_prefix(hint);
 	if (prefix == 0) {
 		if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to locate the index files\n", __func__);
@@ -247,7 +249,15 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
 	strcat(strcpy(tmp, prefix), ".bwt"); // FM-index
 	bwt = bwt_restore_bwt(tmp);
 	strcat(strcpy(tmp, prefix), ".sa");  // partial suffix array (SA)
-	bwt_restore_sa(tmp, bwt);
+	sa_size = bwt_restore_sa(tmp, bwt);
+        fp = fopen(prefix, "rb");
+        fseek(fp, 0, SEEK_END);
+        ref_size = ftell(fp);
+        fclose(fp);
+        if ((float)sa_size/4.0/(float)ref_size < 0.95) {
+          fprintf(stderr, "[W::%s] Using an SA file with sampling rate below 1/4, which may harm performance\n", __func__);
+          fprintf(stderr, "[W::%s] Recommend to generate a new SA file by prepare-ref.sh for better performance\n", __func__);
+        }
 	free(tmp); free(prefix);
 	return bwt;
 }
