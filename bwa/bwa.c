@@ -11,6 +11,7 @@
 #ifdef USE_HTSLIB
 #include <htslib/sam.h>
 #endif
+#include <sys/stat.h>
 
 #ifdef USE_MALLOC_WRAPPERS
 #  include "malloc_wrap.h"
@@ -239,7 +240,7 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
         uint64_t sa_size, ref_size;
 	char *tmp, *prefix;
 	bwt_t *bwt;
-        FILE *fp;
+	struct stat st_ref, st_sa;
 	prefix = bwa_idx_infer_prefix(hint);
 	if (prefix == 0) {
 		if (bwa_verbose >= 1) fprintf(stderr, "[E::%s] fail to locate the index files\n", __func__);
@@ -249,15 +250,17 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
 	strcat(strcpy(tmp, prefix), ".bwt"); // FM-index
 	bwt = bwt_restore_bwt(tmp);
 	strcat(strcpy(tmp, prefix), ".sa");  // partial suffix array (SA)
-	sa_size = bwt_restore_sa(tmp, bwt);
-  fp = fopen(prefix, "rb");
-  fseek(fp, 0, SEEK_END);
-  ref_size = ftell(fp);
-  fclose(fp);
-  if ((float)sa_size/4.0/(float)ref_size < 0.95) {
-    fprintf(stderr, "[W::%s] Using SA file %s may harm the performance\n", __func__, tmp);
-    fprintf(stderr, "[W::%s] We recommend to generate a new SA file using /usr/local/falcon/prepare-ref.sh\n", __func__);
-  }
+	bwt_restore_sa(tmp, bwt);
+
+	stat(prefix, &st_ref);
+	ref_size = (uint64_t)(st_ref.st_size);
+	strcat(strcpy(tmp, prefix), ".sa");  // partial suffix array (SA)
+	stat(tmp, &st_sa);
+	sa_size = (uint64_t)(st_sa.st_size);
+	if ((float)sa_size/4.0/(float)ref_size < 0.95) {
+	  fprintf(stderr, "[W::%s] Using SA file %s may harm the performance\n", __func__, tmp);
+	  fprintf(stderr, "[W::%s] We recommend to generate a new SA file using /usr/local/falcon/prepare-ref.sh\n", __func__);
+	}
 	free(tmp); free(prefix);
 	return bwt;
 }
