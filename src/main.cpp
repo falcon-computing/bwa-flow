@@ -120,23 +120,6 @@ int main(int argc, char *argv[]) {
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
 
-#ifdef BUILD_FPGA
-  if (FLAGS_offload && FLAGS_use_fpga) {
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
-    boost::filesystem::wpath file_path(FLAGS_fpga_path);
-    if (!boost::filesystem::exists(file_path)) {
-      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
-        << FLAGS_fpga_path;
-      FLAGS_use_fpga = false;
-    }
-  }
-  else {
-    FLAGS_use_fpga = false;
-  }
-  // force turn off FPGA
-  // FLAGS_use_fpga = false;
-#endif
-
   // Get output file folder
   std::string sam_dir = FLAGS_output_dir;
   if (!sam_dir.empty()) {
@@ -217,6 +200,41 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Set up OpenCL environment
+#ifdef BUILD_FPGA
+  if (FLAGS_offload && FLAGS_use_fpga) {
+    boost::filesystem::wpath file_path(FLAGS_fpga_path);
+    if (!boost::filesystem::exists(file_path)) {
+      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
+                  << FLAGS_fpga_path;
+      LOG(WARNING) << "Continue without using FPGA";
+      FLAGS_use_fpga = false;
+    }
+    try {
+      opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
+      if (NULL == opencl_env) {
+        std::string err_string = "BWA OpenCL environment initialization failed";
+        if (errno==12)
+          err_string += " due to out-of-memory";
+        throw std::runtime_error(err_string);
+      }
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+                                   << FLAGS_fpga_path;
+    }
+    catch (std::runtime_error &e) {
+      DLOG(ERROR) << "Cannot initialize BWA OpenCL environment";
+      DLOG(ERROR) << "because: " << e.what();
+      LOG(WARNING) << "Continue without using FPGA";
+      FLAGS_use_fpga = false;
+    }
+  }
+  else {
+    FLAGS_use_fpga = false;
+  }
+  if (FLAGS_use_fpga)
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
+#endif
+
   // dump aux env
 
   // Restore stdout if stdout is redirected
@@ -227,7 +245,7 @@ int main(int argc, char *argv[]) {
     close(stdout_fd);
   }
 
-	double t_real = realtime();
+  double t_real = realtime();
 
   int num_compute_stages = 3;
 
@@ -295,18 +313,6 @@ int main(int argc, char *argv[]) {
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       try {
-        opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
-        if (NULL == opencl_env) {
-          std::string err_string = "Memory allocation failed";
-          if (errno==12)
-            err_string += " due to out-of-memory";
-          else
-            err_string += " due to internal failure"; 
-          throw std::runtime_error(err_string);
-        }
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-                                     << FLAGS_fpga_path;
-  
 #ifndef FPGA_TEST
         fpga_flow.start();
         fpga_flow.wait();
@@ -314,9 +320,9 @@ int main(int argc, char *argv[]) {
         delete opencl_env;
       }
       catch (std::runtime_error &e) {
-        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
-        DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
-        DLOG(ERROR) << "because: " << e.what();
+        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Failed to run bwa-flow on FPGA";
+        DLOG(ERROR) << "because " << e.what();
+        throw e;
       }
     }
 #endif
