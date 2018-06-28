@@ -331,9 +331,12 @@ void ChainsToRegionsFPGA::compute(int wid) {
   for (int i = 0; i < 2; i++) {
     SWTask* task = new SWTask(opencl_env, chunk_size);
     if (NULL == task) {
-      LOG(ERROR) << strerror(errno) << " due to "
-                 << ((errno==12) ? "out-of-memory" : "internal failure") ;
-      exit(EXIT_FAILURE);
+      std::string err_string = "Memory allocation failed";
+      if (errno==12)
+        err_string += " due to out-of-memory";
+      else
+        err_string += " due to internal failure"; 
+      throw std::runtime_error(err_string);
     }
     task_queue.push_back(task);
   }
@@ -527,9 +530,12 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
   int batch_num = record.batch_num;
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   if (NULL == alnreg) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   mem_chain_v* chains = record.chains;
   for (int i=0; i<batch_num; i++) {

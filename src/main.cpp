@@ -101,9 +101,12 @@ int main(int argc, char *argv[]) {
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
   if (NULL == aux) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   memset(aux, 0, sizeof(ktp_aux_t));
 
@@ -294,9 +297,12 @@ int main(int argc, char *argv[]) {
       try {
         opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
         if (NULL == opencl_env) {
-          LOG(ERROR) << strerror(errno) << " due to "
-                     << ((errno==12) ? "out-of-memory" : "internal failure") ;
-          exit(EXIT_FAILURE);
+          std::string err_string = "Memory allocation failed";
+          if (errno==12)
+            err_string += " due to out-of-memory";
+          else
+            err_string += " due to internal failure"; 
+          throw std::runtime_error(err_string);
         }
         DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
                                      << FLAGS_fpga_path;
