@@ -212,12 +212,6 @@ int main(int argc, char *argv[]) {
     }
     try {
       opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
-      if (NULL == opencl_env) {
-        std::string err_string = "BWA OpenCL environment initialization failed";
-        if (errno==12)
-          err_string += " due to out-of-memory";
-        throw std::runtime_error(err_string);
-      }
       DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
                                    << FLAGS_fpga_path;
     }
