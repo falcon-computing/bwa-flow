@@ -6,19 +6,17 @@
 #include "XCLAgent.h"
 #include "SWTask.h"
 
-XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task) {
+XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task): env_(env) {
 
-  env_ = env;
-  cmd_ = env->getCmdQueue();
+  device_ = env->getDevice();
 
-  cl_int        err       = 0;
-  cl_program    program   = env->getProgram();
+  cl_int     err     = 0;
+  cl_context context = device_.context;
+  cl_program program = device_.program;
+  
   kernel_ = clCreateKernel(program, "sw_top", &err);
-  if (err != CL_SUCCESS) {
-    throw std::runtime_error("Failed to create kernel");
-  }
+  OCL_CHECK(err, "failed to create kernel: sw_top");
 
-  cl_context context = env->getContext();
   cl_mem_ext_ptr_t ext_a, ext_b;
   ext_a.flags = XCL_MEM_DDR_BANK0; ext_a.obj = 0; ext_a.param = 0;
   ext_b.flags = XCL_MEM_DDR_BANK2; ext_b.obj = 0; ext_b.param = 0;
@@ -34,11 +32,13 @@ XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task) {
 
 XCLAgent::~XCLAgent() {
   clReleaseKernel(kernel_);
+  env_->releaseDevice(device_);
 }
 
 void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
+  cl_command_queue cmd = device_.cmd;
   if (size > 0) {
-    cl_int err = clEnqueueWriteBuffer(cmd_, buf, CL_FALSE, 0, size, 
+    cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, 
         host_ptr, 0, NULL, &write_events_[bank]);
 
     if (err != CL_SUCCESS) {
@@ -50,8 +50,9 @@ void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
 }
 
 void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
+  cl_command_queue cmd = device_.cmd;
   if (size > 0) {
-    cl_int err = clEnqueueReadBuffer(cmd_, buf, CL_TRUE, 0, size, 
+    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_TRUE, 0, size, 
         host_ptr, 1, &kernel_event_, NULL);
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error reading buffer of size " << size
@@ -62,6 +63,8 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
 }
 
 void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
+
+  cl_command_queue cmd = device_.cmd;
 
   XCLAgent* prev_agent = NULL;
   if (agent) {
@@ -78,8 +81,8 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_list_[device_.env_id]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_list_[device_.env_id]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
 
@@ -94,11 +97,11 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
     wait_list[2] = write_events_[1];
     uint64_t start_ts_compute = getUs();
     if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd_, kernel_, 3, wait_list, &kernel_event_);
+      err = clEnqueueTask(cmd, kernel_, 3, wait_list, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clEnqueueTask(cmd_, kernel_, 2, wait_list, &kernel_event_);
+      err = clEnqueueTask(cmd, kernel_, 2, wait_list, &kernel_event_);
       valid_2nd_event_ = false;
     }
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "Enqueue compute task takes " <<
@@ -106,18 +109,18 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   }
   else {
     if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd_, kernel_, 2, write_events_, &kernel_event_);
+      err = clEnqueueTask(cmd, kernel_, 2, write_events_, &kernel_event_);
       valid_2nd_event_ = true;
     }
     else {
-      err = clEnqueueTask(cmd_, kernel_, 1, write_events_, &kernel_event_);
+      err = clEnqueueTask(cmd, kernel_, 1, write_events_, &kernel_event_);
       valid_2nd_event_ = false;
     }
   }
   if (err) {
     LOG(ERROR) << "failed to execute kernels: " << err;
   }
-  clFlush(cmd_);
+  clFlush(cmd);
 }
 
 void XCLAgent::finish() {
@@ -129,6 +132,7 @@ void XCLAgent::finish() {
 }
 
 void XCLAgent::fence() {
-  clFlush(cmd_);
-  clFinish(cmd_);
+  cl_command_queue cmd = device_.cmd;
+  clFlush(cmd);
+  clFinish(cmd);
 }
