@@ -24,15 +24,7 @@ endif()
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package( Google       REQUIRED )
 find_package( FalconLM     REQUIRED )
-
-
-if ( NOT DEFINED USE_HTSLIB )
-  message( STATUS "Using HTS library by default." )
-  set( USE_HTSLIB On )
-endif()
-if ( USE_HTSLIB )
-  find_package( HTS        REQUIRED )
-endif()
+find_package( HTS        REQUIRED )
 
 if ( DEFINED ENV{XILINX_SDX} )
   set( USE_FPGA On )
@@ -65,7 +57,7 @@ add_subdirectory(kflow)
 add_subdirectory(bwa bwa_c)
 
 # set up for compilation
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC -DUSE_HTSLIB")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -DUSELICENSE")
 if ( USE_MPI )
@@ -91,10 +83,6 @@ if ( USE_FPGA )
   endif()
 endif()
 
-if ( USE_HTSLIB )
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_HTSLIB" )
-endif()
-
 if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
   set(BIN_VERSION "${BIN_VERSION}-dev")
 elseif (${CMAKE_BUILD_TYPE} MATCHES "Release")
@@ -111,22 +99,19 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+include_directories( ./kflow/include )
+
 include_directories(
   ${Google_INCLUDE_DIRS}
   ${FalconLM_INCLUDE_DIRS}
-  ${Boost_INCLUDE_DIRS})
-
-include_directories( ./kflow/include )
+  ${Boost_INCLUDE_DIRS}
+  ${HTS_INCLUDE_DIRS})
 
 link_directories(
   ${Google_LIBRARY_DIRS}
   ${FalconLM_LIBRARY_DIRS}
-  ${Boost_LIBRARY_DIRS})
-
-if ( USE_HTSLIB )
-  include_directories(${HTS_INCLUDE_DIRS})
-  link_directories(${HTS_LIBRARY_DIRS})
-endif()
+  ${Boost_LIBRARY_DIRS}
+  ${HTS_LIBRARY_DIRS})
 
 file(GLOB BWA_SRC_LIST src/*.cpp)
 list(REMOVE_ITEM BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
@@ -152,12 +137,8 @@ if ( USE_MPI )
 endif()
 
 
-set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_executable(bwa ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${BWA_SRC_LIST})
-add_dependencies(bwa Google FalconLM)
-if ( USE_HTSLIB )
-  add_dependencies(bwa HTS)
-endif()
+add_dependencies(bwa Google FalconLM HTS)
 
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa
@@ -173,12 +154,8 @@ target_link_libraries(bwa
   ${FPGA_LIBRARIES})
 
 if ( USE_MPI )
-  set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
   add_executable(bwa-mpi ${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp ${BWA_MPI_SRC_LIST} ${BWA_SRC_LIST})
-  add_dependencies(bwa-mpi Google FalconLM)
-  if ( USE_HTSLIB )
-    add_dependencies(bwa-mpi HTS)
-  endif()
+  add_dependencies(bwa-mpi Google FalconLM HTS)
 
   set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
   target_link_libraries(bwa-mpi
@@ -195,11 +172,14 @@ if ( USE_MPI )
     ${FPGA_LIBRARIES})
 endif()
 
-install(TARGETS bwa RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/bin)
-
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+   message(STATUS "Install prefix is set to ~/.falcon-genome/fcs-genome/${BIN_VERSION}")
+   set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.falcon-genome/fcs-genome/${BIN_VERSION}")
+endif()
+install(TARGETS bwa RUNTIME DESTINATION .)
 if ( USE_MPI )
-  install(TARGETS bwa-mpi RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/bin)
+  install(TARGETS bwa-mpi RUNTIME DESTINATION .)
 endif()
 
-#enable_testing()
+enable_testing()
 add_subdirectory(test)

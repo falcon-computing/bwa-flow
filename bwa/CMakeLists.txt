@@ -1,16 +1,10 @@
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD -DUSE_HTSLIB")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Wno-unused-function -Og")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wall")
 
-if ( USE_HTSLIB )
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_HTSLIB" )
-endif()
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-if ( USE_HTSLIB )
-  include_directories(${HTS_INCLUDE_DIRS})
-  link_directories(${HTS_LIBRARY_DIRS})
-endif()
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}
+                    ${HTS_INCLUDE_DIRS})
+link_directories(${HTS_LIBRARY_DIRS})
 
 file(GLOB_RECURSE SRC_LIST *.c)
 list(REMOVE_ITEM SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/main.c"
@@ -18,6 +12,4 @@ list(REMOVE_ITEM SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/main.c"
                           "${CMAKE_CURRENT_SOURCE_DIR}/gprof-helper.c")
 add_library(bwa-c STATIC ${SRC_LIST})
 set_target_properties(bwa-c PROPERTIES OUTPUT_NAME bwa)
-if ( USE_HTSLIB )
-  add_dependencies(bwa-c HTS)
-endif()
+add_dependencies(bwa-c HTS)

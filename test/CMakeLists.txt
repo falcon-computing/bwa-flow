@@ -10,13 +10,9 @@ if ( USE_MPI )
   list(APPEND BWA_SRC_LIST "${BWA_MPI_SRC_LIST}")
 endif()
 
-set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 add_executable(test_bwa ${BWA_TEST_LIST} ${BWA_SRC_LIST})
 
-add_dependencies(test_bwa Google FalconLM)
-if ( USE_HTSLIB )
-  add_dependencies(test_bwa HTS)
-endif()
+add_dependencies(test_bwa Google FalconLM HTS)
 
 target_link_libraries(test_bwa
   kflow 
@@ -34,4 +30,6 @@ target_link_libraries(test_bwa
 install(TARGETS test_bwa RUNTIME DESTINATION ${CMAKE_BINARY_DIR}/bin)
 install(TARGETS test_bwa RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/test/bin)
 
-add_test(bwa-test test_bwa)
+add_test(NAME    bwa-test
+         COMMAND bash test-driver.sh $<TARGET_FILE:test_bwa>
+         WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/test)
