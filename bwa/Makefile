@@ -1,5 +1,3 @@
-include ../config.mk
-
 CC=		gcc
 CFLAGS=		-g -Wall -Wno-unused-function -O2
 WRAP_MALLOC=	-DUSE_MALLOC_WRAPPERS

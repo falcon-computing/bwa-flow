@@ -4,6 +4,7 @@
 > mkdir build && cd build
 > cmake ..
 > make all
+> make CTEST_OUTPUT_ON_FAILURE=1 test
 ```
 2. Setting up options
 
@@ -12,6 +13,7 @@
     - BUILD with MPI : add `-DUSE_MPI=On` after `cmake` command, by default this option is off
     - Build in Debug mode: add `-DCMAKE_BUILD_TYPE=Debug` after `cmake` command (default build type)
     - Build in Release mode: add `-DCMAKE_BUILD_TYPE=Release` after `cmake` command
+    - Select deployment type: add `-DDEPLOYMENT_DST=aws` or `-DDEPLOYMENT_DST=hwc` after `cmake` command
 
 
 
