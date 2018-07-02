@@ -120,6 +120,7 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   if (err) {
     LOG(ERROR) << "failed to execute kernels: " << err;
   }
+  clFlush(cmd_);
 }
 
 void XCLAgent::finish() {
@@ -128,4 +129,9 @@ void XCLAgent::finish() {
   if (valid_2nd_event_) {
     clReleaseEvent(write_events_[1]);
   }
+}
+
+void XCLAgent::fence() {
+  clFlush(cmd_);
+  clFinish(cmd_);
 }

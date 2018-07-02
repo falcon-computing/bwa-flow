@@ -1,6 +1,7 @@
 #include <stdlib.h>  /* Avoid breaking the usual definitions */
 #include <stdio.h>
 #include <string.h>
+#include <stdexcept>
 #include <errno.h>
 #include <glog/logging.h>
 
@@ -12,9 +13,12 @@
 void *calloc_wrapper(size_t nmemb, size_t size, const char *file, unsigned int line, const char *func) {
   void *p = calloc(nmemb, size);
   if (NULL == p) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   return p;
 }
@@ -25,9 +29,12 @@ void *calloc_wrapper(size_t nmemb, size_t size, const char *file, unsigned int l
 void *malloc_wrapper(size_t size, const char *file, unsigned int line, const char *func) {
   void *p = malloc(size);
   if (NULL == p) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   return p;
 }
@@ -38,9 +45,12 @@ void *malloc_wrapper(size_t size, const char *file, unsigned int line, const cha
 void *realloc_wrapper(void *ptr, size_t size, const char *file, unsigned int line, const char *func) {
   void *p = realloc(ptr, size);
   if (NULL == p) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   return p;
 }
@@ -51,9 +61,12 @@ void *realloc_wrapper(void *ptr, size_t size, const char *file, unsigned int lin
 char *strdup_wrapper(const char *s, const char *file, unsigned int line, const char *func) {
   char *p = strdup(s);
   if (NULL == p) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   return p;
 }

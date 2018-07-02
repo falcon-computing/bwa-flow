@@ -190,9 +190,12 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   if (NULL == alnreg) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
 
   for (int i = 0; i < batch_num; i++) {

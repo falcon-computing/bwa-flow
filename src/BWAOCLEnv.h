@@ -37,7 +37,6 @@ class BWAOCLEnv : public OpenCLEnv{
     int64_t pac_size = get_full_pac(pac);
 
     int err = 0;
-
 #ifdef XILINX_FPGA
     // transfer PAC reference to all the devices
     for (int i = 0; i < device_envs_.size(); i++) {

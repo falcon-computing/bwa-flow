@@ -11,6 +11,7 @@ class XCLAgent : public FPGAAgent {
   void readOutput(cl_mem buf, void* host_ptr, int size, int bank);
   void start(SWTask* task, FPGAAgent* prev_agent = NULL);
   void finish();
+  void fence();
 
  private:
   cl_device_env device_;
