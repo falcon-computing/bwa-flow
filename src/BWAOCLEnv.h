@@ -7,6 +7,7 @@
 #include <boost/thread.hpp>
 #include <glog/logging.h>
 #include <string>
+#include <vector>
 #include <stdexcept>
 
 #include <CL/opencl.h>
@@ -47,9 +48,9 @@ class BWAOCLEnv : public OpenCLEnv{
         ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
         ext_d.flags = XCL_MEM_DDR_BANK3; ext_d.obj = 0; ext_d.param = 0;
 
-        pac_input_a_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+        cl_mem pac_input_a_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
             pac_size, &ext_c, &err);
-        pac_input_b_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+        cl_mem pac_input_b_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
             pac_size, &ext_d, &err);
         if (err != CL_SUCCESS) {
             throw std::runtime_error("Failed to create reference OpenCL buffer!");
@@ -63,6 +64,8 @@ class BWAOCLEnv : public OpenCLEnv{
         }
         clReleaseEvent(event[0]);
         clReleaseEvent(event[1]);
+        pac_input_a_list_.push_back(pac_input_a_);
+        pac_input_b_list_.push_back(pac_input_b_);
     }
 #else
     DLOG(ERROR) << "This feature is currently only supported in Xilinx";
@@ -71,8 +74,12 @@ class BWAOCLEnv : public OpenCLEnv{
   }
   ~BWAOCLEnv(){
 #ifdef XILINX_FPGA
-    clReleaseMemObject(pac_input_a_);
-    clReleaseMemObject(pac_input_b_);
+    for (int i = 0; i < pac_input_a_list_.size(); i++) {
+      clReleaseMemObject(pac_input_a_list_[i]);
+    }
+    for (int i = 0; i < pac_input_b_list_.size(); i++) {
+      clReleaseMemObject(pac_input_b_list_[i]);
+    }
 #endif
   }
 
@@ -97,8 +104,8 @@ class BWAOCLEnv : public OpenCLEnv{
     return pac_size;
   }
 
-  cl_mem pac_input_a_;
-  cl_mem pac_input_b_;
+  std::vector<cl_mem> pac_input_a_list_;
+  std::vector<cl_mem> pac_input_b_list_;
 };
 
 extern BWAOCLEnv* opencl_env;

@@ -81,8 +81,8 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_list_[device_.env_id]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_list_[device_.env_id]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
 
@@ -120,7 +120,7 @@ void XCLAgent::start(SWTask* task, FPGAAgent* agent) {
   if (err) {
     LOG(ERROR) << "failed to execute kernels: " << err;
   }
-  clFlush(cmd_);
+  clFlush(cmd);
 }
 
 void XCLAgent::finish() {
@@ -132,6 +132,7 @@ void XCLAgent::finish() {
 }
 
 void XCLAgent::fence() {
-  clFlush(cmd_);
-  clFinish(cmd_);
+  cl_command_queue cmd = device_.cmd;
+  clFlush(cmd);
+  clFinish(cmd);
 }
