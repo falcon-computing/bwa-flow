@@ -7,9 +7,11 @@
 ```
 2. Setting up options
 
-    - Build with FPGA: add `-DUSE_FPGA=On` after `cmake` command
-    - Build with HTS : add `-DUSE_HTSLIB=On` after `cmake` command
-    - Build in Debug mode: add `-DCMAKE_BUILD_TYPE=Debug` after `cmake` command
+    - Build with HTS : add `-DUSE_HTSLIB=On` after `cmake` command, by default this option is on
+    - Build with FPGA: add `-DUSE_FPGA=On` after `cmake` command, by default this option is if OpenCL Runtime library found
+    - BUILD with MPI : add `-DUSE_MPI=On` after `cmake` command, by default this option is off
+    - Build in Debug mode: add `-DCMAKE_BUILD_TYPE=Debug` after `cmake` command (default build type)
+    - Build in Release mode: add `-DCMAKE_BUILD_TYPE=Release` after `cmake` command
 
 
 

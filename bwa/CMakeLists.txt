@@ -1,4 +1,5 @@
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Og -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_MALLOC_WRAPPERS -DHAVE_PTHREAD")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Wno-unused-function -Og")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Wall")
 
 if ( USE_HTSLIB )
@@ -15,8 +16,8 @@ file(GLOB_RECURSE SRC_LIST *.c)
 list(REMOVE_ITEM SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/main.c"
                           "${CMAKE_CURRENT_SOURCE_DIR}/example.c"
                           "${CMAKE_CURRENT_SOURCE_DIR}/gprof-helper.c")
-add_library(cbwa STATIC ${SRC_LIST})
-set_target_properties(cbwa PROPERTIES OUTPUT_NAME bwa)
+add_library(bwa-c STATIC ${SRC_LIST})
+set_target_properties(bwa-c PROPERTIES OUTPUT_NAME bwa)
 if ( USE_HTSLIB )
-  add_dependencies(cbwa HTS)
+  add_dependencies(bwa-c HTS)
 endif()

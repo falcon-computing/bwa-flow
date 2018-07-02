@@ -14,6 +14,13 @@ find_package( Boost 1.53.0 REQUIRED
 find_package( ZLIB         REQUIRED )
 find_package( Threads      REQUIRED )
 
+if ( NOT DEFINED USE_MPI )
+  set( USE_MPI Off )
+endif()
+if ( USE_MPI )
+  find_package( MPI        REQUIRED )
+endif()
+
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package( Google       REQUIRED )
 find_package( FalconLM     REQUIRED )
@@ -47,20 +54,24 @@ else()
 endif()
 
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
-
 # set up debug/release mode
 if (NOT CMAKE_BUILD_TYPE)
   message(STATUS "No build type selected, default to Debug")
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
+message( STATUS "Build type: ${CMAKE_BUILD_TYPE}" )
 
 add_subdirectory(kflow)
-add_subdirectory(bwa)
+add_subdirectory(bwa bwa_c)
 
 # set up for compilation
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC -Og")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -DUSELICENSE")
+if ( USE_MPI )
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_LINK_FLAGS}")
+endif()
+
 
 # get code version
 execute_process( COMMAND
@@ -98,7 +109,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVERSION=\\\"${BIN_VERSION}\\\"")
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+include_directories(
   ${Google_INCLUDE_DIRS}
   ${FalconLM_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS})
@@ -115,39 +128,29 @@ if ( USE_HTSLIB )
   link_directories(${HTS_LIBRARY_DIRS})
 endif()
 
+file(GLOB BWA_SRC_LIST src/*.cpp)
+list(REMOVE_ITEM BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+list(REMOVE_ITEM BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp")
+
 if ( USE_FPGA )
-  include_directories(${FPGA_INCLUDE_DIRS})
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/fpga
+                      ${CMAKE_CURRENT_SOURCE_DIR}/src/fpga/${FPGA_TYPE}
+                      ${FPGA_INCLUDE_DIRS})
   link_directories(${FPGA_LIBRARY_DIRS})
+
+  file(GLOB BWA_FPGA_SRC_LIST src/fpga/*.cpp)
+  list(APPEND BWA_SRC_LIST ${BWA_FPGA_SRC_LIST})
+
+  file(GLOB BWA_FPGA_EXTRA_SRC_LIST src/fpga/${FPGA_TYPE}/*.cpp)
+  list(APPEND BWA_SRC_LIST ${BWA_FPGA_EXTRA_SRC_LIST})
 endif()
 
-
-file(GLOB_RECURSE BWA_SRC_LIST src/*.cpp)
-list(REMOVE_ITEM BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/MPIChannel.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/FPGAPipeline.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/SWTask.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/smithwaterman.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/XCLAgent.cpp"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/src/IntelAgent.cpp")
-
-if ( USE_FPGA )
-  list(APPEND BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/FPGAPipeline.cpp"
-                       "${CMAKE_CURRENT_SOURCE_DIR}/src/SWTask.cpp")
-  if ( ${FPGA_TYPE} MATCHES "xlnx" )
-    list(APPEND BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/XCLAgent.cpp")
-  elseif ( ${FPGA_TYPE} MATCHES "intel" )
-    list(APPEND BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/IntelAgent.cpp")
-  endif()
+if ( USE_MPI )
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/mpi
+                      ${MPI_CXX_INCLUDE_PATH})
+  file(GLOB BWA_MPI_SRC_LIST  src/mpi/*.cpp)
 endif()
 
-#if ( USE_FPGA )
-#  if ( ${FPGA_TYPE} MATCHES "xlnx" )
-#    add_dependencies(.bwa-objs Xilinx)
-#  elseif ( ${FPGA_TYPE} MATCHES "intel" )
-#    add_dependencies(.bwa-objs IntelAltera)
-#  endif()
-#endif()
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_executable(bwa ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${BWA_SRC_LIST})
@@ -158,7 +161,7 @@ endif()
 
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa
-  cbwa
+  bwa-c
   kflow 
   ${Boost_LIBRARIES} 
   ${FalconLM_LIBRARIES}
@@ -169,5 +172,34 @@ target_link_libraries(bwa
   ${HTS_LIBRARIES}
   ${FPGA_LIBRARIES})
 
+if ( USE_MPI )
+  set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+  add_executable(bwa-mpi ${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp ${BWA_MPI_SRC_LIST} ${BWA_SRC_LIST})
+  add_dependencies(bwa-mpi Google FalconLM)
+  if ( USE_HTSLIB )
+    add_dependencies(bwa-mpi HTS)
+  endif()
+
+  set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
+  target_link_libraries(bwa-mpi
+    bwa-c
+    kflow 
+    ${MPI_CXX_LIBRARIES}
+    ${Boost_LIBRARIES} 
+    ${FalconLM_LIBRARIES}
+    ${Google_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${ZLIB_LIBRARIES}
+    ${CMAKE_DL_LIBS}
+    ${HTS_LIBRARIES}
+    ${FPGA_LIBRARIES})
+endif()
+
+install(TARGETS bwa RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/bin)
+
+if ( USE_MPI )
+  install(TARGETS bwa-mpi RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/bin)
+endif()
+
 #enable_testing()
-#add_subdirectory(test)
+add_subdirectory(test)
