@@ -27,21 +27,69 @@
 void ChainsToRegionsFPGA::processOutput(SWTask* task) {
   // finish task and get output buffers
   task->finish();
-
-  mem_alnreg_t** region_batch = task->region_batch;
-  mem_chain_t**  chain_batch = task->chain_batch;
-
   int total_task_num = (task->o_size[0]+task->o_size[1])/FPGA_RET_PARAM_NUM;
   int actual_tasks = 0;
 
   uint64_t start_ts = getUs();
-  bool wrong_results = false;
   int wrong_half = -1;
+  int num_redo = 0;
+
+  // check fpga results correctness
+  while (1) {
+    bool wrong_results = false;
+    for (int k = 0; k < 2; k++) {
+      int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
+      short* kernel_output = task->o_data[k];
+      for (int i = 0; i < task_num; i++) {
+        int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+          kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+        if (seed_idx > actual_tasks)
+          actual_tasks = seed_idx;
+        if (seed_idx > total_task_num || seed_idx < 0) {
+          DLOG(ERROR) << "Wrong fpga results at half = " << k
+                      << " task_num = " << i << " seed_idx = " << seed_idx;
+          wrong_results = true;
+          wrong_half = k;
+          k = 2;
+          break;
+        }
+      }
+    }
+    if ((!wrong_results) && (total_task_num != actual_tasks + 1)) {
+      DLOG(ERROR) << "Wrong fpga results due to problem with seedindex";
+      wrong_results = true;
+    }
+    if (wrong_results) {
+      //// dump results   
+      //FILE* fout = fopen("dump-input.dat", "wb+");
+      //int k = wrong_half;
+      //fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
+      //fclose(fout);
+      //DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
+      if (num_redo < 10) {
+        DLOG(WARNING) << "Incurred wrong fpga results. Redo.";
+        task->redo();
+        num_redo++;
+      }
+      else
+        throw std::runtime_error("wrong fpga results and failure in re-do");
+    }
+    else {
+      if (num_redo != 0) {
+        DLOG(WARNING) << "Redo " << num_redo << " times.";
+      }
+      break;
+    }
+  }
+
+
+  // apply fpga results
+  mem_alnreg_t** region_batch = task->region_batch;
+  mem_chain_t**  chain_batch = task->chain_batch;
   for (int k = 0; k < 2; k++) {
     int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
     short* kernel_output = task->o_data[k];
 
-    //DLOG_IF(INFO, VLOG_IS_ON(3)) << "output " << k << " task num = " << task_num;
     for (int i = 0; i < task_num; i++) {
       int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
         kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
@@ -51,13 +99,16 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
       }
       mem_alnreg_t *newreg = region_batch[seed_idx];
 
-      if (seed_idx > total_task_num || seed_idx < 0) {
-        DLOG(ERROR) << "task_num = " << i << " "
-                    << "seed_idx = " << seed_idx << " ";
-        wrong_results = true;
-        wrong_half = k;
-        goto error;
-      }
+      //if (seed_idx > total_task_num || seed_idx < 0) {
+      //  DLOG(ERROR) << "task_num = " << i << " "
+      //              << "seed_idx = " << seed_idx << " ";
+      //  wrong_results = true;
+      //  wrong_half = k;
+      //  goto error;
+      //  //DLOG(WARNING) << "Incurred wrong fpga results. Redo.";
+      //  //task->redo();
+      //  //goto restart;
+      //}
 
       newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
       newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
@@ -82,23 +133,8 @@ void ChainsToRegionsFPGA::processOutput(SWTask* task) {
       newreg->seedcov = seedcov;
     }
     // reset
-    task->i_size[k] = 0;
-    task->o_size[k] = 0;
-  }
-
-  if (total_task_num != actual_tasks + 1) {
-    DLOG(ERROR) << "problem with seedindex";
-    wrong_results = true;
-  }
-error: 
-  if (wrong_results) {
-    // dump results   
-    FILE* fout = fopen("dump-input.dat", "wb+");
-    int k = wrong_half;
-    fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
-    fclose(fout);
-    DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
-    throw std::runtime_error("wrong fpga results");
+    // task->i_size[k] = 0;
+    // task->o_size[k] = 0;
   }
 
   // reset
@@ -285,6 +321,7 @@ inline void packReadData(ktp_aux_t* aux,
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
+  DLOG(INFO) << "start FPGA worker #" << wid;
   int chunk_size = FLAGS_chunk_size;
 
   int stage_cnt = 0;
@@ -295,9 +332,12 @@ void ChainsToRegionsFPGA::compute(int wid) {
   for (int i = 0; i < 2; i++) {
     SWTask* task = new SWTask(opencl_env, chunk_size);
     if (NULL == task) {
-      LOG(ERROR) << strerror(errno) << " due to "
-                 << ((errno==12) ? "out-of-memory" : "internal failure") ;
-      exit(EXIT_FAILURE);
+      std::string err_string = "Memory allocation failed";
+      if (errno==12)
+        err_string += " due to out-of-memory";
+      else
+        err_string += " due to internal failure"; 
+      throw std::runtime_error(err_string);
     }
     task_queue.push_back(task);
   }
@@ -480,18 +520,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
   // delete everything
   while (!task_queue.empty()) {
     SWTask* task = task_queue.front();
-
-    for (int k = 0; k < 2; k++) {
-      clReleaseMemObject(task->i_buf[k]);
-      clReleaseMemObject(task->o_buf[k]);
-      free(task->i_data[k]);
-      free(task->o_data[k]);
-    }
-    
-    delete task->region_batch;
-    delete task->chain_batch;
     delete task;
-
     task_queue.pop_front();
   }
 }
@@ -502,9 +531,12 @@ ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
   int batch_num = record.batch_num;
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   if (NULL == alnreg) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   mem_chain_v* chains = record.chains;
   for (int i=0; i<batch_num; i++) {

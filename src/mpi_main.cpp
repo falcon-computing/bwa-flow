@@ -106,9 +106,12 @@ int main(int argc, char *argv[]) {
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
   if (NULL == aux) {
-    LOG(ERROR) << strerror(errno) << " due to "
-               << ((errno==12) ? "out-of-memory" : "internal failure") ;
-    exit(EXIT_FAILURE);
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
   }
   memset(aux, 0, sizeof(ktp_aux_t));
 

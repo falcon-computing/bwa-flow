@@ -13,6 +13,7 @@ class SWTask {
 
   void start(SWTask* prev_task);
   void finish();
+  void redo();
 
   int     i_size[2];
   int     o_size[2];
