@@ -25,6 +25,10 @@ class Queue : public QueueBase {
     return (num_elements_.load() >= DEPTH / 2);
   }
 
+  int get_size() {
+    return num_elements_.load();
+  }
+
   void pop(U &item) {
     while (!data_queue_.pop(item)) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(100));
@@ -53,8 +57,8 @@ class Queue : public QueueBase {
 
  private:
   mutable boost::atomic<int> num_elements_;
-  boost::lockfree::queue<U, boost::lockfree::capacity<DEPTH> 
-    > data_queue_;
+  boost::lockfree::queue< U, boost::lockfree::capacity<DEPTH> > data_queue_;
+  //boost::lockfree::queue<U, boost::lockfree::fixed_sized<false> > data_queue_;
 };
 
 template <>

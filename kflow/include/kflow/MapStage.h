@@ -2,7 +2,11 @@
 #define KFLOW_MAPSTAGE_H
 
 #include "Stage.h"
+#include "Pipeline.h"
+#include "MegaPipe.h"
 #include "OccupancyCounter.h"
+
+#include <deque>
 
 // for testing purpose
 #ifndef TEST_FRIENDS_LIST
@@ -23,6 +27,7 @@ class MapStage : public Stage<U, V, IN_DEPTH, OUT_DEPTH> {
     Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
 
   bool execute();
+  int execute_new();
 
  protected:
   virtual V compute(U const & input) = 0;
@@ -70,17 +75,65 @@ template <
   typename U, typename V, 
   int IN_DEPTH, int OUT_DEPTH
 >
+int MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_new() {
+  // Return false if input queue is empty or max num_worker_threads reached
+  if (this->getNumThreads() >= this->getMaxNumThreads() || 
+      this->getOutputQueue()->almost_full()) {
+    return 2;
+  }
+
+  // Try to get one input from the input queue
+  if (this->inputQueueEmpty()) return 1;
+  U input;
+  bool ready = this->getInputQueue()->async_pop(input);
+  if (!ready) {
+    // return false if input queue is empty
+    return 1;
+  }
+
+  // Try to get token
+  bool isLoaded = false;
+  if (((StageBase*)this)->useAccx()) {
+    int accx_queue_size = this->getAccxQueue()->get_size();
+    if ( accx_queue_size < IN_DEPTH &&
+         accx_queue_size <= ((StageBase*)this)->accx_backend_stage_->getMaxNumThreads() * ((StageBase*)this)->accx_priority_ ) {
+      this->getAccxQueue()->push(input);
+      isLoaded = true;
+      DLOG(INFO) << "Post a work to FPGA";
+    }
+  }
+
+  if (!isLoaded) {
+    // Load work
+    this->execute_func(input);
+  }
+
+  return 0;
+}
+
+
+template <
+  typename U, typename V, 
+  int IN_DEPTH, int OUT_DEPTH
+>
 void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
 
   try {
-    OccupancyCounter seat(this->pipeline_, this);
+    /* disabled pipeline-level threading control */
+    OccupancyCounter seat(this->pipeline_, this); 
 
-    DLOG(INFO) << "Post a work for MapStage, there are "
-      << this->getNumThreads()
-      << " active threads in this stage";
+    DLOG(INFO) << "Instantiate a work for MapStage, there are "
+               << this->getNumThreads()
+               << " active threads in this stage";
 
+    // wait to get a cpu token
+    while (!this->pipeline_->megapipe_->acqThrd()) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+    }
     // call user-defined compute function
     V output = compute(input); 
+    // release a cpu token
+    this->pipeline_->megapipe_->relThrd();
 
     // write result to output_queue
     if (this->getOutputQueue()) {
@@ -88,9 +141,9 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
       if (sizeof(V) != sizeof(int))
         this->getOutputQueue()->push(output);
       uint64_t end_ts = getUs();
-      if (end_ts - start_ts >= 2000) {
+      if (end_ts - start_ts >= 500) {
         DLOG(WARNING) << "Output queue is full for " << end_ts - start_ts
-                     << " us, blocking progress";
+                      << " us, blocking progress";
       }
     }
 

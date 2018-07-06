@@ -16,9 +16,9 @@
 
 #include "bwa_wrapper.h"
 
-#define INPUT_DEPTH   16
-#define OUTPUT_DEPTH  16
-#define COMPUTE_DEPTH 16
+#define INPUT_DEPTH   128 
+#define OUTPUT_DEPTH  128
+#define COMPUTE_DEPTH 128
 
 // Common data structures
 struct KseqsRecord {

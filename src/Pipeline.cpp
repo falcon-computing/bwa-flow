@@ -70,7 +70,7 @@ void getKseqBatch(int chunk_size,
   *n_ = t;
 }
 
-const int kseq_buffer_size = 8;
+const int kseq_buffer_size = 64;
 kestrelFlow::Queue<kseq_new_t*, kseq_buffer_size+1> kseq_queue;
 
 void KseqsRead::compute() {
@@ -88,11 +88,13 @@ void KseqsRead::compute() {
     kseq_queue.pop(ks_buffer);
 
     // Get the kseq batch
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started KseqsRead() for one input ";
     getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
-    if (batch_num == 0) break;
-
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished KseqsRead() for one input in "
+                                 << getUs() - start_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
+    if (batch_num == 0) break;
 
     KseqsRecord record;
     record.ks_buffer = ks_buffer;
@@ -190,12 +192,9 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
   if (NULL == alnreg) {
-    std::string err_string = "Memory allocation failed";
-    if (errno==12)
-      err_string += " due to out-of-memory";
-    else
-      err_string += " due to internal failure"; 
-    throw std::runtime_error(err_string);
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
   }
 
   for (int i = 0; i < batch_num; i++) {
@@ -481,6 +480,11 @@ void SamsReorder::compute(int wid) {
       // this means isFinal() is true and input queue is empty
       break; 
     }
+    // wait to get a cpu token
+    while (!this->pipeline_->megapipe_->acqThrd()) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+    }
+    bool isTokenReleased = false;
     if (FLAGS_inorder_output) {
       record_buf[input.start_idx] = input;
 
@@ -520,7 +524,10 @@ void SamsReorder::compute(int wid) {
           if(FLAGS_sort) {
             uint64_t start_ts_st = getUs();
             //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+            DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SamsReorder() for one input ";
             ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
+            DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SamsReorder() for one input in "
+                                         << getUs() - start_ts_st << " us";
             DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
               getUs() - start_ts_st << " us";
           }
@@ -530,11 +537,15 @@ void SamsReorder::compute(int wid) {
           bam_buffer_idx = 0;
           batch_records = 0;
           bam_buffer_order = bam_buffer_order + 1;
+          this->pipeline_->megapipe_->relThrd();
+          isTokenReleased=true;
           pushOutput(output);
           bam_buffer = NULL;
         }
 #else
         output = record;
+        this->pipeline_->megapipe_->relThrd();
+        isTokenReleased=true;
         pushOutput(output);
 #endif
       }
@@ -574,7 +585,10 @@ void SamsReorder::compute(int wid) {
         if(FLAGS_sort) {
           uint64_t start_ts_st = getUs();
           //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+          DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SamsReorder() for one input";
           ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
+          DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SamsReorder() for one input in "
+                                       << getUs() - start_ts_st << " us";
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
             getUs() - start_ts_st << " us";
         }
@@ -584,24 +598,38 @@ void SamsReorder::compute(int wid) {
         bam_buffer_idx = 0;
         batch_records = 0;
         bam_buffer_order = bam_buffer_order + 1;
+        this->pipeline_->megapipe_->relThrd();
+        isTokenReleased=true;
         pushOutput(output);
         bam_buffer = NULL;
       }
 #else
       output = record;
+      this->pipeline_->megapipe_->relThrd();
+      isTokenReleased=true;
       pushOutput(output);
 #endif
     }
+    if (!isTokenReleased) 
+      this->pipeline_->megapipe_->relThrd();
   }
+
 #ifdef USE_HTSLIB
   //finish the remaining sam
   if(batch_records > 0){
     if(FLAGS_sort) {
+      while (!this->pipeline_->megapipe_->acqThrd()) {
+        boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      }
       uint64_t start_ts_st = getUs();
       //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SamsReorder() for one input ";
       ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SamsReorder() for one input in "
+                                   << getUs() - start_ts_st << " us";
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
         getUs() - start_ts_st << " us";
+      this->pipeline_->megapipe_->relThrd();
     }
     output.bam_buffer = bam_buffer;
     output.bam_buffer_idx = bam_buffer_idx;
@@ -635,6 +663,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   samFile *fout = NULL;
 
   uint64_t start_ts = getUs();
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started WriteOutput() for one input";
   int file_id = input.bam_buffer_order;
   int bam_buffer_idx = input.bam_buffer_idx;
   bam1_t** bam_buffer = input.bam_buffer;
@@ -657,6 +686,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   }
   sam_close(fout);
   free(bam_buffer);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished WriteOutput() in " << getUs() - start_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << bam_buffer_idx
           << " records in "
           << getUs() - start_ts << " us";
@@ -666,6 +696,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   FILE* fout;
   fout = stdout;
   uint64_t start_ts = getUs();
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started WriteOutput() for one input";
   int batch_num = input.batch_num;
   bseq1_t* seqs = input.seqs;
   for (int i = 0; i < batch_num; ++i) {
@@ -673,6 +704,7 @@ int WriteOutput::compute(SeqsRecord const &input)
     free(seqs[i].sam);
   }
   free(seqs);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished WriteOutput() in " << getUs() - start_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
     << " to file in " << getUs() - start_ts << " us";
 #endif

@@ -21,11 +21,11 @@ class OccupancyCounter {
   OccupancyCounter(Pipeline* p_host, StageBase* s_host):
     p_host_(p_host), s_host_(s_host) 
   {
-    p_host_->addSeat(); 
+    // p_host_->addSeat(); 
     s_host_->addSeat(); 
   }
   ~OccupancyCounter() {
-    p_host_->removeSeat();
+    // p_host_->removeSeat();
     s_host_->removeSeat();
   }
  private:

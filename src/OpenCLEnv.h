@@ -31,11 +31,12 @@
   }
 
 struct cl_device_env {
+  int              env_id;
   cl_context       context;
   cl_device_id     device_id;
   cl_command_queue cmd;
   cl_program       program;
-  cl_device_env(): context(NULL), device_id(NULL), cmd(NULL), program(NULL) {;}
+  cl_device_env(): env_id(-1), context(NULL), device_id(NULL), cmd(NULL), program(NULL) {;}
 };
 
 const cl_device_env NULL_DEVICE_ENV;
@@ -128,6 +129,7 @@ class OpenCLEnv
 
         cl_device_env env;
 
+        env.env_id = i;
         env.device_id = device_ids[i];
         env.context = clCreateContext(0, 1, &device_ids[i], NULL, NULL, &err);
         DLOG(INFO) << "creating context for device #" << i;
