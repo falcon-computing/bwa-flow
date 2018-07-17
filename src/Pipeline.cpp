@@ -506,7 +506,6 @@ try {
         output_records.clear();
         batch_records = 0;
         bam_buffer_order = bam_buffer_order + 1;
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Kick out a bundle.";
       }
 #else
       output = record;
@@ -525,7 +524,6 @@ try {
     output_records.clear();
     batch_records = 0;
     bam_buffer_order = bam_buffer_order + 1;
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Kick out a bundle. Leave.";
   }
 #endif
 }
