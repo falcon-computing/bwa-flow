@@ -16,9 +16,9 @@
 
 #include "bwa_wrapper.h"
 
-#define INPUT_DEPTH   128 
-#define OUTPUT_DEPTH  128
-#define COMPUTE_DEPTH 128
+#define INPUT_DEPTH   64
+#define OUTPUT_DEPTH  16
+#define COMPUTE_DEPTH 16
 
 // Common data structures
 struct KseqsRecord {
@@ -58,6 +58,7 @@ struct BamsRecord {
   int bam_buffer_order;
   bam1_t** bam_buffer;
   int bam_buffer_idx;
+  std::vector<SeqsRecord>* records_list;
   const char* name = "BamsRecord";
 };
 #endif
@@ -149,6 +150,7 @@ class RegionsToSam
   SeqsRecord compute(RegionsRecord const & record);
 };
 
+
 #ifdef USE_HTSLIB
 class SamsReorder
 : public kestrelFlow::MapPartitionStage<SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
@@ -158,12 +160,30 @@ class SamsReorder
                   <SeqsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false){;}
     void compute(int wid);
 };
+
+class SamsSort
+: public kestrelFlow::MapStage<BamsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsSort(int n=1):kestrelFlow::MapStage
+                  <BamsRecord, BamsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n){;}
+    BamsRecord compute(BamsRecord const & record_bundle);
+};
 #else
 class SamsReorder
 : public kestrelFlow::MapPartitionStage<SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
 {
   public:
     SamsReorder():kestrelFlow::MapPartitionStage
+                  <SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false){;}
+    void compute(int wid);
+};
+
+class SamsSort
+: public kestrelFlow::MapPartitionStage<SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
+{
+  public:
+    SamsSort(int n=1):kestrelFlow::MapPartitionStage
                   <SeqsRecord, SeqsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(1, false)
   {;}
     void compute(int wid);
@@ -171,20 +191,22 @@ class SamsReorder
 #endif
 
 
+#if 1
 class WriteOutput
 #ifdef USE_HTSLIB
-:public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
+:public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
     WriteOutput(int n=1):
-      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n) {;}
     int compute(BamsRecord const &input);
 #else
-:public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH> {
+:public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0> {
   public:
     WriteOutput(int n=1):
-      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, OUTPUT_DEPTH>(n) {;}
+      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0>(n) {;}
     int compute(SeqsRecord const &input);
 #endif
 };
+#endif
 
 #endif

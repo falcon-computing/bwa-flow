@@ -246,37 +246,31 @@ int main(int argc, char *argv[]) {
 
   if (FLAGS_offload) {
 #ifndef FPGA_TEST
-    num_compute_stages = 7;
-#else
     num_compute_stages = 8;
+#else
+    num_compute_stages = 9;
 #endif
   }
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
-  //if (FLAGS_use_fpga)  num_threads -= FLAGS_max_fpga_thread;
+  if (FLAGS_use_fpga) num_threads -= FLAGS_max_fpga_thread;
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads in total";
 
   // Stages for bwa file in/out
-  SeqsRead        read_stage;
   KseqsRead       kread_stage;
-  KseqsToBseqs    k2b_stage;
+  KseqsToBseqs    k2b_stage(FLAGS_t);
   SamsReorder     reorder_stage;
+  SamsSort        sort_stage(FLAGS_t);
   WriteOutput     write_stage(FLAGS_output_nt);
 
   // Stages for bwa computation
-  SeqsToSams       seq2sam_stage(FLAGS_t);
   SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
   ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
-
 #ifdef BUILD_FPGA
-  //kestrelFlow::Pipeline fpga_flow(2, FLAGS_max_fpga_thread);
-
-  // Stages for FPGA acceleration of stage_2
-  //ChainsPipeFPGA      chainpipe_fpga_stage(FLAGS_max_fpga_thread); // push through
-  ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+  ChainsToRegionsFPGA chain2reg_fpga_stage(FLAGS_max_fpga_thread);
 #endif
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
@@ -291,20 +285,13 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(3, &chain2reg_stage);
     compute_flow.addStage(4, &reg2sam_stage);
     compute_flow.addStage(5, &reorder_stage);
-    compute_flow.addStage(6, &write_stage);
+    compute_flow.addStage(6, &sort_stage);
+    compute_flow.addStage(7, &write_stage);
 
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      //fpga_flow.addStage(0, &chainpipe_fpga_stage);
-      //fpga_flow.addStage(1, &chain2reg_fpga_stage);
-  
-      // bind the input/output queue of stage_2 in compute_flow
-      //fpga_flow.branch(compute_flow, 3);
-      
-      //bwa_flow_pipe.addPipeline(&fpga_flow, 8); 
-
       compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
     }
 #endif
@@ -313,14 +300,9 @@ int main(int argc, char *argv[]) {
     bwa_flow_pipe.start();
     bwa_flow_pipe.wait();
   
-    // compute_flow.start();
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       try {
-#ifndef FPGA_TEST
-        // fpga_flow.start();
-        // fpga_flow.wait();
-#endif
         delete opencl_env;
       }
       catch (std::runtime_error &e) {
@@ -330,7 +312,6 @@ int main(int argc, char *argv[]) {
       }
     }
 #endif
-    // compute_flow.wait();
   
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 

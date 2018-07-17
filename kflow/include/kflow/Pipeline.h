@@ -163,7 +163,8 @@ bool Pipeline::addAccxBckStage(int idx,
 
   if (IN_DEPTH > 0) {
     // create the internal queue for accx input
-    boost::shared_ptr<QueueBase> accx_load_queue(new Queue<U, IN_DEPTH>);
+    int accx_load_queue_depth = (int)((init_priority+1)*accx_bck_stage->getMaxNumThreads());
+    boost::shared_ptr<QueueBase> accx_load_queue(new Queue<U, IN_DEPTH>(accx_load_queue_depth));
     accx_bck_stage->input_queue_ = accx_load_queue;
   }
   accx_bck_stage->output_queue_ = stage->output_queue_;

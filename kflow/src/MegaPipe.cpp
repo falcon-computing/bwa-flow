@@ -53,6 +53,7 @@ bool MegaPipe::addPipeline( Pipeline *pipeline, int priority )
  */
 void MegaPipe::start()
 {
+  // static part
   for (int pid = 0; pid < pipelines_.size(); pid++) {
     Pipeline *pipeline = pipelines_[pid];
     for (int sid = 0; sid < pipeline->stages_.size(); sid++) {
@@ -62,17 +63,19 @@ void MegaPipe::start()
         stage->accx_backend_stage_->start();
     }
   }
+
   // dynamic part
   if (dworkers_.size()) {
     dworkers_.interrupt_all();
     dworkers_.join_all();
   }
+  boost::this_thread::sleep_for(boost::chrono::milliseconds(1000));
 
   for (int pid = 0; pid < pipelines_.size(); pid++)
     for (int t = 0; t < pipelines_[pid]->num_threads_; t++)
       dworkers_.create_thread(boost::bind(&MegaPipe::dworker_func, this, pid));
   
-  boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
+  boost::this_thread::sleep_for(boost::chrono::milliseconds(1000));
 }
 
 /* Stop all pipelines.
@@ -110,10 +113,9 @@ void MegaPipe::wait()
 /* Dynamic worker procedure. */
 void MegaPipe::dworker_func(int pipeline_id)
 {
-  
   std::deque<StageBase *> pipeline_structure;
   Pipeline *pipeline = pipelines_[pipeline_id];
-  //for (int sid = pipeline->stages_.size()-1; sid >= 0; sid--) {
+
   for (int sid = 0; sid < pipeline->stages_.size(); sid++) {
     StageBase *stage = pipeline->stages_[sid];
     if (!stage->isDynamic()) continue;
@@ -146,31 +148,7 @@ void MegaPipe::dworker_func(int pipeline_id)
         boost::this_thread::sleep_for(boost::chrono::milliseconds(5));
       }
     }
-    //if (rval == 1) ;
   }
-#if 0
-work_starting_point:
-  for (int sid = 0; sid < pipeline_structure.size(); sid++) {
-    StageBase *stage = pipeline_structure[sid];
-    if (!stage->isDynamic()) continue;
-
-    //if (!stage->execute_new()) continue;
-    //else goto work_starting_point;
-    stage->execute_new();
-  }
-
-  //for (int sid = pipeline_structure.size()-1; sid >= 0; sid--) {
-  for (int sid = 0; sid < pipeline_structure.size(); sid++) {
-    StageBase *stage = pipeline_structure[sid];
-    if (!stage->isDynamic()) continue;
-
-    if (!stage->isFinal()) goto work_starting_point;
-
-    if (stage->getNumThreads()==0 && stage->inputQueueEmpty()) {
-      stage->finalize();
-    }
-  }
-#endif
 }
 
 bool MegaPipe::acqAccx()

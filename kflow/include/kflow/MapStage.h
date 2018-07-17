@@ -76,9 +76,8 @@ template <
   int IN_DEPTH, int OUT_DEPTH
 >
 int MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_new() {
-  // Return false if input queue is empty or max num_worker_threads reached
-  if (this->getNumThreads() >= this->getMaxNumThreads() || 
-      this->getOutputQueue()->almost_full()) {
+  // Return STATUS-2 if output queue is half full
+  if (this->getOutputQueue() && this->getOutputQueue()->almost_full()) {
     return 2;
   }
 
@@ -87,26 +86,22 @@ int MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_new() {
   U input;
   bool ready = this->getInputQueue()->async_pop(input);
   if (!ready) {
-    // return false if input queue is empty
+    // return STATUS-1 if input queue is empty
     return 1;
   }
 
   // Try to get token
-  bool isLoaded = false;
   if (((StageBase*)this)->useAccx()) {
     int accx_queue_size = this->getAccxQueue()->get_size();
-    if ( accx_queue_size < IN_DEPTH &&
+    int accx_queue_capacity = this->getAccxQueue()->get_capacity();
+    if ( accx_queue_size < accx_queue_capacity &&
          accx_queue_size <= ((StageBase*)this)->accx_backend_stage_->getMaxNumThreads() * ((StageBase*)this)->accx_priority_ ) {
       this->getAccxQueue()->push(input);
-      isLoaded = true;
-      DLOG(INFO) << "Post a work to FPGA";
+      return 0;
     }
   }
 
-  if (!isLoaded) {
-    // Load work
-    this->execute_func(input);
-  }
+  this->execute_func(input);
 
   return 0;
 }
@@ -170,7 +165,7 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
     return;
   }
     
-  if (!this->getInputQueue() || !this->getOutputQueue()) {
+  if (!this->getInputQueue() || (OUT_DEPTH > 0 && !this->getOutputQueue()) ) {
     throw std::runtime_error("Empty input/output queue is not allowed");
   }
 
@@ -193,7 +188,8 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::worker_func(int wid) {
       V output = compute(input); 
 
       // write result to output_queue
-      this->getOutputQueue()->push(output);
+      if (OUT_DEPTH > 0)
+        this->getOutputQueue()->push(output);
 
       // free input if it is a pointer
       deleteIfPtr(input, boost::is_pointer<U>());
