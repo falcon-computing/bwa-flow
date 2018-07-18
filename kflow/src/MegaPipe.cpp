@@ -110,6 +110,15 @@ void MegaPipe::wait()
   }
 }
 
+/* Finalize all pipelines */
+void MegaPipe::finalize()
+{
+  for (int pid = 0; pid < pipelines_.size(); pid++) {
+    DLOG(INFO) << "Finalize pipeline " << pid;
+    pipelines_[pid]->finalize();
+  }
+}
+
 /* Dynamic worker procedure. */
 void MegaPipe::dworker_func(int pipeline_id)
 {

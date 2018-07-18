@@ -55,15 +55,15 @@ class MegaPipe {
   TEST_FRIENDS_LIST
 
  public:
-  MegaPipe(int num_threads, int num_accelerators);
+  MegaPipe(int num_threads, int num_accelerators = 0);
   ~MegaPipe();
 
-  bool addPipeline(Pipeline *pipeline, int priority);
+  bool addPipeline(Pipeline *pipeline, int priority = 1);
 
   void start();
   void stop();
   void wait();
-  // void finalize();
+  void finalize();
 
   bool acqAccx();
   void relAccx();

@@ -64,16 +64,18 @@ TEST_F(FPGATests, FPGATest) {
     bseq1_t* base = bwa_mem(seqs, test_num);
 
     // compute standard input/output using CPU
-    Pipeline p(4, 1);
-    SeqsToChains        stage_0(1);
-    ChainsPipeFPGA      stage_1(1);
+    Pipeline p(3, 1);
+    SeqsToChains        stage_1(1);
     ChainsToRegionsFPGA stage_2(1);
     RegionsToSam        stage_3(1);
 
-    p.addStage(0, &stage_0);
-    p.addStage(1, &stage_1);
-    p.addStage(2, &stage_2);
-    p.addStage(3, &stage_3);
+    p.addStage(0, &stage_1);
+    p.addStage(1, &stage_2);
+    p.addStage(2, &stage_3);
+
+    // compute fpga results with 1 cpu and 1 fpga
+    MegaPipe mp(1, 1);
+    mp.addPipeline(&p);
 
     // input and output queue
     typedef Queue<SeqsRecord, INPUT_DEPTH> QIN;
@@ -87,9 +89,9 @@ TEST_F(FPGATests, FPGATest) {
     iq->push(input);
 
     // after pipeline finishes seqs will contain the results
-    p.start();
-    p.finalize();
-    p.wait();
+    mp.start();
+    mp.finalize();
+    mp.wait();
 
     // check results
     // the fpga results of regions record is unfiltered,

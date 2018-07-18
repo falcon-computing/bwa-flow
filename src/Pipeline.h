@@ -191,7 +191,6 @@ class SamsSort
 #endif
 
 
-#if 1
 class WriteOutput
 #ifdef USE_HTSLIB
 :public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
@@ -207,6 +206,5 @@ class WriteOutput
     int compute(SeqsRecord const &input);
 #endif
 };
-#endif
 
 #endif
