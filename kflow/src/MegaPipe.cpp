@@ -146,7 +146,8 @@ void MegaPipe::dworker_func(int pipeline_id)
             if (stage->getNumThreads()==0 && stage->inputQueueEmpty()) {
               stage->finalize();
             }
-            pipeline_structure.pop_front();
+            if (stage->inputQueueEmpty())
+              pipeline_structure.pop_front();
           }
           else {
             sid++;
