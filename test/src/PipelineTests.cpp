@@ -2,6 +2,8 @@
 #include "Pipeline.h"
 #include "TestCommon.h"
 
+using namespace  kestrelFlow; 
+
 TEST_F(PipelineTests, NewSeqRead) {
   // KseqsRead       kread_stage;
   // KseqsToBseqs    k2b_stage;
@@ -29,9 +31,35 @@ TEST_F(PipelineTests, Seq2BamsCompute) {
   ChainsToRegions stage_2(1);
   RegionsToSam    stage_3(1);
 
+  Pipeline p(3, 1);
+  p.addStage(0, &stage_1);
+  p.addStage(1, &stage_2);
+  p.addStage(2, &stage_3);
+
+  MegaPipe mp(1);
+  mp.addPipeline(&p);
+
+  // input and output queue
+  typedef Queue<SeqsRecord, INPUT_DEPTH> QIN;
+  QIN* iq = static_cast<QIN*>(p.getInputQueue().get());
+  if (!iq) { 
+    FAIL() << "cannot case input queue";
+  }
+
+  // start computation
+  DLOG(INFO) << "push one input to CPU pipeline";
+  iq->push(input);
+
+  // after pipeline finishes seqs will contain the results
+  mp.start();
+  mp.finalize();
+  mp.wait();
+
+#if 0
   ChainsRecord  inter_1 = stage_1.compute(input);
   RegionsRecord inter_2 = stage_2.compute(inter_1);
   SeqsRecord    output  = stage_3.compute(inter_2);
+#endif
 
   for (int i = 0; i < test_num; i ++) {
     check_bams(base[i].bams[0], seqs[i].bams[0]);
@@ -53,4 +81,3 @@ TEST_F(PipelineTests, Seq2BamsCompute) {
 
   free(base);
 }
-

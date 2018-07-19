@@ -368,21 +368,24 @@ void ChainsToRegionsFPGA::compute(int wid) {
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
+  ChainsRecord prerecord;
   ChainsRecord record; 
   while (flag_more_reads) { 
     // get one Chains record
-    bool ready = this->getInput(record);
+    bool ready = this->getInput(prerecord);
     start_ts = getUs();
     while (!this->isFinal() && !ready) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
-      ready = this->getInput(record);
+      boost::this_thread::sleep_for(boost::chrono::microseconds(10));
+      ready = this->getInput(prerecord);
     }
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "Wait for input for FPGA takes " << getUs() - start_ts << " us";
     if(!ready) {
       flag_more_reads = false;
       break;
     }
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
+    record = preprocessBatch(prerecord);
+    //DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
+    DLOG(INFO) << "Started ChainsToRegions() on FPGA ";
 
     uint64_t last_prepare_ts = getUs();
     uint64_t last_batch_ts = getUs();
@@ -513,6 +516,8 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
       << getUs() - last_output_ts << " us";
+    DLOG(INFO) << "Finished ChainsToRegions() on FPGA for "
+               << getUs() - last_output_ts << " us";
 
     last_output_ts = getUs();
   }
@@ -523,6 +528,45 @@ void ChainsToRegionsFPGA::compute(int wid) {
     delete task;
     task_queue.pop_front();
   }
+}
+
+ChainsRecord ChainsToRegionsFPGA::preprocessBatch(ChainsRecord const & record) {
+  ChainsRecord output = record;
+  int batch_num = record.batch_num;
+  mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
+  mem_chain_v* chains = record.chains;
+  for (int i=0; i<batch_num; i++) {
+    int chain_idx = 0;
+    int seed_idx = chains[i].a[0].n -1;
+    kv_init(alnreg[i]);
+    for ( ; chain_idx < chains[i].n; 
+         seed_idx > 0 ? seed_idx-- : seed_idx = chains[i].a[++chain_idx].n-1) {
+      mem_seed_t* seed_array = &chains[i].a[chain_idx].seeds[seed_idx];
+      // initialize the newreg
+      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, alnreg[i]);
+      memset(newreg, 0, sizeof(mem_alnreg_t));
+      newreg->score  = seed_array->len * aux->opt->a;
+      newreg->truesc = seed_array->len * aux->opt->a;
+      newreg->qb = seed_array->qbeg;
+      newreg->rb = seed_array->rbeg;
+      newreg->qe = seed_array->qbeg + seed_array->len;
+      newreg->re = seed_array->rbeg + seed_array->len; 
+      newreg->rid = chains[i].a[chain_idx].rid;
+      newreg->seedlen0 = seed_array->len; 
+      newreg->frac_rep = chains[i].a[chain_idx].frac_rep;
+      newreg->w = aux->opt->w;
+    }
+  }
+  output.alnreg = alnreg;
+  return output;
 }
 
 ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {

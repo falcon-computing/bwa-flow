@@ -15,14 +15,24 @@ class QueueBase {
 template <typename U, int DEPTH = 64>
 class Queue : public QueueBase {
  public:
-  Queue<U, DEPTH>(): num_elements_(0) {}
+  Queue<U, DEPTH>(int depth = DEPTH): num_elements_(0),
+                                      capacity_(depth),
+                                      data_queue_(depth) {}
 
   bool empty() {
     return (num_elements_.load() == 0);
   }
 
   bool almost_full() {
-    return (num_elements_.load() >= DEPTH / 2);
+    return (num_elements_.load() >= capacity_ / 2);
+  }
+
+  int get_size() {
+    return num_elements_.load();
+  }
+
+  int get_capacity() {
+    return capacity_;
   }
 
   void pop(U &item) {
@@ -52,9 +62,10 @@ class Queue : public QueueBase {
   }
 
  private:
+  const int capacity_;
   mutable boost::atomic<int> num_elements_;
-  boost::lockfree::queue<U, boost::lockfree::capacity<DEPTH> 
-    > data_queue_;
+  //boost::lockfree::queue< U, boost::lockfree::capacity<DEPTH> > data_queue_;
+  boost::lockfree::queue<U, boost::lockfree::fixed_sized<true> > data_queue_;
 };
 
 template <>

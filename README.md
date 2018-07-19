@@ -35,3 +35,8 @@
     - add `--fpga_path=<path-to-bitstream>` in the options in *bin/run.sh*
 3. MPI
     - TODO
+
+### Testing
+
+Use `test/run-test.sh` to launch unit tests and sample tests. The testing script can only prepare the bitstream and data samples.
+The reference file (.fasta) needs setting up manually, and `test/test-config.sh` should be adjusted accordingly. 

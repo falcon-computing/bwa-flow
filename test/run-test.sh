@@ -18,11 +18,11 @@ for sample in "${samples[@]}"; do
   echo ""
 
   # run unit tests
-	GLOG_log_dir=$temp_dir/ \
-	LD_LIBRARY_PATH=$OPENMPI_DIR/lib:$LD_LIBRARY_PATH \
-	$test_bin mem $ref_genome \
-    ${sample}1.fastq.gz \
-    ${sample}2.fastq.gz
+  GLOG_log_dir=$temp_dir/ \
+  LD_LIBRARY_PATH=$OPENMPI_DIR/lib:$LD_LIBRARY_PATH \
+  $test_bin mem $ref_genome \
+  ${sample}1.fastq.gz \
+  ${sample}2.fastq.gz
 
   # run BATS tests
   TEST_SAMPLE_PREFIX=$sample $bats_bin $CURR_DIR/test.bats
