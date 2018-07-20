@@ -143,7 +143,7 @@ DEFINE_string(fpga_path, "",
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");
 
-DEFINE_int32(max_fpga_thread, 1,
+DEFINE_int32(max_fpga_thread, -1,
     "Max number of threads for FPGA worker");
 
 DEFINE_int32(extra_thread, 1,
