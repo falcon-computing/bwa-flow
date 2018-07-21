@@ -85,8 +85,6 @@ endif()
 
 if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
   set(BIN_VERSION "${BIN_VERSION}-dev")
-elseif (${CMAKE_BUILD_TYPE} MATCHES "Release")
-  set(BIN_VERSION "${BIN_VERSION}-release")
 endif()
 if (DEFINED DEPLOYMENT_DST)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDEPLOY_${DEPLOYMENT_DST}")
