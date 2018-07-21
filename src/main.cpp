@@ -253,6 +253,7 @@ int main(int argc, char *argv[]) {
   }
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
+  DLOG(INFO) << "Using " << FLAGS_max_fpga_thread << " fpga threads";
   if (FLAGS_use_fpga) num_threads -= FLAGS_max_fpga_thread;
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
