@@ -228,6 +228,8 @@ int main(int argc, char *argv[]) {
   }
   if (FLAGS_use_fpga)
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
+  else
+    FLAGS_max_fpga_thread = 0;
 #endif
 
   // dump aux env
@@ -253,7 +255,6 @@ int main(int argc, char *argv[]) {
   }
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
-  DLOG(INFO) << "Using " << FLAGS_max_fpga_thread << " fpga threads";
   if (FLAGS_use_fpga) num_threads -= FLAGS_max_fpga_thread;
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
