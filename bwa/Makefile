@@ -1,14 +1,15 @@
-CC=		gcc
+CC=			gcc
+#CC=			clang --analyze
 CFLAGS=		-g -Wall -Wno-unused-function -O2
-WRAP_MALLOC=	-DUSE_MALLOC_WRAPPERS
-AR=		ar
+WRAP_MALLOC=-DUSE_MALLOC_WRAPPERS
+AR=			ar
 DFLAGS=		-DHAVE_PTHREAD $(WRAP_MALLOC)
 LOBJS=		utils.o kthread.o kstring.o ksw.o bwt.o bntseq.o bwa.o bwamem.o bwamem_pair.o bwamem_extra.o malloc_wrap.o \
-		QSufSort.o bwt_gen.o rope.o rle.o is.o bwtindex.o \
-		bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o \
-		bwape.o kopen.o pemerge.o maxk.o \
-		bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o bwt_lite.o \
-		bwtsw2_chain.o fastmap.o bwtsw2_pair.o
+			QSufSort.o bwt_gen.o rope.o rle.o is.o bwtindex.o
+AOBJS=		bwashm.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o \
+			bwape.o kopen.o pemerge.o maxk.o \
+			bwtsw2_core.o bwtsw2_main.o bwtsw2_aux.o bwt_lite.o \
+			bwtsw2_chain.o fastmap.o bwtsw2_pair.o
 PROG=		bwa
 INCLUDES=	
 LIBS=		-lm -lz -lpthread
@@ -21,33 +22,21 @@ endif
 .SUFFIXES:.c .o .cc
 
 .c.o:
-ifneq ($(HTSLIB_PATH),)
-	$(CC) -c $(CFLAGS) $(DFLAGS) -DUSE_HTSLIB $(INCLUDES) -I$(HTSLIB_PATH) $< -o $@
-else
-	$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
-endif
+		$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
 
 all:$(PROG)
 
 bwa:libbwa.a $(AOBJS) main.o
-ifneq ($(HTSLIB_PATH),)
-	$(CC) $(CFLAGS) $(DFLAGS) $(AOBJS) main.o -o $@ -L$(HTSLIB_PATH) -lhts -L. -lbwa $(LIBS)
-else
-	$(CC) $(CFLAGS) $(DFLAGS) $(AOBJS) main.o -o $@ -L. -lbwa $(LIBS)
-endif
+		$(CC) $(CFLAGS) $(DFLAGS) $(AOBJS) main.o -o $@ -L. -lbwa $(LIBS)
 
 bwamem-lite:libbwa.a example.o
-ifneq ($(HTSLIB_PATH),)
-	$(CC) $(CFLAGS) $(DFLAGS) example.o -o $@ $(HTSLIB_PATH)/libhts.a -L. -lbwa $(LIBS)
-else
-	$(CC) $(CFLAGS) $(DFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
-endif
+		$(CC) $(CFLAGS) $(DFLAGS) example.o -o $@ -L. -lbwa $(LIBS)
 
 libbwa.a:$(LOBJS)
-	$(AR) -csru $@ $(LOBJS)
+		$(AR) -csru $@ $(LOBJS)
 
 clean:
-	rm -f gmon.out *.o a.out $(PROG) *~ *.a
+		rm -f gmon.out *.o a.out $(PROG) *~ *.a
 
 depend:
 	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(DFLAGS) -- *.c )

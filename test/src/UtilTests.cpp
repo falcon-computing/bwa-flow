@@ -32,7 +32,7 @@ TEST_F(UtilTests, MemChainTest) {
   int test_num = batch_num > 32 ? 32 : batch_num;
   // here only test the first 32 to save time
   for (int i = 0; i < test_num; i++) {
-    mem_chain_v chains = seq2chain(aux, seqs);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, seqs);
 
     std::stringstream ss;
     serialize(ss, chains);
@@ -62,7 +62,7 @@ TEST_F(UtilTests, MemChainTest) {
 TEST_F(UtilTests, MemAlnregTest) {
   int test_num = batch_num > 32 ? 32 : batch_num;
   for (int i = 0; i < test_num; i++) {
-    mem_chain_v chains = seq2chain(aux, seqs);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, seqs);
     mem_alnreg_v alnregs;
     kv_init(alnregs);
     for (int j = 0; j < chains.n; j++) {
@@ -100,7 +100,7 @@ TEST_F(UtilTests, MemChainVFullTest) {
   mem_chain_v* chains_base = (mem_chain_v*)malloc(sizeof(mem_chain_v)*test_num);
   mem_chain_v* chains_test = (mem_chain_v*)malloc(sizeof(mem_chain_v)*test_num);
   for (int i = 0; i < test_num; i++) {
-    chains_base[i] = seq2chain(aux, seqs);
+    chains_base[i] = mem_seq2chain_wrapper(aux, seqs);
   }
 
   // start serialization
@@ -147,7 +147,7 @@ TEST_F(UtilTests, MemAlnregVFullTest) {
   mem_alnreg_v* aln_test = (mem_alnreg_v*)malloc(test_num*sizeof(mem_alnreg_v)); 
 
   for (int i = 0; i < test_num; i++) {
-    mem_chain_v chains = seq2chain(aux, seqs);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, seqs);
     kv_init(aln_base[i]);
     for (int j = 0; j < chains.n; j++) {
       mem_chain2aln(
@@ -236,7 +236,7 @@ TEST_F(UtilTests, ChainsRecordTest) {
   // compute mem_chain_v
   mem_chain_v* chains = (mem_chain_v*)malloc(sizeof(mem_chain_v)*test_num);
   for (int i = 0; i < test_num; i++) {
-    chains[i] = seq2chain(aux, seqs);
+    chains[i] = mem_seq2chain_wrapper(aux, seqs);
   }
 
   // construct record
@@ -290,7 +290,7 @@ TEST_F(UtilTests, RegionsRecordTest) {
   // compute mem_alnreg_v
   mem_alnreg_v* alnreg = (mem_alnreg_v*)malloc(test_num*sizeof(mem_alnreg_v));
   for (int i = 0; i < test_num; i++) {
-    mem_chain_v chains = seq2chain(aux, seqs);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, seqs);
     kv_init(alnreg[i]);
     for (int j = 0; j < chains.n; j++) {
       mem_chain2aln(
