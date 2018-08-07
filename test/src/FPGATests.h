@@ -27,7 +27,10 @@ class FPGATests : public BaseTests {
   public:
     void SetUp() {
       BaseTests::SetUp();
-      bit_path_ = get_bin_dir() + "/../data/bit.awsxclbin";
+      if (std::getenv("sw_bitstream"))
+        bit_path_ = std::getenv("sw_bitstream");
+      else
+        bit_path_ = "";
       if (std::getenv("BWA_PAC_PATH")) {
         pac_path_ = std::getenv("BWA_PAC_PATH");
       }
