@@ -87,18 +87,6 @@ struct mem_chainref_t {
   uint64_t* srt;
 };
 
-/*
-typedef struct {
-  int l, m;
-  bam1_t **bams;
-} bams_t;
-*/
-
-/*
-typedef struct {
-  void *ptr;
-} bam_hdr_t; // DO NOT USE
-*/
 extern "C"{
 
 int ksprintf(kstring_t *s, const char *fmt, ...);
@@ -132,8 +120,8 @@ int kclose(void *a);
 int pre_process(int argc, char *argv[], ktp_aux_t *aux, bool is_master);
 int pack_bwa_mem_args(std::vector<const char*> & bwa_mem_args);
 
-
 extern "C" {
+
 void ks_introsort_mem_intv(size_t n, key_t array[]);
 inline int get_rlen(int n_cigar, const uint32_t *cigar);
 inline int mem_infer_dir(int64_t l_pac, int64_t b1, int64_t b2, int64_t *dist);
@@ -141,6 +129,7 @@ int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, cons
 int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *ma);
 int mem_approx_mapq_se(const mem_opt_t *opt, const mem_alnreg_t *a);
 char **mem_gen_alt(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_alnreg_v *a, int l_query, const char *query);
+
 }
 
 int kseq_read_new(kseq_new_t *seq_new, kseq_t *seq);

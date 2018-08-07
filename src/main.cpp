@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
     if (!boost::filesystem::exists(file_path)) {
       DLOG(ERROR) << "Cannot find FPGA bitstream at " 
                   << FLAGS_fpga_path;
-      LOG(WARNING) << "Continue without using FPGA";
+      DLOG(WARNING) << "Continue without using FPGA";
       FLAGS_use_fpga = false;
     }
     try {
@@ -219,7 +219,7 @@ int main(int argc, char *argv[]) {
     catch (std::runtime_error &e) {
       DLOG(ERROR) << "Cannot initialize BWA OpenCL environment";
       DLOG(ERROR) << "because: " << e.what();
-      LOG(WARNING) << "Continue without using FPGA";
+      DLOG(WARNING) << "Continue without using FPGA";
       FLAGS_use_fpga = false;
     }
   }
