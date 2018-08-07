@@ -24,7 +24,7 @@
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
-#include "bwa/bwamem.h"
+//#include "bwa/bwamem.h"
 #include "bwa/kseq.h"
 #include "bwa/kvec.h"
 #include "bwa/utils.h"

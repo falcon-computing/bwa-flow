@@ -4,7 +4,7 @@
 #include "utils.h"
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "0.7.13-r1126"
+#define PACKAGE_VERSION "0.7.17-r1194-dirty"
 #endif
 
 int bwa_fa2pac(int argc, char *argv[]);
@@ -90,15 +90,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "[main] unrecognized command '%s'\n", argv[1]);
 		return 1;
 	}
-#ifdef USE_HTSLIB
-  if (strcmp(argv[1], "mem") != 0) {
-    err_fflush(stdout);   
-    err_fclose(stdout);   
-  }
-#else
-  err_fflush(stdout);   
-  err_fclose(stdout);   
-#endif
+	err_fflush(stdout);
+	err_fclose(stdout);
 	if (ret == 0) {
 		fprintf(stderr, "[%s] Version: %s\n", __func__, PACKAGE_VERSION);
 		fprintf(stderr, "[%s] CMD:", __func__);

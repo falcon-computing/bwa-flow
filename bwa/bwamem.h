@@ -19,6 +19,9 @@ typedef struct __smem_i smem_i;
 #define MEM_F_REF_HDR	0x100
 #define MEM_F_SOFTCLIP  0x200
 #define MEM_F_SMARTPE   0x400
+#define MEM_F_PRIMARY5  0x800
+#define MEM_F_KEEP_SUPP_MAPQ 0x1000
+#define MEM_F_XB        0x2000
 
 typedef struct {
 	int a, b;               // match score and mismatch penalty
@@ -52,9 +55,6 @@ typedef struct {
 	int max_matesw;         // perform maximally max_matesw rounds of mate-SW for each end
 	int max_XA_hits, max_XA_hits_alt; // if there are max_hits or fewer, output them all
 	int8_t mat[25];         // scoring matrix; mat[0] == 0 if unset
-#ifdef USE_HTSLIB
-  int bam_output;
-#endif
 } mem_opt_t;
 
 typedef struct {
@@ -131,9 +131,8 @@ extern "C" {
 	 * @param seqs   query sequences; $seqs[i].seq/sam to be modified after the call
 	 * @param pes0   insert-size info; if NULL, infer from data; if not NULL, it should be an array with 4 elements,
 	 *               corresponding to each FF, FR, RF and RR orientation. See mem_pestat() for more info.
-   * @param h      the BAM header, NULL if not using HTSLIB
 	 */
-	void mem_process_seqs2(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0, bam_hdr_t *h);
+	void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0);
 
 	/**
 	 * Find the aligned regions for one query sequence

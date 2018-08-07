@@ -43,11 +43,19 @@ public:
 #endif
 };
 
-class smem_aux_t {
- public:
-  int id_read;
+//class smem_aux_t {
+// public:
+//  int id_read;
+//	bwtintv_v mem, mem1, *tmpv[2];
+//};
+typedef struct {
 	bwtintv_v mem, mem1, *tmpv[2];
-};
+} smem_aux_t;
+
+typedef struct {
+  kstring_t name, comment, seq, qual;
+  int last_char;
+} kseq_new_t; 
 
 /************
  * Chaining *
@@ -85,7 +93,10 @@ int ksprintf(kstring_t *s, const char *fmt, ...);
 
 void *kopen(const char *fn, int *_fd);
 
-void mem_collect_intv(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
+void bwa_format_sam_hdr(const bntseq_t *bns, const char *rg_line, kstring_t *str);
+bams_t *bams_init();
+void bams_add(bams_t *bams, bam1_t *b);
+void bams_destroy(bams_t *bams);
 
 mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
 
@@ -97,14 +108,11 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 
 int mem_sort_dedup_patch(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, uint8_t *query, int n, mem_alnreg_t *a);
 
-#ifdef USE_HTSLIB
-int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2], bam_hdr_t *h);
-#else
 int mem_sam_pe(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2] );
-#endif
+
 int mem_mark_primary_se(const mem_opt_t *opt, int n, mem_alnreg_t *a, int64_t id);
 
-void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m, bam_hdr_t *h);
+void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m);
 
 int kclose(void *a);
 }
@@ -112,17 +120,44 @@ int kclose(void *a);
 int pre_process(int argc, char *argv[], ktp_aux_t *aux, bool is_master);
 int pack_bwa_mem_args(std::vector<const char*> & bwa_mem_args);
 
-mem_chain_v seq2chain(ktp_aux_t *aux, bseq1_t *seqs);
+extern "C" {
 
-void reg2sam(ktp_aux_t *aux,bseq1_t *seqs,int batch_num,int64_t n_processed,mem_alnreg_v *alnreg);
+void ks_introsort_mem_intv(size_t n, key_t array[]);
+inline int get_rlen(int n_cigar, const uint32_t *cigar);
+inline int mem_infer_dir(int64_t l_pac, int64_t b1, int64_t b2, int64_t *dist);
+int mem_pair(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], bseq1_t s[2], mem_alnreg_v a[2], int id, int *sub, int *n_sub, int z[2], int n_pri[2]);
+int mem_matesw(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], const mem_alnreg_t *a, int l_ms, const uint8_t *ms, mem_alnreg_v *ma);
+int mem_approx_mapq_se(const mem_opt_t *opt, const mem_alnreg_t *a);
+char **mem_gen_alt(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_alnreg_v *a, int l_query, const char *query);
+
+}
+
+int kseq_read_new(kseq_new_t *seq_new, kseq_t *seq);
+
+mem_chain_v mem_seq2chain_wrapper(ktp_aux_t *aux, bseq1_t *seqs);
+
+mem_chain_v mem_chain_new(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
+
+void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
+
+int bwt_smem1a_new(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv, uint64_t max_intv, bwtintv_v *mem, bwtintv_v *tmpvec[2],int min_seed_len);
+
+void mem_aln2sam_hts(const mem_opt_t *opt, const bntseq_t *bns, kstring_t *str, bseq1_t *s, int n, const mem_aln_t *list, int which, const mem_aln_t *m_, bam_hdr_t *h);
+
+void mem_reg2sam_hts(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *s, mem_alnreg_v *a, int extra_flag, const mem_aln_t *m, bam_hdr_t *h);
+
+int mem_sam_pe_hts(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, const mem_pestat_t pes[4], uint64_t id, bseq1_t s[2], mem_alnreg_v a[2], bam_hdr_t *header);
+
 uint8_t *bns_fetch_seq_fpga(const bntseq_t *bns, const uint8_t *pac, int64_t *beg, int64_t mid, int64_t *end, int *rid);
 
 void freeChains(mem_chain_v* chains, int batch_num);
 void freeAligns(mem_alnreg_v* alnreg, int batch_num);
 void freeSeqs(bseq1_t* seqs, int batch_num);
 
+extern "C" {
 smem_aux_t *smem_aux_init();
 void smem_aux_destroy(smem_aux_t *a);
+}
 int usage();
 
 #endif // STRUCTURESNEW_H_INCLUDED

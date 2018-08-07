@@ -198,7 +198,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   }
 
   for (int i = 0; i < batch_num; i++) {
-    mem_chain_v chains = seq2chain(aux, &seqs[i]);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, &seqs[i]);
     kv_init(alnreg[i]);
     for (int j = 0; j < chains.n; j++) {
       mem_chain2aln(
@@ -236,7 +236,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   for (int i =0; i< batch_num/2; i++) {
     seqs[i<<1].bams = bams_init();
     seqs[1+(i<<1)].bams = bams_init();
-    mem_sam_pe(
+    mem_sam_pe_hts(
         aux->opt,
         aux->idx->bns,
         aux->idx->pac,
@@ -288,7 +288,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
 
   for (int i = 0; i < batch_num; i++) {
-    chains[i] = seq2chain(aux, &seqs[i]);
+    chains[i] = mem_seq2chain_wrapper(aux, &seqs[i]);
   }
 
   ChainsRecord ret;
@@ -378,7 +378,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
     for (int i =0; i< batch_num/2; i++) {
       seqs[i<<1].bams = bams_init();
       seqs[1+(i<<1)].bams = bams_init();
-      mem_sam_pe(
+      mem_sam_pe_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,
@@ -412,7 +412,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
           alnreg[i].a,
           start_idx+i
           );
-      mem_reg2sam(
+      mem_reg2sam_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,

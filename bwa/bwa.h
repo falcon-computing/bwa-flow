@@ -1,9 +1,10 @@
 #ifndef BWA_H_
 #define BWA_H_
+
 #include <stdint.h>
 #include "bntseq.h"
 #include "bwt.h"
-#ifdef USE_HTSLIB
+#ifndef USE_STD_BWA
 #include <htslib/sam.h>
 #endif
 
@@ -29,7 +30,7 @@ typedef struct {
 	uint8_t  *mem;
 } bwaidx_t;
 
-#ifdef USE_HTSLIB
+#ifndef USE_STD_BWA
 typedef struct {
   int l, m;
   bam1_t **bams;
@@ -38,20 +39,11 @@ typedef struct {
 
 typedef struct {
 	int l_seq, id;
-#ifdef USE_HTSLIB
-	char *name, *comment, *seq, *qual;
-  bams_t *bams;
-#else
 	char *name, *comment, *seq, *qual, *sam;
+#ifndef USE_STD_BWA
+        bams_t *bams;
 #endif
 } bseq1_t;
-
-// This is here to faciliate passing around HTSLIB's bam_hdr_t structure when we are not compiling with HTSLIB
-#ifndef USE_HTSLIB
-typedef struct {
-  void *ptr;
-} bam_hdr_t; // DO NOT USE
-#endif
 
 extern int bwa_verbose;
 extern char bwa_rg_id[256];
@@ -82,13 +74,6 @@ extern "C" {
 	void bwa_print_sam_hdr(const bntseq_t *bns, const char *hdr_line);
 	char *bwa_set_rg(const char *s);
 	char *bwa_insert_header(const char *s, char *hdr);
-
-#ifdef USE_HTSLIB
-  void bwa_format_sam_hdr(const bntseq_t *bns, const char *rg_line, kstring_t *str);
-  bams_t *bams_init();
-  void bams_add(bams_t *bams, bam1_t *b);
-  void bams_destroy(bams_t *bams);
-#endif
 
 #ifdef __cplusplus
 }

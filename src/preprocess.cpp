@@ -163,7 +163,7 @@ int pre_process(int argc,
       else if (c == 'K') fixed_chunk_size = atoi(optarg);
       else if (c == 'X') opt->mask_level = atof(optarg);
 #ifdef USE_HTSLIB
-      else if (c == 'o') opt->bam_output = atoi(optarg), opt0.bam_output = 1;
+      else if (c == 'o') ; //opt->bam_output = atoi(optarg), opt0.bam_output = 1;
 #endif
       else if (c == 'h') {
         opt0.max_XA_hits = opt0.max_XA_hits_alt = 1;
@@ -281,9 +281,6 @@ int pre_process(int argc,
       fprintf(stderr, "                     specify the mean, standard deviation (10%% of the mean if absent), max\n");
       fprintf(stderr, "                     (4 sigma from the mean if absent) and min of the insert size distribution.\n");
       fprintf(stderr, "                     FR orientation only. [inferred]\n");
-#ifdef USE_HTSLIB
-      fprintf(stderr, "       -o INT        0 - BAM (compressed), 1 - BAM (uncompressed), 2 - SAM [%d]\n)\n", opt->bam_output);
-#endif
       fprintf(stderr, "\n");
       fprintf(stderr, "Note: Please read the man page for detailed description of the command line and options.\n");
       fprintf(stderr, "\n");
