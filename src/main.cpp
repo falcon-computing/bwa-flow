@@ -14,6 +14,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #ifdef NDEBUG
@@ -23,11 +24,12 @@
 
 #include "bwa/bntseq.h"
 #include "bwa/bwa.h"
-#include "bwa/bwamem.h"
+//#include "bwa/bwamem.h"
 #include "bwa/kseq.h"
 #include "bwa/kvec.h"
 #include "bwa/utils.h"
 #include "kflow/Pipeline.h"
+#include "kflow/MegaPipe.h"
 
 #ifndef VERSION
 #define VERSION "untracked"
@@ -37,6 +39,7 @@
 #include "config.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -98,6 +101,14 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};
@@ -109,21 +120,6 @@ int main(int argc, char *argv[]) {
 
   // Check sanity of input parameters
   int chunk_size = FLAGS_chunk_size;
-
-#ifdef BUILD_FPGA
-  if (FLAGS_offload && FLAGS_use_fpga) {
-    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
-    boost::filesystem::wpath file_path(FLAGS_fpga_path);
-    if (!boost::filesystem::exists(file_path)) {
-      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
-        << FLAGS_fpga_path;
-      FLAGS_use_fpga = false;
-    }
-  }
-  else {
-    FLAGS_use_fpga = false;
-  }
-#endif
 
   // Get output file folder
   std::string sam_dir = FLAGS_output_dir;
@@ -183,6 +179,9 @@ int main(int argc, char *argv[]) {
   bwa_args.push_back(std::to_string((long long)FLAGS_output_flag).c_str()); 
 #endif
 
+
+  // Pack all the bwa mem args
+  pack_bwa_mem_args( bwa_args );
   // Pass the rest of the record
   for (int i = 2; i < argc; i++) {
     bwa_args.push_back(argv[i]); 
@@ -202,6 +201,37 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Set up OpenCL environment
+#ifdef BUILD_FPGA
+  if (FLAGS_offload && FLAGS_use_fpga) {
+    boost::filesystem::wpath file_path(FLAGS_fpga_path);
+    if (!boost::filesystem::exists(file_path)) {
+      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
+                  << FLAGS_fpga_path;
+      DLOG(WARNING) << "Continue without using FPGA";
+      FLAGS_use_fpga = false;
+    }
+    try {
+      opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
+                                   << FLAGS_fpga_path;
+    }
+    catch (std::runtime_error &e) {
+      DLOG(ERROR) << "Cannot initialize BWA OpenCL environment";
+      DLOG(ERROR) << "because: " << e.what();
+      DLOG(WARNING) << "Continue without using FPGA";
+      FLAGS_use_fpga = false;
+    }
+  }
+  else {
+    FLAGS_use_fpga = false;
+  }
+  if (FLAGS_use_fpga)
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Use FPGA in BWA-FLOW";
+  else
+    FLAGS_max_fpga_thread = 0;
+#endif
+
   // dump aux env
 
   // Restore stdout if stdout is redirected
@@ -212,45 +242,36 @@ int main(int argc, char *argv[]) {
     close(stdout_fd);
   }
 
-	double t_real = realtime();
+  double t_real = realtime();
 
-  int num_compute_stages = 3;
-
-  if (FLAGS_offload) {
-    num_compute_stages = 7;
-    //num_compute_stages = 8;
-  }
+  int num_compute_stages = 8;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
-  if (FLAGS_use_fpga)  num_threads -= FLAGS_max_fpga_thread;
+  if (FLAGS_use_fpga) num_threads -= FLAGS_max_fpga_thread;
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads in total";
   DLOG(INFO) << "Using " << FLAGS_max_fpga_thread << " for fpga";
 
   // Stages for bwa file in/out
-  SeqsRead        read_stage;
   KseqsRead       kread_stage;
-  KseqsToBseqs    k2b_stage;
+  KseqsToBseqs    k2b_stage(FLAGS_t);
   SamsReorder     reorder_stage;
+  SamsSort        sort_stage(FLAGS_t);
   WriteOutput     write_stage(FLAGS_output_nt);
 
   // Stages for bwa computation
-  SeqsToSams       seq2sam_stage(FLAGS_t);
   SeqsToChains     seq2chain_stage(FLAGS_stage_1_nt);
   ChainsToRegions  chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
-
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
-  kestrelFlow::Pipeline fpga_smem_flow(1, 1);
   SeqsToChainsFPGA      seq2chain_fpga_stage(FLAGS_max_fpga_thread);
-
   // Stages for FPGA acceleration of stage_2
-  kestrelFlow::Pipeline fpga_flow(2, 1);
-  ChainsPipeFPGA        chainpipe_fpga_stage; // push through
-  ChainsToRegionsFPGA   chain2reg_fpga_stage(FLAGS_max_fpga_thread); // compute
+  ChainsToRegionsFPGA   chain2reg_fpga_stage(FLAGS_max_fpga_thread);
 #endif
+
+  kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
     // Bind global vars to each pipeline
@@ -262,13 +283,14 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(3, &chain2reg_stage);
     compute_flow.addStage(4, &reg2sam_stage);
     compute_flow.addStage(5, &reorder_stage);
-    compute_flow.addStage(6, &write_stage);
+    compute_flow.addStage(6, &sort_stage);
+    compute_flow.addStage(7, &write_stage);
+
+    bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      fpga_smem_flow.addStage(0, &seq2chain_fpga_stage);
-      // bind the input/output queue of stage_1 in compute_flow
-      fpga_smem_flow.branch(compute_flow, 2);
+      compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
     }
 
     //if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
@@ -281,21 +303,19 @@ int main(int argc, char *argv[]) {
 #endif
     
     t_real = realtime();
-    compute_flow.start();
+    bwa_flow_pipe.start();
+    bwa_flow_pipe.wait();
+  
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
-      // Start FPGA context
+      // Stop FPGA context
       try {
-        opencl_env = new BWAOCLEnv(
-            FLAGS_fpga_path.c_str(),
-            "mem_collect_intv_fpga");
-        DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-                                     << FLAGS_fpga_path;
+        delete opencl_env;
       }
       catch (std::runtime_error &e) {
-        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Cannot configure FPGA bitstream";
-        DLOG(ERROR) << "FPGA path is " << FLAGS_fpga_path;
-        DLOG(ERROR) << "because: " << e.what();
+        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Failed to run bwa-flow on FPGA";
+        DLOG(ERROR) << "because " << e.what();
+        throw e;
       }
 
       try {
@@ -312,7 +332,6 @@ int main(int argc, char *argv[]) {
       }
     }
 #endif
-    compute_flow.wait();
   
     kseq_destroy(aux->ks);
     err_gzclose(fp_idx); 

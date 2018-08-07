@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "bwa/utils.h"
 #include "kflow/Queue.h"
@@ -24,6 +25,7 @@
 #include "config.h"
 #include "Pipeline.h"  
 #include "util.h"
+#include "allocation_wrapper.h"
 
 // Comparator function for bam1_t records
 #ifdef USE_HTSLIB
@@ -68,7 +70,7 @@ void getKseqBatch(int chunk_size,
   *n_ = t;
 }
 
-const int kseq_buffer_size = 8;
+const int kseq_buffer_size = INPUT_DEPTH;
 kestrelFlow::Queue<kseq_new_t*, kseq_buffer_size+1> kseq_queue;
 
 void KseqsRead::compute() {
@@ -86,11 +88,13 @@ void KseqsRead::compute() {
     kseq_queue.pop(ks_buffer);
 
     // Get the kseq batch
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started KseqsRead() for one input ";
     getKseqBatch(10000000, &batch_num, aux->ks, aux->ks2, ks_buffer);
-    if (batch_num == 0) break;
-
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished KseqsRead() for one input in "
+                                 << getUs() - start_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
+    if (batch_num == 0) break;
 
     KseqsRecord record;
     record.ks_buffer = ks_buffer;
@@ -187,9 +191,14 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   int batch_num = input.batch_num;
 
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+  if (NULL == alnreg) {
+    LOG(ERROR) << strerror(errno) << " due to "
+               << ((errno==12) ? "out-of-memory" : "internal failure") ;
+    exit(EXIT_FAILURE);
+  }
 
   for (int i = 0; i < batch_num; i++) {
-    mem_chain_v chains = seq2chain(aux, &seqs[i]);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, &seqs[i]);
     kv_init(alnreg[i]);
     for (int j = 0; j < chains.n; j++) {
       mem_chain2aln(
@@ -227,7 +236,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
   for (int i =0; i< batch_num/2; i++) {
     seqs[i<<1].bams = bams_init();
     seqs[1+(i<<1)].bams = bams_init();
-    mem_sam_pe(
+    mem_sam_pe_hts(
         aux->opt,
         aux->idx->bns,
         aux->idx->pac,
@@ -279,7 +288,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
 
   for (int i = 0; i < batch_num; i++) {
-    chains[i] = seq2chain(aux, &seqs[i]);
+    chains[i] = mem_seq2chain_wrapper(aux, &seqs[i]);
   }
 
   ChainsRecord ret;
@@ -369,7 +378,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
     for (int i =0; i< batch_num/2; i++) {
       seqs[i<<1].bams = bams_init();
       seqs[1+(i<<1)].bams = bams_init();
-      mem_sam_pe(
+      mem_sam_pe_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,
@@ -403,7 +412,7 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
           alnreg[i].a,
           start_idx+i
           );
-      mem_reg2sam(
+      mem_reg2sam_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,
@@ -435,36 +444,26 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
   return output;
 }
 
-#ifdef USE_HTSLIB
-typedef bam1_t *bam1_p;
-KSORT_INIT(sort, bam1_p, bam1_lt)
-#endif
 
 void SamsReorder::compute(int wid) {
-
   uint64_t n_processed = 0;
   std::unordered_map<uint64_t, SeqsRecord> record_buf;
 #ifdef USE_HTSLIB
+  std::vector<SeqsRecord> output_records;
   int max_batch_records = FLAGS_max_batch_records;
-  bam1_t** bam_buffer = NULL;
-  int bam_buffer_idx = 0;
   int batch_records = 0;
   int bam_buffer_order = 0;
-
-  // bams->l may be larger than 1
-  // the bam_buffer needs to be realloc
-  int max_buffer_records = 0;
-
-  BamsRecord output;
 #else
   SeqsRecord output;
 #endif
+
+try {
   while (true) {
     SeqsRecord input;
     SeqsRecord record;
     bool ready = this->getInput(input);
     while (!this->isFinal() && !ready) {
-      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      boost::this_thread::sleep_for(boost::chrono::microseconds(10));
       ready = this->getInput(input);
     }
     if (!ready) { 
@@ -479,49 +478,15 @@ void SamsReorder::compute(int wid) {
         record_buf.erase(n_processed);
         n_processed += record.batch_num;
 #ifdef USE_HTSLIB
-        int batch_num = record.batch_num;
-        bseq1_t* seqs = record.seqs;
-    
-        if (!bam_buffer) {
-          max_buffer_records = max_batch_records*batch_num*2;
-          bam_buffer = (bam1_t**)malloc(max_buffer_records*sizeof(bam1_t*));
-        }
-        for (int i = 0; i < batch_num; i++) {
-          if (seqs[i].bams) {
-            for (int j =0; j < seqs[i].bams->l; j++) {
-              bam1_t* bam_record = seqs[i].bams->bams[j];
-              if (FLAGS_filter == 0 || 
-                  (bam_record->core.flag & FLAGS_filter) == 0) 
-              {
-                if (bam_buffer_idx >= max_buffer_records) {
-                  max_buffer_records *= 2;
-                  bam_buffer = (bam1_t**)realloc(bam_buffer, max_buffer_records*sizeof(bam1_t*)); 
-                }
-                bam_buffer[bam_buffer_idx++] = bam_record;
-              }
-            }
-          }
-          free(seqs[i].bams->bams);
-          free(seqs[i].bams); seqs[i].bams = NULL;    
-        }
-        free(seqs);
- 
+        output_records.push_back(record);
         if (++batch_records >= max_batch_records) {
-          if(FLAGS_sort) {
-            uint64_t start_ts_st = getUs();
-            //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
-            ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
-            DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
-              getUs() - start_ts_st << " us";
-          }
-          output.bam_buffer = bam_buffer;
-          output.bam_buffer_idx = bam_buffer_idx;
+          BamsRecord output;
           output.bam_buffer_order = bam_buffer_order;
-          bam_buffer_idx = 0;
+          output.records_list = new std::vector<SeqsRecord>(output_records);
+          pushOutput(output);
+          output_records.clear();
           batch_records = 0;
           bam_buffer_order = bam_buffer_order + 1;
-          pushOutput(output);
-          bam_buffer = NULL;
         }
 #else
         output = record;
@@ -532,50 +497,15 @@ void SamsReorder::compute(int wid) {
     else {
       record = input;
 #ifdef USE_HTSLIB
-      int batch_num = record.batch_num;
-      bseq1_t* seqs = record.seqs;
-  
-      if (!bam_buffer) {
-        // in case bams->l is not 1 
-        max_buffer_records = max_batch_records*batch_num*2;
-        bam_buffer = (bam1_t**)malloc(max_buffer_records*sizeof(bam1_t*));
-      }
-      for(int i = 0; i < batch_num; i++) {
-        if (seqs[i].bams) {
-          for (int j =0; j < seqs[i].bams->l; j++) {
-            bam1_t* bam_record = seqs[i].bams->bams[j];
-            if (FLAGS_filter == 0 || 
-                (bam_record->core.flag & FLAGS_filter) == 0) 
-            {
-              if (bam_buffer_idx >= max_buffer_records) {
-                max_buffer_records *= 2;
-                bam_buffer = (bam1_t**)realloc(bam_buffer, max_buffer_records*sizeof(bam1_t*));
-                DLOG(INFO) << "realloc() bam_buffer to " << max_buffer_records;
-              }
-              bam_buffer[bam_buffer_idx++] = bam_record;
-            }
-          }
-        }
-        free(seqs[i].bams->bams);
-        free(seqs[i].bams); seqs[i].bams = NULL;    
-      }
-      free(seqs);
-      if (++ batch_records >=  max_batch_records) {
-        if(FLAGS_sort) {
-          uint64_t start_ts_st = getUs();
-          //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
-          ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
-          DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
-            getUs() - start_ts_st << " us";
-        }
-        output.bam_buffer = bam_buffer;
-        output.bam_buffer_idx = bam_buffer_idx;
+      output_records.push_back(record);
+      if (++batch_records >=  max_batch_records) {
+        BamsRecord output;
         output.bam_buffer_order = bam_buffer_order;
-        bam_buffer_idx = 0;
+        output.records_list = new std::vector<SeqsRecord>(output_records);
+        pushOutput(output);
+        output_records.clear();
         batch_records = 0;
         bam_buffer_order = bam_buffer_order + 1;
-        pushOutput(output);
-        bam_buffer = NULL;
       }
 #else
       output = record;
@@ -583,27 +513,111 @@ void SamsReorder::compute(int wid) {
 #endif
     }
   }
+
 #ifdef USE_HTSLIB
   //finish the remaining sam
   if(batch_records > 0){
-    if(FLAGS_sort) {
-      uint64_t start_ts_st = getUs();
-      //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
-      ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
-      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in " <<
-        getUs() - start_ts_st << " us";
-    }
-    output.bam_buffer = bam_buffer;
-    output.bam_buffer_idx = bam_buffer_idx;
+    BamsRecord output;
     output.bam_buffer_order = bam_buffer_order;
-    bam_buffer_idx = 0;
+    output.records_list = new std::vector<SeqsRecord>(output_records);
+    pushOutput(output);
+    output_records.clear();
     batch_records = 0;
     bam_buffer_order = bam_buffer_order + 1;
-    pushOutput(output);
-    bam_buffer = NULL; 
   }
 #endif
 }
+catch (...)
+{
+  LOG(FATAL) << "Fatal error in reordering.";
+}
+}
+
+
+#ifdef USE_HTSLIB
+typedef bam1_t *bam1_p;
+KSORT_INIT(sort, bam1_p, bam1_lt)
+#endif
+
+#ifdef USE_HTSLIB
+BamsRecord SamsSort::compute(BamsRecord const & input)
+{
+  bam1_t** bam_buffer = NULL;
+  int bam_buffer_idx = 0;
+  int max_buffer_records = 0; /* bams->l may be larger than 1, the bam_buffer needs to be realloc */
+  int max_batch_records = FLAGS_max_batch_records;
+
+  BamsRecord output;
+
+  uint64_t start_ts_st = getUs();
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SamsSort() for one input";
+
+  // step: copy
+  std::vector<SeqsRecord> *records_list = input.records_list;
+  for (int record_id = 0; record_id < records_list->size(); record_id++) {
+    SeqsRecord record = (*records_list)[record_id];
+    int batch_num = record.batch_num;
+    bseq1_t* seqs = record.seqs;
+    
+    if (!bam_buffer) {
+      max_buffer_records = max_batch_records*batch_num*2;
+      bam_buffer = (bam1_t**)malloc(max_buffer_records*sizeof(bam1_t*));
+    }
+    for (int i = 0; i < batch_num; i++) {
+      if (seqs[i].bams) {
+        for (int j =0; j < seqs[i].bams->l; j++) {
+          bam1_t* bam_record = seqs[i].bams->bams[j];
+          if ( FLAGS_filter == 0                           || 
+               (bam_record->core.flag & FLAGS_filter) == 0    ) {
+            if (bam_buffer_idx >= max_buffer_records) {
+              max_buffer_records *= 2;
+              bam_buffer = (bam1_t**)realloc(bam_buffer, max_buffer_records*sizeof(bam1_t*)); 
+            }
+            bam_buffer[bam_buffer_idx++] = bam_record;
+          }
+        }
+      }
+      free(seqs[i].bams->bams);
+      free(seqs[i].bams); seqs[i].bams = NULL;    
+    }
+    free(seqs);
+  }
+  delete records_list;
+
+  // step: sort
+  if(FLAGS_sort) {
+    //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
+    ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
+  }
+  output.bam_buffer = bam_buffer;
+  output.bam_buffer_idx = bam_buffer_idx;
+  output.bam_buffer_order = input.bam_buffer_order;
+
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SamsSort() for one input in "
+                               << getUs() - start_ts_st << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Sorted " << bam_buffer_idx << " records in "
+                               << getUs() - start_ts_st << " us";
+
+  return output;
+}
+#else
+void SamsSort::compute(int wid) {
+  while (true) {
+    SeqsRecord input;
+    SeqsRecord output;
+    while (!this->isFinal() && !ready) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(100));
+      ready = this->getInput(input);
+    }
+    if (!ready) { 
+      // this means isFinal() is true and input queue is empty
+      break; 
+    }
+    pushOutput(output);
+  }
+}
+#endif
+
 
 #ifdef USE_HTSLIB
 int WriteOutput::compute(BamsRecord const &input)
@@ -625,6 +639,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   samFile *fout = NULL;
 
   uint64_t start_ts = getUs();
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started WriteOutput() for one input";
   int file_id = input.bam_buffer_order;
   int bam_buffer_idx = input.bam_buffer_idx;
   bam1_t** bam_buffer = input.bam_buffer;
@@ -647,6 +662,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   }
   sam_close(fout);
   free(bam_buffer);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished WriteOutput() in " << getUs() - start_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written " << bam_buffer_idx
           << " records in "
           << getUs() - start_ts << " us";
@@ -656,6 +672,7 @@ int WriteOutput::compute(SeqsRecord const &input)
   FILE* fout;
   fout = stdout;
   uint64_t start_ts = getUs();
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started WriteOutput() for one input";
   int batch_num = input.batch_num;
   bseq1_t* seqs = input.seqs;
   for (int i = 0; i < batch_num; ++i) {
@@ -663,6 +680,7 @@ int WriteOutput::compute(SeqsRecord const &input)
     free(seqs[i].sam);
   }
   free(seqs);
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished WriteOutput() in " << getUs() - start_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Written batch " << input.start_idx 
     << " to file in " << getUs() - start_ts << " us";
 #endif

@@ -58,7 +58,7 @@ static bseq1_t* bwa_mem(bseq1_t* input, int batch_num) {
   mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
 
   for (int i = 0; i < batch_num; i++) {
-    mem_chain_v chains = seq2chain(aux, &seqs[i]);
+    mem_chain_v chains = mem_seq2chain_wrapper(aux, &seqs[i]);
     kv_init(alnreg[i]);
     for (int j = 0; j < chains.n; j++) {
       mem_chain2aln(
@@ -98,7 +98,7 @@ static bseq1_t* bwa_mem(bseq1_t* input, int batch_num) {
     for (int i = 0; i < batch_num/2; i++) {
       seqs[i<<1].bams = bams_init();
       seqs[1+(i<<1)].bams = bams_init();
-      mem_sam_pe(
+      mem_sam_pe_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,
@@ -116,7 +116,7 @@ static bseq1_t* bwa_mem(bseq1_t* input, int batch_num) {
           alnreg[i].n,
           alnreg[i].a,
           i);
-      mem_reg2sam(
+      mem_reg2sam_hts(
           aux->opt,
           aux->idx->bns,
           aux->idx->pac,

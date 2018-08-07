@@ -11,6 +11,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <errno.h>
 #include <zlib.h>
 
 #include "mpi.h"
@@ -28,6 +29,7 @@
 #include "MPIPipeline.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 #ifndef VERSION
 #define VERSION "untracked"
@@ -79,15 +81,22 @@ int main(int argc, char *argv[]) {
   int rank = MPI::COMM_WORLD.Get_rank();
 
 #ifdef USELICENSE
-  if (rank == 0) {
-    int licret = falconlic::license_verify();
-    if (licret != falconlic::success) {
-      LOG(ERROR) << "Cannot authorize software usage: " << licret;
-      LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+  namespace fc   = falconlic;
+#ifdef DEPLOY_aws
+  fc::enable_aws();
+#endif
+#ifdef DEPLOY_hwc
+  fc::enable_hwc();
+#endif
+  fc::enable_flexlm();
 
-      MPI_Finalize();
-      return -1;
-    }
+  namespace fclm = falconlic::flexlm;
+  fclm::add_feature(fclm::FALCON_DNA);
+  int licret = fc::license_verify();
+  if (licret != fc::SUCCESS) {
+    LOG(ERROR) << "Cannot authorize software usage: " << licret;
+    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
+    return -1;
   }
 #endif
 
@@ -96,6 +105,14 @@ int main(int argc, char *argv[]) {
   extern gzFile fp_idx, fp2_read2;
   extern void *ko_read1, *ko_read2;
   aux = new ktp_aux_t;
+  if (NULL == aux) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
   memset(aux, 0, sizeof(ktp_aux_t));
 
   kstring_t pg = {0,0,0};

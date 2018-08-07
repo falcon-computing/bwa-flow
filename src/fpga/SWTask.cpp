@@ -1,7 +1,10 @@
+#include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "allocation_wrapper.h"
 #include "BWAOCLEnv.h"
 #include "SWTask.h"
 
@@ -17,6 +20,14 @@ inline void *sw_malloc(size_t size, int data_width) {
   size_t aligned_size = data_width*((size/AOCL_ALIGNMENT)+1)*AOCL_ALIGNMENT;
   void *result = NULL;
   posix_memalign(&result, AOCL_ALIGNMENT, aligned_size);
+  if (NULL == result) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
   return result;
 }
 #else
@@ -34,6 +45,14 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 #elif XILINX_FPGA
   agent_ = new XCLAgent(env, this);
 #endif
+  if (NULL == agent_) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
   for (int k = 0; k < 2; k++) {
     i_size[k] = 0;
     o_size[k] = 0;
@@ -42,10 +61,34 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
     o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
   }
   region_batch = new mem_alnreg_t*[2*chunk_size];
+  if (NULL == region_batch) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
   chain_batch  = new mem_chain_t*[2*chunk_size];
+  if (NULL == chain_batch) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
 }
 
 SWTask::~SWTask() {
+  delete region_batch;
+  delete chain_batch;
+  for (int k = 0; k < 2; k++) {
+    clReleaseMemObject(i_buf[k]);
+    clReleaseMemObject(o_buf[k]);
+    free(i_data[k]);
+    free(o_data[k]);
+  }
   delete agent_;
 }
 
@@ -86,4 +129,14 @@ void SWTask::finish() {
 
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Read OpenCL buffer takes " 
                                << getUs() - start_ts << " us";
+}
+
+void SWTask::redo() {
+  ((XCLAgent *)agent_)->fence();
+  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
+  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+  agent_->start(this, NULL);
+  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
+  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+  agent_->finish();
 }

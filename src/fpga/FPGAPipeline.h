@@ -14,21 +14,22 @@ class ChainsPipeFPGA
 {
  public:
   ChainsPipeFPGA(int n=1): kestrelFlow::MapStage<
-      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n, false) {;}
+      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n, true) {;}
 
   ChainsRecord compute(ChainsRecord const & record) ;
 };
 
 class ChainsToRegionsFPGA
 : public kestrelFlow::MapPartitionStage<
-      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
 {
  public:
   ChainsToRegionsFPGA(int n=1): kestrelFlow::MapPartitionStage<
-      ChainsRecord, RegionsRecord, 8, COMPUTE_DEPTH>(n, false) {;}
+      ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n, false) {;}
 
   void compute(int wid);
   void processOutput(SWTask* task);
+  ChainsRecord preprocessBatch(ChainsRecord const & record);
 };
 
 class SeqsToChainsFPGA

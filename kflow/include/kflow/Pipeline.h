@@ -9,6 +9,7 @@
 
 #include "Common.h"
 #include "Stage.h"
+#include "MegaPipe.h"
 
 // for testing purpose
 #ifndef TEST_FRIENDS_LIST
@@ -19,6 +20,7 @@ namespace kestrelFlow {
 
 class Pipeline {
   friend class OccupancyCounter;
+  friend class MegaPipe;
   TEST_FRIENDS_LIST
 
  public:
@@ -28,6 +30,10 @@ class Pipeline {
   template <typename U, typename V,
             int IN_DEPTH,  int OUT_DEPTH> 
   bool addStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage);
+
+  template <typename U, typename V,
+            int IN_DEPTH,  int OUT_DEPTH> 
+  bool addAccxBckStage(int idx, Stage<U, V, IN_DEPTH, OUT_DEPTH> *stage, float init_priority = 1.0);
 
   // branch stage[idx] of pipeline
   void branch(Pipeline& pipeline, int idx); 
@@ -57,6 +63,8 @@ class Pipeline {
 
   boost::shared_ptr<QueueBase> getInputQueue();
   boost::shared_ptr<QueueBase> getOutputQueue();
+
+  MegaPipe * megapipe_ = NULL;
 
  private:
   void schedule();
@@ -131,6 +139,45 @@ bool Pipeline::addStage(int idx,
     stages_[idx-1]->linkStage(stage);
   }
   stage->pipeline_ = this;
+
+  return true;
+}
+
+template <
+  typename U, typename V,
+  int IN_DEPTH, int OUT_DEPTH
+>
+bool Pipeline::addAccxBckStage(int idx,
+    Stage<U, V, IN_DEPTH, OUT_DEPTH> *accx_bck_stage,
+    float init_priority) {
+  //if (stages_[idx] == nullptr) {
+  //  return addStage(idx, accx_bck_stage);
+  //}
+
+  
+  StageBase *stage = stages_[idx];  
+  if (stage->accx_backend_stage_ != nullptr) {
+    DLOG(WARNING) << "Overwriting the existing accelerator backend for stage " << idx;
+  }
+  stage->use_accx_ = false;
+
+  if (IN_DEPTH > 0) {
+    // create the internal queue for accx input
+    int accx_load_queue_depth = (int)((init_priority+1)*accx_bck_stage->getMaxNumThreads());
+    boost::shared_ptr<QueueBase> accx_load_queue(new Queue<U, IN_DEPTH>(accx_load_queue_depth));
+    accx_bck_stage->input_queue_ = accx_load_queue;
+  }
+  accx_bck_stage->output_queue_ = stage->output_queue_;
+
+  std::vector<StageBase *> shadow_downstream_stages(stage->downstream_stages_);
+  for (int sid = 0; sid < shadow_downstream_stages.size(); sid++)
+    accx_bck_stage->linkStage(shadow_downstream_stages[sid]);
+
+  stage->linkStage(accx_bck_stage);
+  stage->accx_backend_stage_ = accx_bck_stage;
+  stage->accx_load_queue_ = accx_bck_stage->input_queue_;
+  stage->accx_priority_ = init_priority;
+  stage->use_accx_ = true;
 
   return true;
 }

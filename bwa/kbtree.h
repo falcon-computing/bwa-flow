@@ -149,7 +149,7 @@ typedef struct {
 	}
 
 #define __KB_INTERVAL(name, key_t)										\
-	static void kb_intervalp_##name(kbtree_##name##_t *b, const key_t * __restrict k, key_t **lower, key_t **upper)	\
+	void kb_intervalp_##name(kbtree_##name##_t *b, const key_t * __restrict k, key_t **lower, key_t **upper)	\
 	{																	\
 		int i, r = 0;													\
 		kbnode_t *x = b->root;											\
@@ -207,7 +207,7 @@ typedef struct {
 			__kb_putp_aux_##name(b, __KB_PTR(b, x)[i], k);				\
 		}																\
 	}																	\
-	static void kb_putp_##name(kbtree_##name##_t *b, const key_t * __restrict k) \
+	void kb_putp_##name(kbtree_##name##_t *b, const key_t * __restrict k) \
 	{																	\
 		kbnode_t *r, *s;												\
 		++b->n_keys;													\

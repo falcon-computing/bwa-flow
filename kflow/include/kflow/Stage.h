@@ -18,6 +18,7 @@ namespace kestrelFlow {
 // base class for the template class Stage
 class StageBase {
  friend class Pipeline;
+ friend class MegaPipe;
  friend class OccupancyCounter;
  TEST_FRIENDS_LIST
 
@@ -25,11 +26,20 @@ class StageBase {
   StageBase(int _num_workers=1, bool is_dyn=true);
   ~StageBase();
 
+  StageBase* accx_backend_stage_;
+  float accx_priority_ = 1.0;
+
+  int getMaxNumThreads();
+
   virtual void start();
   virtual void stop();
   virtual void wait();
 
   bool isDynamic();
+  int  getPriority() { return priority_; }
+
+  bool useAccx() { return use_accx_; }
+  StageBase *getAccxStage() { return accx_backend_stage_; }
 
   boost::any getConst(std::string key);
 
@@ -46,8 +56,6 @@ class StageBase {
   // Get the number of current active worker threads
   int getNumThreads();
 
-  int getMaxNumThreads();
-
   // profiling counters for each worker:
   // <read_block_time, compute_time, write_block_time, total_time>
   uint64_t **perf_meters_;
@@ -60,12 +68,16 @@ class StageBase {
 
   Queue_ptr input_queue_;
   Queue_ptr output_queue_;
+  Queue_ptr accx_load_queue_;
+
+  std::vector<StageBase*> downstream_stages_;
 
  private:
   // Execute one task from this stage, if the input_queue is empty
   // or the output_queue is full, no work will be posted and 
   // the call will return false
   virtual bool execute() = 0;
+  virtual int execute_new() = 0;
 
   // Function body of workers of static stage
   virtual void worker_func(int wid) = 0;
@@ -75,17 +87,25 @@ class StageBase {
 
   void addSeat() {num_active_threads_.fetch_add(1);}
   void removeSeat() {num_active_threads_.fetch_sub(1);}
+  void removeSeatAndCheck() {
+    num_active_threads_.fetch_sub(1);
+    if (this->getNumThreads() == 0) {
+
+    }
+  }
 
   bool is_dynamic_;
+  bool use_accx_;
   int  num_workers_;
   int  num_upstream_stages_; 
-  std::vector<StageBase*> downstream_stages_;
+  int  priority_ = 1;
 
   mutable boost::atomic<int>  num_active_threads_;
   mutable boost::atomic<int>  num_finalized_workers_;
   mutable boost::atomic<int>  num_finalized_upstream_stages_;
   mutable boost::atomic<bool> is_final_;
   boost::thread_group         worker_threads_;
+
 };
 
 template <
@@ -132,6 +152,22 @@ class Stage : public StageBase {
 
     return queue;
   }
+
+  Queue<U, IN_DEPTH>* getAccxQueue() {
+    if (IN_DEPTH == 0) return NULL;
+    if (!accx_load_queue_) {
+      throw internalError("accelerator input queue is uninitialized");
+    }
+    Queue<U, IN_DEPTH>* queue =
+      dynamic_cast<Queue<U, IN_DEPTH>*>(accx_load_queue_.get());
+
+    if (!queue) {
+       throw internalError("failed to dynamic_cast accelerator input queue");
+    }
+
+    return queue;
+  }
+
   bool inputQueueEmpty() {
     if (this->getInputQueue()) {
       return this->getInputQueue()->empty();

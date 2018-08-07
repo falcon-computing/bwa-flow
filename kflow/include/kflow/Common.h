@@ -20,6 +20,7 @@
 namespace kestrelFlow {
 
 class Pipeline;
+class MegaPipe;
 class StageBase;
 class QueueBase;
 class OccupancyCounter;

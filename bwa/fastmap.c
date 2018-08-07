@@ -27,10 +27,6 @@ typedef struct {
 	int64_t n_processed;
 	int copy_comment, actual_chunk_size;
 	bwaidx_t *idx;
-  bam_hdr_t *h;
-#ifdef USE_HTSLIB
-  samFile * out;
-#endif
 } ktp_aux_t;
 
 typedef struct {
@@ -65,7 +61,6 @@ static void *process(void *shared, int step, void *_data)
 	} else if (step == 1) {
 		const mem_opt_t *opt = aux->opt;
 		const bwaidx_t *idx = aux->idx;
-    const bam_hdr_t *h = aux->h;
 		if (opt->flag & MEM_F_SMARTPE) {
 			bseq1_t *sep[2];
 			int n_sep[2];
@@ -75,40 +70,25 @@ static void *process(void *shared, int step, void *_data)
 				fprintf(stderr, "[M::%s] %d single-end sequences; %d paired-end sequences\n", __func__, n_sep[0], n_sep[1]);
 			if (n_sep[0]) {
 				tmp_opt.flag &= ~MEM_F_PE;
-				mem_process_seqs2(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, n_sep[0], sep[0], 0, h);
-#ifndef USE_HTSLIB
+				mem_process_seqs(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, n_sep[0], sep[0], 0);
 				for (i = 0; i < n_sep[0]; ++i)
 					data->seqs[sep[0][i].id].sam = sep[0][i].sam;
-#endif
 			}
 			if (n_sep[1]) {
 				tmp_opt.flag |= MEM_F_PE;
-				mem_process_seqs2(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed + n_sep[0], n_sep[1], sep[1], aux->pes0, h);
-#ifndef USE_HTSLIB
+				mem_process_seqs(&tmp_opt, idx->bwt, idx->bns, idx->pac, aux->n_processed + n_sep[0], n_sep[1], sep[1], aux->pes0);
 				for (i = 0; i < n_sep[1]; ++i)
 					data->seqs[sep[1][i].id].sam = sep[1][i].sam;
-#endif
 			}
 			free(sep[0]); free(sep[1]);
-		} else mem_process_seqs2(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0, h);
+		} else mem_process_seqs(opt, idx->bwt, idx->bns, idx->pac, aux->n_processed, data->n_seqs, data->seqs, aux->pes0);
 		aux->n_processed += data->n_seqs;
 		return data;
 	} else if (step == 2) {
 		for (i = 0; i < data->n_seqs; ++i) {
-#ifdef USE_HTSLIB    
-      if (data->seqs[i].bams) {   
-        int j;    
-        for (j = 0; j < data->seqs[i].bams->l; j++) {   
-          sam_write1(aux->out, aux->h, data->seqs[i].bams->bams[j]);    
-        }   
-      }   
-      bams_destroy(data->seqs[i].bams); data->seqs[i].bams = NULL;    
-#else
 			if (data->seqs[i].sam) err_fputs(data->seqs[i].sam, stdout);
-      free(data->seqs[i].sam);
-#endif
 			free(data->seqs[i].name); free(data->seqs[i].comment);
-			free(data->seqs[i].seq); free(data->seqs[i].qual);
+			free(data->seqs[i].seq); free(data->seqs[i].qual); free(data->seqs[i].sam);
 		}
 		free(data->seqs); free(data);
 		return 0;
@@ -150,11 +130,7 @@ int main_mem(int argc, char *argv[])
 
 	aux.opt = opt = mem_opt_init();
 	memset(&opt0, 0, sizeof(mem_opt_t));
-#ifdef USE_HTSLIB
-	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:o:")) >= 0) {
-#else
-	while ((c = getopt(argc, argv, "1paMCSPVYjk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:W:x:G:h:y:K:X:H:")) >= 0) {
-#endif
+	while ((c = getopt(argc, argv, "51qpaMCSPVYjuk:c:v:s:r:t:R:A:B:O:E:U:w:L:d:T:Q:D:m:I:N:o:f:W:x:G:h:y:K:X:H:")) >= 0) {
 		if (c == 'k') opt->min_seed_len = atoi(optarg), opt0.min_seed_len = 1;
 		else if (c == '1') no_mt_io = 1;
 		else if (c == 'x') mode = optarg;
@@ -171,6 +147,9 @@ int main_mem(int argc, char *argv[])
 		else if (c == 'S') opt->flag |= MEM_F_NO_RESCUE;
 		else if (c == 'Y') opt->flag |= MEM_F_SOFTCLIP;
 		else if (c == 'V') opt->flag |= MEM_F_REF_HDR;
+		else if (c == '5') opt->flag |= MEM_F_PRIMARY5 | MEM_F_KEEP_SUPP_MAPQ; // always apply MEM_F_KEEP_SUPP_MAPQ with -5
+		else if (c == 'q') opt->flag |= MEM_F_KEEP_SUPP_MAPQ;
+		else if (c == 'u') opt->flag |= MEM_F_XB;
 		else if (c == 'c') opt->max_occ = atoi(optarg), opt0.max_occ = 1;
 		else if (c == 'd') opt->zdrop = atoi(optarg), opt0.zdrop = 1;
 		else if (c == 'v') bwa_verbose = atoi(optarg);
@@ -181,14 +160,12 @@ int main_mem(int argc, char *argv[])
 		else if (c == 's') opt->split_width = atoi(optarg), opt0.split_width = 1;
 		else if (c == 'G') opt->max_chain_gap = atoi(optarg), opt0.max_chain_gap = 1;
 		else if (c == 'N') opt->max_chain_extend = atoi(optarg), opt0.max_chain_extend = 1;
+		else if (c == 'o' || c == 'f') xreopen(optarg, "wb", stdout);
 		else if (c == 'W') opt->min_chain_weight = atoi(optarg), opt0.min_chain_weight = 1;
 		else if (c == 'y') opt->max_mem_intv = atol(optarg), opt0.max_mem_intv = 1;
 		else if (c == 'C') aux.copy_comment = 1;
 		else if (c == 'K') fixed_chunk_size = atoi(optarg);
 		else if (c == 'X') opt->mask_level = atof(optarg);
-#ifdef USE_HTSLIB
-		else if (c == 'o') opt->bam_output = atoi(optarg), opt0.bam_output = 1;
-#endif
 		else if (c == 'h') {
 			opt0.max_XA_hits = opt0.max_XA_hits_alt = 1;
 			opt->max_XA_hits = opt->max_XA_hits_alt = strtol(optarg, &p, 10);
@@ -249,7 +226,7 @@ int main_mem(int argc, char *argv[])
 			if (bwa_verbose >= 3)
 				fprintf(stderr, "[M::%s] mean insert size: %.3f, stddev: %.3f, max: %d, min: %d\n",
 						__func__, pes[1].avg, pes[1].std, pes[1].high, pes[1].low);
-    }
+		}
 		else return 1;
 	}
 
@@ -283,7 +260,7 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -E INT[,INT]  gap extension penalty; a gap of size k cost '{-O} + {-E}*k' [%d,%d]\n", opt->e_del, opt->e_ins);
 		fprintf(stderr, "       -L INT[,INT]  penalty for 5'- and 3'-end clipping [%d,%d]\n", opt->pen_clip5, opt->pen_clip3);
 		fprintf(stderr, "       -U INT        penalty for an unpaired read pair [%d]\n\n", opt->pen_unpaired);
-		fprintf(stderr, "       -x STR        read type. Setting -x changes multiple parameters unless overriden [null]\n");
+		fprintf(stderr, "       -x STR        read type. Setting -x changes multiple parameters unless overridden [null]\n");
 		fprintf(stderr, "                     pacbio: -k17 -W40 -r10 -A1 -B1 -O1 -E1 -L0  (PacBio reads to ref)\n");
 		fprintf(stderr, "                     ont2d: -k14 -W20 -r10 -A1 -B1 -O1 -E1 -L0  (Oxford Nanopore 2D-reads to ref)\n");
 		fprintf(stderr, "                     intractg: -B9 -O16 -L5  (intra-species contigs to ref)\n");
@@ -291,9 +268,13 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "       -p            smart pairing (ignoring in2.fq)\n");
 		fprintf(stderr, "       -R STR        read group header line such as '@RG\\tID:foo\\tSM:bar' [null]\n");
 		fprintf(stderr, "       -H STR/FILE   insert STR to header if it starts with @; or insert lines in FILE [null]\n");
+		fprintf(stderr, "       -o FILE       sam file to output results to [stdout]\n");
 		fprintf(stderr, "       -j            treat ALT contigs as part of the primary assembly (i.e. ignore <idxbase>.alt file)\n");
+		fprintf(stderr, "       -5            for split alignment, take the alignment with the smallest coordinate as primary\n");
+		fprintf(stderr, "       -q            don't modify mapQ of supplementary alignments\n");
+		fprintf(stderr, "       -K INT        process INT input bases in each batch regardless of nThreads (for reproducibility) []\n");
 		fprintf(stderr, "\n");
-		fprintf(stderr, "       -v INT        verbose level: 1=error, 2=warning, 3=message, 4+=debugging [%d]\n", bwa_verbose);
+		fprintf(stderr, "       -v INT        verbosity level: 1=error, 2=warning, 3=message, 4+=debugging [%d]\n", bwa_verbose);
 		fprintf(stderr, "       -T INT        minimum score to output [%d]\n", opt->T);
 		fprintf(stderr, "       -h INT[,INT]  if there are <INT hits with score >80%% of the max score, output all in XA [%d,%d]\n", opt->max_XA_hits, opt->max_XA_hits_alt);
 		fprintf(stderr, "       -a            output all alignments for SE or unpaired PE\n");
@@ -305,9 +286,6 @@ int main_mem(int argc, char *argv[])
 		fprintf(stderr, "                     specify the mean, standard deviation (10%% of the mean if absent), max\n");
 		fprintf(stderr, "                     (4 sigma from the mean if absent) and min of the insert size distribution.\n");
 		fprintf(stderr, "                     FR orientation only. [inferred]\n");
-#ifdef USE_HTSLIB
-		fprintf(stderr, "       -o INT        0 - BAM (compressed), 1 - BAM (uncompressed), 2 - SAM [%d]\n)\n", opt->bam_output);
-#endif
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Note: Please read the man page for detailed description of the command line and options.\n");
 		fprintf(stderr, "\n");
@@ -378,47 +356,14 @@ int main_mem(int argc, char *argv[])
 			opt->flag |= MEM_F_PE;
 		}
 	}
-  bam_hdr_t *h = NULL; // TODO
-#ifdef USE_HTSLIB
-  samFile *out = NULL;
-  char *modes[] = {"wb", "wb0", "w"};
-  switch (opt->bam_output) {
-    case 0: // BAM compressed
-    case 1: // BAM uncompressed
-    case 2: // SAM
-      out = sam_open("-", modes[opt->bam_output]); 
-      break;
-    default:
-      fprintf(stderr, "Error: output format was out of range [%d]\n", opt->bam_output);
-      return 1;
-  }
-#endif
-#ifdef USE_HTSLIB
-  kstring_t str;
-  str.l = str.m = 0; str.s = 0;
-  bwa_format_sam_hdr(aux.idx->bns, hdr_line, &str);
-  h = sam_hdr_parse(str.l, str.s);
-  h->l_text = str.l; h->text = str.s;
-  sam_hdr_write(out, h);
-#else
 	bwa_print_sam_hdr(aux.idx->bns, hdr_line);
-#endif
-
 	aux.actual_chunk_size = fixed_chunk_size > 0? fixed_chunk_size : opt->chunk_size * opt->n_threads;
-  aux.h = h;
-#ifdef USE_HTSLIB
-  aux.out = out;
-#endif
 	kt_pipeline(no_mt_io? 1 : 2, process, &aux, 3);
 	free(hdr_line);
 	free(opt);
 	bwa_idx_destroy(aux.idx);
 	kseq_destroy(aux.ks);
 	err_gzclose(fp); kclose(ko);
-#ifdef USE_HTSLIB
-  sam_close(out);
-  bam_hdr_destroy(h);
-#endif
 	if (aux.ks2) {
 		kseq_destroy(aux.ks2);
 		err_gzclose(fp2); kclose(ko2);

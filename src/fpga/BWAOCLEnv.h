@@ -7,6 +7,7 @@
 #include <boost/thread.hpp>
 #include <glog/logging.h>
 #include <string>
+#include <vector>
 #include <stdexcept>
 
 #include <CL/opencl.h>
@@ -15,6 +16,7 @@
 #include "config.h"
 #include "OpenCLEnv.h"
 #include "util.h"
+#include "allocation_wrapper.h"
 
 // NOTE: the FPGA kernel requires a different layout for the pac
 // buffer, hence the _set_pac() and _get_pac() macros are different
@@ -50,37 +52,45 @@ class BWAOCLEnv : public OpenCLEnv{
     cl_mem_ext_ptr_t ext_c, ext_d;
     ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
     ext_d.flags = XCL_MEM_DDR_BANK3; ext_d.obj = 0; ext_d.param = 0;
+#ifdef XILINX_FPGA
+    // transfer PAC reference to all the devices
+    for (int i = 0; i < device_envs_.size(); i++) {
+        cl_context context = device_envs_[i].context;
+        cl_command_queue cmd = device_envs_[i].cmd;
 
-    pac_input_a_ = clCreateBuffer( context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-                                   pac_size, &ext_c, &err);
-    pac_input_b_ = clCreateBuffer( context_, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-                                   pac_size, &ext_d, &err);
-    if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to create PAC reference OpenCL buffer!");
+        cl_mem pac_input_a_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+            pac_size, &ext_c, &err);
+        cl_mem pac_input_b_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+            pac_size, &ext_d, &err);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to create reference OpenCL buffer!");
+        }
+        cl_event event[2];
+        err  = clEnqueueWriteBuffer(cmd, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
+        err |= clEnqueueWriteBuffer(cmd, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
+        clWaitForEvents(2, event);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to write reference to DDR!");
+        }
+        clReleaseEvent(event[0]);
+        clReleaseEvent(event[1]);
+        pac_input_a_list_.push_back(pac_input_a_);
+        pac_input_b_list_.push_back(pac_input_b_);
     }
-    
-    cl_event event[2];
-    cl_command_queue command = getCmdQueue();
-    err  = clEnqueueWriteBuffer(command, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
-    err |= clEnqueueWriteBuffer(command, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
-    err |= clWaitForEvents(2, event);
-    if (err != CL_SUCCESS) {
-      throw std::runtime_error("Failed to write PAC reference to DDR!");
-    }
-    clReleaseEvent(event[0]);
-    clReleaseEvent(event[1]);
-    clFinish(command);
-
-    free(pac);
 #else
     DLOG(ERROR) << "This feature is currently only supported in Xilinx";
 #endif
+    free(pac);
   }
 
   void releasePAC() {
 #ifdef XILINX_FPGA
-    clReleaseMemObject(pac_input_a_);
-    clReleaseMemObject(pac_input_b_);
+    for (int i = 0; i < pac_input_a_list_.size(); i++) {
+      clReleaseMemObject(pac_input_a_list_[i]);
+    }
+    for (int i = 0; i < pac_input_b_list_.size(); i++) {
+      clReleaseMemObject(pac_input_b_list_[i]);
+    }
 #endif
   }
 
@@ -145,9 +155,9 @@ class BWAOCLEnv : public OpenCLEnv{
   }
 
  public:
-  cl_mem pac_input_a_;
-  cl_mem pac_input_b_;
   cl_mem bwt_[16];
+  std::vector<cl_mem> pac_input_a_list_;
+  std::vector<cl_mem> pac_input_b_list_;
 };
 
 extern BWAOCLEnv* opencl_env;

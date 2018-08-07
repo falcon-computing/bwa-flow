@@ -24,6 +24,7 @@ class MapPartitionStage :
       Stage<U, V, IN_DEPTH, OUT_DEPTH>(n_workers, is_dyn) {;}
 
   bool execute();
+  int execute_new() { return (execute() ? 0 : 2); }
 
  protected:
   virtual void compute(int wid) = 0;

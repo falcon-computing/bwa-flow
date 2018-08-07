@@ -29,6 +29,7 @@ class SinkStage :
 
   private:
     bool execute() {;}
+    int execute_new() {;}
     void worker_func(int wid);
 };
 

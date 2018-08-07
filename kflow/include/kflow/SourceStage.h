@@ -27,6 +27,7 @@ class SourceStage : public Stage<void, V, 0, OUT_DEPTH> {
  private:
   // Only need to overwrite vtable, do nothing
   bool execute() {;}
+  int execute_new() {;}
   void worker_func(int wid);
 };
 

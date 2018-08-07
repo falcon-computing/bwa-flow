@@ -1,18 +1,21 @@
 ### Compilation
+1. Use cmake to ompile. This will compile bwa, kflow and bwa-flow automatically
 ```
-> mv ./config.mk.template ./config.mk # with corresponding modifications
-```
-1. Setting up dependencies    
-
-    - Build FPGA: add `BUILD_FPGA=1` in *config.mk*
-    - Makefile will automatically read `$ALTERAOCLSDKROOT` and `$XILINX_SDX` and determine with platform to build
-    - Build MPI: add `OPENMPI_DIR` in *config.mk*
-    - Add Falcon LM license: set `FLMDIR` in *config.mk*
-
-3. Compile, this will compile bwa, kflow and bwa-flow automatically
-```
+> mkdir build && cd build
+> cmake ..
 > make all
+> make CTEST_OUTPUT_ON_FAILURE=1 test
 ```
+2. Setting up options
+
+    - Build with HTS : add `-DUSE_HTSLIB=On` after `cmake` command, by default this option is on
+    - Build with FPGA: add `-DUSE_FPGA=On` after `cmake` command, by default this option is if OpenCL Runtime library found
+    - BUILD with MPI : add `-DUSE_MPI=On` after `cmake` command, by default this option is off
+    - Build in Debug mode: add `-DCMAKE_BUILD_TYPE=Debug` after `cmake` command (default build type)
+    - Build in Release mode: add `-DCMAKE_BUILD_TYPE=Release` after `cmake` command
+    - Select deployment type: add `-DDEPLOYMENT_DST=aws` or `-DDEPLOYMENT_DST=hwc` after `cmake` command
+
+
 
 ### Execution
 
@@ -32,3 +35,8 @@
     - add `--fpga_path=<path-to-bitstream>` in the options in *bin/run.sh*
 3. MPI
     - TODO
+
+### Testing
+
+Use `test/run-test.sh` to launch unit tests and sample tests. The testing script can only prepare the bitstream and data samples.
+The reference file (.fasta) needs setting up manually, and `test/test-config.sh` should be adjusted accordingly. 
