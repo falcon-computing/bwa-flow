@@ -9,26 +9,26 @@ Pipeline::Pipeline(int num_stages, int num_threads):
   queues_(num_stages+1, NULL_QUEUE_PTR),
   num_active_threads_(0) 
 {
-  boost::shared_ptr<boost::asio::io_service> ios(new boost::asio::io_service);
-  ios_ = ios;
+  //boost::shared_ptr<boost::asio::io_service> ios(new boost::asio::io_service);
+  //ios_ = ios;
 
-  // Start io service processing loop
-  boost::shared_ptr<boost::asio::io_service::work> work(
-      new boost::asio::io_service::work(*ios));
+  //// Start io service processing loop
+  //boost::shared_ptr<boost::asio::io_service::work> work(
+  //    new boost::asio::io_service::work(*ios));
 
-  ios_work_ = work;
+  //ios_work_ = work;
 
-  for (int t = 0; t < num_threads; t++) {
-    workers_.create_thread(
-        boost::bind(&boost::asio::io_service::run, ios.get()));
-  }
-  DLOG(INFO) << "Started " << workers_.size() << " Pipeline workers.";
+  //for (int t = 0; t < num_threads; t++) {
+  //  workers_.create_thread(
+  //      boost::bind(&boost::asio::io_service::run, ios.get()));
+  //}
+  //DLOG(INFO) << "Started " << workers_.size() << " Pipeline workers.";
 }
 
 Pipeline::~Pipeline() {
-  // Allow io_service::run to exit
-  ios_work_.reset();
-  workers_.join_all();
+  //// Allow io_service::run to exit
+  //ios_work_.reset();
+  //workers_.join_all();
 }
 
 void Pipeline::branch(Pipeline& pipeline, int idx) {
@@ -103,8 +103,8 @@ void Pipeline::start() {
       pending_stages_.push_back(stage);
     }
   }
-  // Start scheduler
-  scheduler_.create_thread(boost::bind(&Pipeline::schedule, this));
+  //// Start scheduler
+  //scheduler_.create_thread(boost::bind(&Pipeline::schedule, this));
 }
 
 void Pipeline::stop() {
@@ -118,8 +118,8 @@ void Pipeline::stop() {
       stages_[i]->stop();
     }
   }
-  // Stop scheduler
-  scheduler_.interrupt_all();
+  //// Stop scheduler
+  //scheduler_.interrupt_all();
 }
 
 void Pipeline::wait() {
@@ -128,11 +128,11 @@ void Pipeline::wait() {
     stages_[num_stages_-1]->wait();
   }
   else {
-    scheduler_.join_all(); 
+    //scheduler_.join_all(); 
 
-    // Allow io_service::run to exit
-    ios_work_.reset();
-    workers_.join_all();
+    //// Allow io_service::run to exit
+    //ios_work_.reset();
+    //workers_.join_all();
   }
 }
 

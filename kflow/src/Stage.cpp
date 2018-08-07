@@ -12,7 +12,9 @@ StageBase::StageBase(int num_workers, bool is_dyn):
   num_active_threads_(0),
   num_finalized_workers_(0),
   num_finalized_upstream_stages_(0),
-  is_final_(false)
+  is_final_(false),
+  use_accx_(false),
+  accx_backend_stage_(NULL)
 {
  // if (num_workers<1) {
  //   throw paramError("Invalid parameters");
@@ -126,7 +128,14 @@ int StageBase::getMaxNumThreads() {
 }
 
 void StageBase::linkStage(StageBase* next_stage) {
+  // never link a stage to itself
+  if (this == next_stage) return;
+
   downstream_stages_.push_back(next_stage);
   next_stage->num_upstream_stages_++;
+  if (use_accx_ && accx_backend_stage_ != nullptr) {
+    accx_backend_stage_->linkStage(next_stage);
+  }
 }
+
 } // namepsace kestrelFlow

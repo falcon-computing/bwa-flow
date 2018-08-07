@@ -104,26 +104,38 @@ class OpenCLEnv
 
       // Connect to a compute devices
       cl_uint num_devices = 0;
-      int max_devices = FLAGS_max_fpga_thread;
-      if (max_devices <= 0) {
-        throw std::runtime_error("No FPGA thread configured,"
-            " do not create platform");
-      }
-
-      cl_device_id* device_ids = (cl_device_id*)malloc(
-          max_devices*sizeof(cl_device_id));
 
       err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR,
-          max_devices, device_ids, &num_devices);
-
+          0, NULL, &num_devices);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a device group: " +
             std::to_string((long long)err));
       }
+
+      cl_device_id* device_ids = (cl_device_id*)malloc(
+          num_devices*sizeof(cl_device_id));
+
+      err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR,
+          num_devices, device_ids, &num_devices);
+      if (err != CL_SUCCESS) {
+        throw std::runtime_error("Failed to create a device group: " +
+            std::to_string((long long)err));
+      }
+
+      int max_devices = FLAGS_max_fpga_thread;
+#ifdef DEPLOY_aws
+      num_devices = num_devices/2;
+#endif
+
+      if (FLAGS_max_fpga_thread < 0) {
+        max_devices = num_devices;
+      } else {
+        max_devices = std::min(FLAGS_max_fpga_thread, int(num_devices));
+      }
       DLOG(INFO) << "Found " << num_devices << " devices, "
                  << "using " << max_devices;
 
-      for (int i = 0; i < num_devices, i < max_devices; i++) {
+      for (int i = 0; i < max_devices; i++) {
         cl_int err = 0;
         int status = 0;
 
@@ -148,6 +160,8 @@ class OpenCLEnv
         device_envs_.push_back(env);
         DLOG(INFO) << "setup opencl env for one device";
       }
+
+      FLAGS_max_fpga_thread = max_devices;
 
       free(device_ids);
     }

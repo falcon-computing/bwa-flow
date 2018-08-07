@@ -9,7 +9,7 @@ test_bin=$SCRIPT_DIR/bin/bwa-test
 bwa_bin=$SCRIPT_DIR/../bin/bwa
 sambamba=$data_dir/sambamba
 
-source $SCRIPT_DIR/../config.mk
+source $SCRIPT_DIR/test-config.sh
 
 ref_genome=$REF_GENOME
 

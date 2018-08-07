@@ -143,7 +143,7 @@ DEFINE_string(fpga_path, "",
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");
 
-DEFINE_int32(max_fpga_thread, 1,
+DEFINE_int32(max_fpga_thread, -1,
     "Max number of threads for FPGA worker");
 
 DEFINE_int32(extra_thread, 1,
@@ -164,7 +164,7 @@ DEFINE_int32(stage_2_nt, boost::thread::hardware_concurrency(),
 DEFINE_int32(stage_3_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 3");
 
-DEFINE_int32(output_nt, 2,
+DEFINE_int32(output_nt, 4,
     "Total number of parallel threads to use for output stage");
 
 DEFINE_int32(output_flag, 1, 

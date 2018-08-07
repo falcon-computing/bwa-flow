@@ -85,11 +85,10 @@ endif()
 
 if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
   set(BIN_VERSION "${BIN_VERSION}-dev")
-elseif (${CMAKE_BUILD_TYPE} MATCHES "Release")
-  if (DEFINED DEPLOYMENT_DST)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DDEPLOY_${DEPLOYMENT_DST}")
-    set(BIN_VERSION "${BIN_VERSION}-${DEPLOYMENT_DST}")
-  endif()
+endif()
+if (DEFINED DEPLOYMENT_DST)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDEPLOY_${DEPLOYMENT_DST}")
+  set(BIN_VERSION "${BIN_VERSION}-${DEPLOYMENT_DST}")
 endif()
 
 message(STATUS "version: ${BIN_VERSION}")
@@ -137,11 +136,11 @@ if ( USE_MPI )
 endif()
 
 
-add_executable(bwa ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${BWA_SRC_LIST})
-add_dependencies(bwa Google FalconLM HTS)
+add_executable(bwa-flow ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp ${BWA_SRC_LIST})
+add_dependencies(bwa-flow Google FalconLM HTS)
 
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
-target_link_libraries(bwa
+target_link_libraries(bwa-flow
   bwa-c
   kflow 
   ${Boost_LIBRARIES} 
@@ -173,10 +172,10 @@ if ( USE_MPI )
 endif()
 
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-   message(STATUS "Install prefix is set to ~/.bwa-flow/bwa-flow/${BIN_VERSION}")
-   set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.bwa-flow/bwa-flow/${BIN_VERSION}")
+   message(STATUS "Install prefix is set to ~/.falcon-genome/bwa/${BIN_VERSION}")
+   set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.falcon-genome/bwa/${BIN_VERSION}")
 endif()
-install(TARGETS bwa RUNTIME DESTINATION .)
+install(TARGETS bwa-flow RUNTIME DESTINATION .)
 if ( USE_MPI )
   install(TARGETS bwa-mpi RUNTIME DESTINATION .)
 endif()
