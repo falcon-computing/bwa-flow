@@ -188,6 +188,7 @@ class OpenCLEnv
       if (device_registry_.count(tid)) {
         // already allocated a device to this thread
         DLOG(INFO) << "return allocated device for " << tid;
+        device_ref_counter_[tid]++;
         return device_registry_[tid];
       }
       else if (device_envs_.empty()) {
@@ -199,6 +200,7 @@ class OpenCLEnv
         cl_device_env ret = device_envs_.front();
         device_envs_.pop_front();
         device_registry_[tid] = ret;
+        device_ref_counter_[tid] = 0;
         DLOG(INFO) << "allocate one opencl device for " << tid;
         return ret;
       }
@@ -206,7 +208,13 @@ class OpenCLEnv
 
     void releaseDevice(cl_device_env env) {
       boost::lock_guard<OpenCLEnv> guard(*this);
-      device_envs_.push_back(env);
+      uint32_t tid = getTid();
+      device_ref_counter_[tid]--;
+      if (device_ref_counter_[tid] == 0) {
+        device_registry_.erase(tid);
+        device_ref_counter_.erase(tid);
+        device_envs_.push_back(env);
+      }
       DLOG(INFO) << "release one opencl device";
     }
 
@@ -259,6 +267,7 @@ class OpenCLEnv
 
   protected:
     std::map<uint32_t, cl_device_env> device_registry_;
+    std::map<uint32_t, int> device_ref_counter_;
     std::deque<cl_device_env> device_envs_;
 };
 

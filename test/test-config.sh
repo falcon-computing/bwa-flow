@@ -6,7 +6,7 @@ CURDIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 # basic reference file
 REF_GENOME=/local/ref/human_g1k_v37.fasta
 # bwa-flow executable
-BWA_BIN=${CURDIR}/../build/bwa
+BWA_BIN=${CURDIR}/../build/bwa-flow
 # test executable
 BWA_TEST_BIN=${CURDIR}/../build/test/test_bwa
 
