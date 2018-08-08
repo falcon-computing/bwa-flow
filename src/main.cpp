@@ -317,19 +317,6 @@ int main(int argc, char *argv[]) {
         DLOG(ERROR) << "because " << e.what();
         throw e;
       }
-
-      try {
-        //fpga_flow.start();
-        fpga_smem_flow.start();
-        fpga_smem_flow.wait();
-        //fpga_flow.wait();
-
-        delete opencl_env;
-      }
-      catch (std::runtime_error &e) {
-        LOG_IF(ERROR, VLOG_IS_ON(1)) << "Error in FPGA execution";
-        DLOG(ERROR) << "because: " << e.what();
-      }
     }
 #endif
   

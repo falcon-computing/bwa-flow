@@ -33,13 +33,14 @@ class ChainsToRegionsFPGA
 };
 
 class SeqsToChainsFPGA
-: public kestrelFlow::MapStage<
+: public kestrelFlow::MapPartitionStage<
       SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH> {
  public:
-  SeqsToChainsFPGA(int n=1) : kestrelFlow::MapStage<
+  SeqsToChainsFPGA(int n=1) : kestrelFlow::MapPartitionStage<
       SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n, false) {;}
 
-  ChainsRecord compute(SeqsRecord const & record);
+  //ChainsRecord compute(SeqsRecord const & record);
+  void compute(int wid);
 };
 
 #endif

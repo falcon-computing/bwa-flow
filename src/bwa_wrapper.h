@@ -99,7 +99,6 @@ void bams_add(bams_t *bams, bam1_t *b);
 void bams_destroy(bams_t *bams);
 
 mem_chain_v mem_chain(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
-mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
 
 int mem_chain_flt(const mem_opt_t *opt, int n_chn, mem_chain_t *a);
 
@@ -138,6 +137,8 @@ int kseq_read_new(kseq_new_t *seq_new, kseq_t *seq);
 mem_chain_v mem_seq2chain_wrapper(ktp_aux_t *aux, bseq1_t *seqs);
 
 mem_chain_v mem_chain_new(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
+
+mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
 
 void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
 
