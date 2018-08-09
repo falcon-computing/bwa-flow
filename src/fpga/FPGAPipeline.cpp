@@ -219,11 +219,33 @@ inline void packReadData(ktp_aux_t* aux,
     int &task_num, 
     SWTask* task) 
 {
+  // preprocess
+  int chain_idx = 0;
+  int seed_idx = chains->a[0].n -1;
+  kv_init(*alnregs);
+  for ( ; chain_idx < chains->n; 
+        seed_idx > 0 ? seed_idx-- : seed_idx = chains->a[++chain_idx].n-1) {
+    mem_seed_t* seed_array = &chains->a[chain_idx].seeds[seed_idx];
+    // initialize the newreg
+    mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, *alnregs);
+    memset(newreg, 0, sizeof(mem_alnreg_t));
+    newreg->score  = seed_array->len * aux->opt->a;
+    newreg->truesc = seed_array->len * aux->opt->a;
+    newreg->qb = seed_array->qbeg;
+    newreg->rb = seed_array->rbeg;
+    newreg->qe = seed_array->qbeg + seed_array->len;
+    newreg->re = seed_array->rbeg + seed_array->len; 
+    newreg->rid = chains->a[chain_idx].rid;
+    newreg->seedlen0 = seed_array->len; 
+    newreg->frac_rep = chains->a[chain_idx].frac_rep;
+    newreg->w = aux->opt->w;
+  }
+
   mem_alnreg_t** region_batch = task->region_batch;
   mem_chain_t** chain_batch = task->chain_batch;
   int chunk_size = FLAGS_chunk_size;
   mem_chainref_t* ref;
-  int seed_idx = chains->a[0].n - 1;
+  seed_idx = chains->a[0].n - 1;
   getChainRef(aux, seq, chains, ref);
 
   int counter8 = 0;
@@ -366,24 +388,24 @@ void ChainsToRegionsFPGA::compute(int wid) {
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
-  ChainsRecord prerecord;
+  // ChainsRecord prerecord;
   ChainsRecord record; 
   while (flag_more_reads) { 
     // get one Chains record
-    bool ready = this->getInput(prerecord);
+    bool ready = this->getInput(record);
     start_ts = getUs();
     while (!this->isFinal() && !ready) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(10));
-      ready = this->getInput(prerecord);
+      ready = this->getInput(record);
     }
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "Wait for input for FPGA takes " << getUs() - start_ts << " us";
     if(!ready) {
       flag_more_reads = false;
       break;
     }
-    record = preprocessBatch(prerecord);
-    //DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
-    DLOG(INFO) << "Started ChainsToRegions() on FPGA ";
+    // record = preprocessBatch(prerecord);
+    DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
+    // DLOG(INFO) << "Started ChainsToRegions() on FPGA ";
 
     uint64_t last_prepare_ts = getUs();
     uint64_t last_batch_ts = getUs();
@@ -393,7 +415,15 @@ void ChainsToRegionsFPGA::compute(int wid) {
     batch_num = record.batch_num;
     seqs = record.seqs;
     chains = record.chains;
-    alnreg = record.alnreg;
+    mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
+    if (NULL == alnreg) {
+      std::string err_string = "Memory allocation failed";
+      if (errno==12)
+        err_string += " due to out-of-memory";
+      else
+        err_string += " due to internal failure"; 
+      throw std::runtime_error(err_string);
+    }
 
     int i = 0;
     bool reach_half = false;
@@ -513,9 +543,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
     pushOutput(outputRecord);
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
-      << getUs() - last_output_ts << " us";
-    DLOG(INFO) << "Finished ChainsToRegions() on FPGA for "
-               << getUs() - last_output_ts << " us";
+                                 << getUs() - last_output_ts << " us";
 
     last_output_ts = getUs();
   }
@@ -528,86 +556,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
   }
 }
 
-ChainsRecord ChainsToRegionsFPGA::preprocessBatch(ChainsRecord const & record) {
-  ChainsRecord output = record;
-  int batch_num = record.batch_num;
-  mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
-  if (NULL == alnreg) {
-    std::string err_string = "Memory allocation failed";
-    if (errno==12)
-      err_string += " due to out-of-memory";
-    else
-      err_string += " due to internal failure"; 
-    throw std::runtime_error(err_string);
-  }
-  mem_chain_v* chains = record.chains;
-  for (int i=0; i<batch_num; i++) {
-    int chain_idx = 0;
-    int seed_idx = chains[i].a[0].n -1;
-    kv_init(alnreg[i]);
-    for ( ; chain_idx < chains[i].n; 
-         seed_idx > 0 ? seed_idx-- : seed_idx = chains[i].a[++chain_idx].n-1) {
-      mem_seed_t* seed_array = &chains[i].a[chain_idx].seeds[seed_idx];
-      // initialize the newreg
-      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, alnreg[i]);
-      memset(newreg, 0, sizeof(mem_alnreg_t));
-      newreg->score  = seed_array->len * aux->opt->a;
-      newreg->truesc = seed_array->len * aux->opt->a;
-      newreg->qb = seed_array->qbeg;
-      newreg->rb = seed_array->rbeg;
-      newreg->qe = seed_array->qbeg + seed_array->len;
-      newreg->re = seed_array->rbeg + seed_array->len; 
-      newreg->rid = chains[i].a[chain_idx].rid;
-      newreg->seedlen0 = seed_array->len; 
-      newreg->frac_rep = chains[i].a[chain_idx].frac_rep;
-      newreg->w = aux->opt->w;
-    }
-  }
-  output.alnreg = alnreg;
-  return output;
-}
-
-ChainsRecord ChainsPipeFPGA::compute(ChainsRecord const & record) {
-  uint64_t start_ts = getUs();
-  ChainsRecord output = record;
-  int batch_num = record.batch_num;
-  mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
-  if (NULL == alnreg) {
-    std::string err_string = "Memory allocation failed";
-    if (errno==12)
-      err_string += " due to out-of-memory";
-    else
-      err_string += " due to internal failure"; 
-    throw std::runtime_error(err_string);
-  }
-  mem_chain_v* chains = record.chains;
-  for (int i=0; i<batch_num; i++) {
-    int chain_idx = 0;
-    int seed_idx = chains[i].a[0].n -1;
-    kv_init(alnreg[i]);
-    for ( ; chain_idx < chains[i].n; 
-         seed_idx > 0 ? seed_idx-- : seed_idx = chains[i].a[++chain_idx].n-1) {
-      mem_seed_t* seed_array = &chains[i].a[chain_idx].seeds[seed_idx];
-      // initialize the newreg
-      mem_alnreg_t* newreg = kv_pushp(mem_alnreg_t, alnreg[i]);
-      memset(newreg, 0, sizeof(mem_alnreg_t));
-      newreg->score  = seed_array->len * aux->opt->a;
-      newreg->truesc = seed_array->len * aux->opt->a;
-      newreg->qb = seed_array->qbeg;
-      newreg->rb = seed_array->rbeg;
-      newreg->qe = seed_array->qbeg + seed_array->len;
-      newreg->re = seed_array->rbeg + seed_array->len; 
-      newreg->rid = chains[i].a[chain_idx].rid;
-      newreg->seedlen0 = seed_array->len; 
-      newreg->frac_rep = chains[i].a[chain_idx].frac_rep;
-      newreg->w = aux->opt->w;
-    }
-  }
-  output.alnreg = alnreg;
-  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsPipeFPGA() on FPGA for "
-    << getUs() - start_ts << " us";
-  return output;
-}
 
 //ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
 void SeqsToChainsFPGA::compute(int wid) {

@@ -8,16 +8,6 @@
 #include "kflow/MapStage.h"
 #include "kflow/MapPartitionStage.h"
 
-class ChainsPipeFPGA
-: public kestrelFlow::MapStage<
-      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>
-{
- public:
-  ChainsPipeFPGA(int n=1): kestrelFlow::MapStage<
-      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, 8>(n, true) {;}
-
-  ChainsRecord compute(ChainsRecord const & record) ;
-};
 
 class ChainsToRegionsFPGA
 : public kestrelFlow::MapPartitionStage<
@@ -29,7 +19,6 @@ class ChainsToRegionsFPGA
 
   void compute(int wid);
   void processOutput(SWTask* task);
-  ChainsRecord preprocessBatch(ChainsRecord const & record);
 };
 
 class SeqsToChainsFPGA
