@@ -27,9 +27,6 @@ target_link_libraries(test_bwa
   ${HTS_LIBRARIES}
   ${FPGA_LIBRARIES})
 
-install(TARGETS test_bwa RUNTIME DESTINATION ${CMAKE_BINARY_DIR}/bin)
-install(TARGETS test_bwa RUNTIME DESTINATION ${CMAKE_HOME_DIRECTORY}/test/bin)
-
 add_test(NAME    bwa-test
          COMMAND bash test-driver.sh $<TARGET_FILE:test_bwa>
          WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/test)
