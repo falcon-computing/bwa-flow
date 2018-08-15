@@ -144,10 +144,10 @@ void MegaPipe::dworker_func(int pipeline_id)
         if (sid == 0) {
           if (stage->isFinal()) {
             if (stage->getNumThreads()==0 && stage->inputQueueEmpty()) {
-              stage->finalize();
-            }
-            if (stage->inputQueueEmpty())
+              if (stage->incFinalizedThreads() == pipeline->num_threads_)
+                stage->finalize();
               pipeline_structure.pop_front();
+            }
           }
           else {
             sid++;
