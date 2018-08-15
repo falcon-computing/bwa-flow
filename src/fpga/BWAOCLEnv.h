@@ -94,8 +94,14 @@ class BWAOCLEnv : public OpenCLEnv{
   }
 
   void initBWT() {
-    uint32_t *bwt      = aux->idx->bwt->bwt;
-    size_t    bwt_size = aux->idx->bwt->bwt_size*sizeof(uint32_t);
+    uint32_t *bwt          = aux->idx->bwt->bwt;
+    size_t    bwt_size     = aux->idx->bwt->bwt_size*sizeof(uint32_t);
+    uint64_t  bwt_param[6] = {aux->idx->bwt->primary,
+                              aux->idx->bwt->L2[0],
+                              aux->idx->bwt->L2[1],
+                              aux->idx->bwt->L2[2],
+                              aux->idx->bwt->L2[3],
+                              aux->idx->bwt->L2[4]};
 
     cl_int err = 0;
     cl_mem_ext_ptr_t ext[4];
@@ -110,6 +116,7 @@ class BWAOCLEnv : public OpenCLEnv{
       cl_command_queue cmd = device_envs_[i].cmd;
 
       cl_mem *bwt_ = new cl_mem[16];
+      cl_mem *bwt_param_ = new cl_mem[16];
       for (int p = 0; p < 16; p++) {
         bwt_[p] = clCreateBuffer( context,
                                   CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
@@ -118,30 +125,45 @@ class BWAOCLEnv : public OpenCLEnv{
                                   &err );
         if (err != CL_SUCCESS)
           throw std::runtime_error("Failed to create BWT reference OpenCL buffer!");
+        bwt_param_[p] = clCreateBuffer( context,
+                                        CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+                                        6*sizeof(uint64_t),
+                                        &(ext[ (int)(p/4) ]),
+                                        &err );
+        if (err != CL_SUCCESS)
+          throw std::runtime_error("Failed to create BWT reference (param) OpenCL buffer!");
       }
 
-      cl_event bwt_events[16];
+      cl_event bwt_events[16], bwt_param_events[16];
       for (int p = 0; p < 16; p++) {
         err |= clEnqueueWriteBuffer( cmd, bwt_[p], CL_FALSE, 0, bwt_size,
                                      bwt, 0, NULL, &bwt_events[p]);
+        err |= clEnqueueWriteBuffer( cmd, bwt_param_[p], CL_FALSE, 0, 6*sizeof(uint64_t),
+                                     bwt, 0, NULL, &bwt_param_events[p]);
       }
       err |= clWaitForEvents(16, bwt_events);
+      err |= clWaitForEvents(16, bwt_param_events);
       if (err != CL_SUCCESS)
         throw std::runtime_error("Failed to write BWT reference to DDR");
 
-      for (int p = 0; p < 16; p++)
+      for (int p = 0; p < 16; p++) {
         clReleaseEvent(bwt_events[p]);
+        clReleaseEvent(bwt_param_events[p]);
+      }
 
       bwt_list_.push_back(bwt_);
+      bwt_param_list_.push_back(bwt_param_);
     }
   }
 
   void releaseBWT() {
-    for (int i = 0; i < bwt_list_.size(); i++) {
-      cl_mem *bwt = bwt_list_[i];
+    for (int i = 0; i < bwt_list_.size(); i++)
       for (int p = 0; p < 16; p++)
-        clReleaseMemObject(bwt[p]);
-    }
+        clReleaseMemObject(bwt_list_[i][p]);
+
+    for (int i = 0; i < bwt_param_list_.size(); i++)
+      for (int p = 0; p < 16; p++)
+        clReleaseMemObject(bwt_param_list_[i][p]);
   }
 
   static int64_t get_full_pac(char* &pac) { 
@@ -167,6 +189,7 @@ class BWAOCLEnv : public OpenCLEnv{
 
  public:
   std::vector<cl_mem*> bwt_list_;
+  std::vector<cl_mem*> bwt_param_list_;
   std::vector<cl_mem> pac_input_a_list_;
   std::vector<cl_mem> pac_input_b_list_;
 };

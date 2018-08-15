@@ -4,6 +4,7 @@
 #include "SMemTask.h"
 #include <vector>
 
+
 class SMemXCLAgent : public FPGAAgent {
  public:
   SMemXCLAgent(BWAOCLEnv* env, SMemTask* task);
@@ -21,9 +22,9 @@ class SMemXCLAgent : public FPGAAgent {
   cl_device_env    device_;
   BWAOCLEnv*       env_;
   
-  cl_kernel        kernel_;
-  cl_event         kernel_event_;
-  cl_event         write_events_;
+  cl_kernel        kernel_[SMEM_BANK_NUM];
+  cl_event         kernel_event_[SMEM_BANK_NUM];
+  cl_event         write_events_[SMEM_BANK_NUM];
 };
 
 #endif

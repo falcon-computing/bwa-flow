@@ -561,8 +561,8 @@ void ChainsToRegionsFPGA::compute(int wid) {
 void SeqsToChainsFPGA::compute(int wid) {
   DLOG(INFO) << "start FPGA worker #" << wid;
 
-  const int max_task_size = 320;
-  const int max_seq_len   = 150;
+  const int max_task_size = 1024*SMEM_BANK_NUM;
+  const int max_seq_len   = 256;
 
   // create SMemTasks
   std::deque<SMemTask*> task_queue;
@@ -631,25 +631,33 @@ void SeqsToChainsFPGA::compute(int wid) {
       uint64_t inner_ts = getUs();
       int task_size = std::min( max_task_size, batch_num-i1*max_task_size );
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Task " << i1 << ": " << task_size;
-      for (int i2 = 0; i2 < task_size; i2++) {
-        int i = i1*max_task_size+i2;
-        bseq1_t *seqs = &srseqs[i];
-        if ( seqs->l_seq > max_seq_len ) {
-          LOG(ERROR) << "Do not support sequences (len: " << seqs->l_seq
-                     << ") with length bigger than " << max_seq_len << " on FPGA currently";
-          throw std::runtime_error("Failed to process the oversized sequences");
+
+      const int max_bank_size = (task_size+SMEM_BANK_NUM-1)/SMEM_BANK_NUM;
+      for (int bank_id = 0; bank_id < SMEM_BANK_NUM; bank_id++) {
+        int bank_size = std::min( max_bank_size, task_size-bank_id*max_bank_size);
+        for (int i2 = 0; i2 < bank_size; i2++) {
+          int i = i1*max_task_size+bank_id*bank_size+i2;
+          bseq1_t *seqs = &srseqs[i];
+          if ( seqs->l_seq > max_seq_len ) {
+            LOG(ERROR) << "Do not support sequences (len: " << seqs->l_seq
+                       << ") with length bigger than " << max_seq_len << " on FPGA currently";
+            throw std::runtime_error("Failed to process the oversized sequences");
+          }
+          for (int j = 0; j < seqs->l_seq; ++j) // convert to 2-bit encoding if we have not done so
+            seqs->seq[j] = seqs->seq[j] < 4? seqs->seq[j] : nst_nt4_table[(int)seqs->seq[j]];
+          if (seqs->l_seq < aux->opt->min_seed_len) {
+            memset( &(task->i_seq_data[bank_id][i2*max_seq_len]), UCHAR_MAX, max_seq_len*sizeof(uint8_t) );
+            task->i_seq_len_data[bank_id][i2] = 0;
+          } else {
+            memcpy( &(task->i_seq_data[bank_id][i2*max_seq_len]), seqs->seq, seqs->l_seq*sizeof(uint8_t) );
+            memset( &(task->i_seq_data[bank_id][i2*max_seq_len+seqs->l_seq]), UCHAR_MAX, std::max(max_seq_len-(int)(seqs->l_seq), 0)*sizeof(uint8_t) );
+            task->i_seq_len_data[bank_id][i2] = (uint8_t)seqs->l_seq; 
+          }
         }
-        for (int j = 0; j < seqs->l_seq; ++j) // convert to 2-bit encoding if we have not done so
-          seqs->seq[j] = seqs->seq[j] < 4? seqs->seq[j] : nst_nt4_table[(int)seqs->seq[j]];
-        if (seqs->l_seq < aux->opt->min_seed_len) {
-          memset( &(task->i_seq_data[i2*max_seq_len]), UCHAR_MAX, max_seq_len*sizeof(char) );
-        } else {
-          memcpy( &(task->i_seq_data[i2*max_seq_len]), seqs->seq, seqs->l_seq*sizeof(char) );
-          memset( &(task->i_seq_data[i2*max_seq_len+seqs->l_seq]), UCHAR_MAX, std::max(max_seq_len-(int)(seqs->l_seq), 0)*sizeof(char) );
-        }
+        task->i_seq_num[bank_id] = bank_size;
       }
-      task->i_seq_num = task_size;
       task->i_seq_base_idx = i1*max_task_size;
+      
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Preparation takes " << getUs() - inner_ts << " us";
 
       // launch the task
@@ -666,13 +674,61 @@ void SeqsToChainsFPGA::compute(int wid) {
         task->finish();
           
         inner_ts = getUs();
-        for (int i2 = 0; i2 < task->i_seq_num; i2++) {
+        int i_bank = 0;
+        for (int bank_id = 0; bank_id < SMEM_BANK_NUM; bank_id++) {
+          for (int i2 = 0; i2 < task->i_seq_num[bank_id]; i2++) {
+            // unpack the data
+            int i = task->i_seq_base_idx+i_bank+i2;
+            smem_aux_t *smem_aux = smem_aux_init();
+            bwtintv_t *temp = smem_aux->mem.a;
+            smem_aux->mem.a = &(task->o_mem_data[bank_id][i2*task->max_intv_alloc_]);
+            smem_aux->mem.n = task->o_num_data[bank_id][i2];
+
+            // postprocess
+            mem_chain_v chn;
+            bseq1_t *seqs = &srseqs[i];
+            if (smem_aux->mem.n > task->max_intv_alloc_) {
+              smem_aux->mem.a = temp;
+              smem_aux->mem.n = 0;
+              mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+              DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
+            }
+            chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+            smem_aux->mem.a = temp;
+            smem_aux_destroy(smem_aux);
+            chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
+            mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
+
+            chains[i] = chn;
+          }
+          task->i_seq_num[bank_id] = 0;
+          i_bank += task->i_seq_num[bank_id];
+        }
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Post-processing takes " << getUs() - inner_ts << " us";
+      }
+    } // loop for batches
+
+    // finish the remaining task
+    // circulation
+    task = task_queue.front();
+    task_queue.push_back( task );
+    task_queue.pop_front();
+    task = task_queue.front();
+     
+    if ( task->i_seq_num > 0 ) {
+      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Switch to Task " << (int)( task->i_seq_base_idx/max_task_size );
+      task->finish();
+        
+      uint64_t inner_ts = getUs();
+      int i_bank = 0;
+      for (int bank_id = 0; bank_id < SMEM_BANK_NUM; bank_id++) {
+        for (int i2 = 0; i2 < task->i_seq_num[bank_id]; i2++) {
           // unpack the data
-          int i = task->i_seq_base_idx+i2;
+          int i = task->i_seq_base_idx+i_bank+i2;
           smem_aux_t *smem_aux = smem_aux_init();
           bwtintv_t *temp = smem_aux->mem.a;
-          smem_aux->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
-          smem_aux->mem.n = task->o_num_data[i2];
+          smem_aux->mem.a = &(task->o_mem_data[bank_id][i2*task->max_intv_alloc_]);
+          smem_aux->mem.n = task->o_num_data[bank_id][i2];
 
           // postprocess
           mem_chain_v chn;
@@ -690,48 +746,9 @@ void SeqsToChainsFPGA::compute(int wid) {
 
           chains[i] = chn;
         }
-        task->i_seq_num = 0;
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Post-processing takes " << getUs() - inner_ts << " us";
+        task->i_seq_num[bank_id] = 0;
+        i_bank += task->i_seq_num[bank_id];
       }
-    } // loop for batches
-
-    // finish the remaining task
-    // circulation
-    task = task_queue.front();
-    task_queue.push_back( task );
-    task_queue.pop_front();
-    task = task_queue.front();
-     
-    if ( task->i_seq_num > 0 ) {
-      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Switch to Task " << (int)( task->i_seq_base_idx/max_task_size );
-      task->finish();
-        
-      uint64_t inner_ts = getUs();
-      for (int i2 = 0; i2 < task->i_seq_num; i2++) {
-        // unpack the data
-        int i = task->i_seq_base_idx+i2;
-        smem_aux_t *smem_aux = smem_aux_init();
-        bwtintv_t *temp = smem_aux->mem.a;
-        smem_aux->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
-        smem_aux->mem.n = task->o_num_data[i2];
-
-        // postprocess
-        mem_chain_v chn;
-        bseq1_t *seqs = &srseqs[i];
-        if (smem_aux->mem.n > task->max_intv_alloc_) {
-          smem_aux->mem.a = temp;
-          mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
-          DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
-        }
-        chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
-        smem_aux->mem.a = temp;
-        smem_aux_destroy(smem_aux);
-        chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
-        mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
-
-        chains[i] = chn;
-      }
-      task->i_seq_num = 0;
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Post-processing takes " << getUs() - inner_ts << " us";
     }
 
