@@ -75,6 +75,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
+  DLOG(INFO) << ss.str();
 
 #ifdef USELICENSE
   namespace fc   = falconlic;
@@ -290,16 +291,9 @@ int main(int argc, char *argv[]) {
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
+      compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 1);
+      // compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
     }
-
-    //if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-    //  fpga_flow.addStage(0, &chainpipe_fpga_stage);
-    //  fpga_flow.addStage(1, &chain2reg_fpga_stage);
-  
-    //  // bind the input/output queue of stage_2 in compute_flow
-    //  fpga_flow.branch(compute_flow, 3);
-    //}
 #endif
     
     t_real = realtime();

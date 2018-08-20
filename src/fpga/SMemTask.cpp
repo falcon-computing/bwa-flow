@@ -29,7 +29,7 @@ SMemTask::SMemTask(BWAOCLEnv* env) {
   i_seq_base_idx = -1;
 
   for (int i=0; i<SMEM_BANK_NUM; i++) {
-    i_seq_num[0] = 0;
+    i_seq_num[i] = 0;
 
     i_seq_data[i] = (uint8_t *)smem_malloc(max_i_seq_len_*max_i_seq_num_, sizeof(uint8_t));
     i_seq_size[i] = max_i_seq_len_*max_i_seq_num_ * sizeof(uint8_t);
@@ -41,15 +41,23 @@ SMemTask::SMemTask(BWAOCLEnv* env) {
     o_num_data[i] = (int *)smem_malloc(max_i_seq_num_, sizeof(int));
     o_num_size[i] = max_i_seq_num_ * sizeof(int);
   }
+  total_i_seq_num = 0;
   
 #ifdef INTEL_FPGA
   agent_ = new SMemIntelAgent(env, this);
 #elif XILINX_FPGA
   agent_ = new SMemXCLAgent(env, this);
 #endif
+
+  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Creating Buffer";
+  ((SMemXCLAgent*)agent_)->createBuffer(this);
+
 }
 
 SMemTask::~SMemTask() {
+
+  ((SMemXCLAgent *)agent_)->releaseBuffer(this);
+
   for (int i=0; i<SMEM_BANK_NUM; i++) {
     free(i_seq_data[i]);
     free(i_seq_len_data[i]);
@@ -61,10 +69,10 @@ SMemTask::~SMemTask() {
 }
 
 void SMemTask::start(SMemTask* prev_task) {
-  ((SMemXCLAgent*)agent_)->createBuffer(this);
 
   uint64_t start_ts = getUs();
   for (int i=0; i<SMEM_BANK_NUM; i++) {
+    //DLOG_IF(INFO, VLOG_IS_ON(3)) << "Try to write bank " << i;
     agent_->writeInput(i_seq_buf[i], i_seq_data[i], i_seq_size[i], i);
     agent_->writeInput(i_seq_len_buf[i], i_seq_len_data[i], i_seq_len_size[i], i);
   }
@@ -72,7 +80,8 @@ void SMemTask::start(SMemTask* prev_task) {
                                << getUs() - start_ts << " us";
   
   start_ts = getUs();
-  if (prev_task->i_seq_num == 0)
+  
+  if (prev_task->total_i_seq_num == 0)
     agent_->start(this, NULL);
   else
     agent_->start(this, prev_task->agent_);
@@ -91,6 +100,4 @@ void SMemTask::finish() {
 
   // release events
   agent_->finish();
-
-  ((SMemXCLAgent *)agent_)->releaseBuffer(this);
 }

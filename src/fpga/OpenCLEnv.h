@@ -147,7 +147,8 @@ class OpenCLEnv
         DLOG(INFO) << "creating context for device #" << i;
         OCL_CHECK(err, "failed to create context");
 
-        env.cmd = clCreateCommandQueue(env.context, env.device_id, 0, &err);
+        //env.cmd = clCreateCommandQueue(env.context, env.device_id, 0, &err);
+        env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
         OCL_CHECK(err, "failed to create cmd_queue");
 
         env.program = clCreateProgramWithBinary(env.context, 1, &env.device_id, &n_t,

@@ -276,7 +276,7 @@ SeqsRecord SeqsToSams::compute(SeqsRecord const & input) {
 
 ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
 
-  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SeqsToChains() for one input";
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SeqsToChains() on CPU for one input";
 
   uint64_t start_ts = getUs();
   uint64_t ref_time = 0;
@@ -297,7 +297,7 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   ret.seqs         = seqs;
   ret.chains       = chains;
  
-  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SeqsToChains() in " 
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SeqsToChains() on CPU in " 
     << getUs() - start_ts << " us";
 
   return ret;

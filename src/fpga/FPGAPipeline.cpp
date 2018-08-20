@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <errno.h>
 #include <vector>
+#include <iostream>
+#include <fstream>
 
 #include "bwa_wrapper.h"
 #include "config.h"
@@ -633,10 +635,11 @@ void SeqsToChainsFPGA::compute(int wid) {
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Task " << i1 << ": " << task_size;
 
       const int max_bank_size = (task_size+SMEM_BANK_NUM-1)/SMEM_BANK_NUM;
+      task->total_i_seq_num = 0;
       for (int bank_id = 0; bank_id < SMEM_BANK_NUM; bank_id++) {
         int bank_size = std::min( max_bank_size, task_size-bank_id*max_bank_size);
         for (int i2 = 0; i2 < bank_size; i2++) {
-          int i = i1*max_task_size+bank_id*bank_size+i2;
+          int i = i1*max_task_size+bank_id*max_bank_size+i2;
           bseq1_t *seqs = &srseqs[i];
           if ( seqs->l_seq > max_seq_len ) {
             LOG(ERROR) << "Do not support sequences (len: " << seqs->l_seq
@@ -650,11 +653,11 @@ void SeqsToChainsFPGA::compute(int wid) {
             task->i_seq_len_data[bank_id][i2] = 0;
           } else {
             memcpy( &(task->i_seq_data[bank_id][i2*max_seq_len]), seqs->seq, seqs->l_seq*sizeof(uint8_t) );
-            memset( &(task->i_seq_data[bank_id][i2*max_seq_len+seqs->l_seq]), UCHAR_MAX, std::max(max_seq_len-(int)(seqs->l_seq), 0)*sizeof(uint8_t) );
             task->i_seq_len_data[bank_id][i2] = (uint8_t)seqs->l_seq; 
           }
         }
         task->i_seq_num[bank_id] = bank_size;
+        task->total_i_seq_num += task->i_seq_num[bank_id];
       }
       task->i_seq_base_idx = i1*max_task_size;
       
@@ -669,7 +672,7 @@ void SeqsToChainsFPGA::compute(int wid) {
       task = task_queue.front();
        
       // finish the previous task
-      if ( task->i_seq_num > 0 ) {
+      if ( task->total_i_seq_num > 0 ) {
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Switch from Task " << i1 << " to Task " << i1-1;
         task->finish();
           
@@ -701,9 +704,10 @@ void SeqsToChainsFPGA::compute(int wid) {
 
             chains[i] = chn;
           }
-          task->i_seq_num[bank_id] = 0;
           i_bank += task->i_seq_num[bank_id];
+          task->i_seq_num[bank_id] = 0;
         }
+        task->total_i_seq_num = 0;
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Post-processing takes " << getUs() - inner_ts << " us";
       }
     } // loop for batches
@@ -715,7 +719,7 @@ void SeqsToChainsFPGA::compute(int wid) {
     task_queue.pop_front();
     task = task_queue.front();
      
-    if ( task->i_seq_num > 0 ) {
+    if ( task->total_i_seq_num > 0 ) {
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Switch to Task " << (int)( task->i_seq_base_idx/max_task_size );
       task->finish();
         
@@ -746,9 +750,10 @@ void SeqsToChainsFPGA::compute(int wid) {
 
           chains[i] = chn;
         }
-        task->i_seq_num[bank_id] = 0;
         i_bank += task->i_seq_num[bank_id];
+        task->i_seq_num[bank_id] = 0;
       }
+      task->total_i_seq_num = 0;
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Post-processing takes " << getUs() - inner_ts << " us";
     }
 

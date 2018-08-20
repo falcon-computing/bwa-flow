@@ -34,6 +34,7 @@ class SMemTask : public Task {
 
   int        i_seq_base_idx;
   int        i_seq_num[SMEM_BANK_NUM];
+  int        total_i_seq_num;
 
   size_t     max_i_seq_num_ = 1024;
   size_t     max_i_seq_len_ = 256;

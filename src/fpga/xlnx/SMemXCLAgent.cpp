@@ -15,7 +15,6 @@ SMemXCLAgent::SMemXCLAgent(BWAOCLEnv* env, SMemTask* task) {
   cl_context context = device_.context;
   cl_program program = device_.program;
 
-  //kernel_ = clCreateKernel(program, "mem_collect_intv_fpga", &err);
   for (int bank_id=0; bank_id<SMEM_BANK_NUM; bank_id++)
     kernel_[bank_id] = clCreateKernel(program, std::string("mem_collect_intv_core"+std::to_string(bank_id)).c_str(), &err);
   if (err != CL_SUCCESS) {
@@ -30,20 +29,22 @@ SMemXCLAgent::~SMemXCLAgent() {
 }
 
 void SMemXCLAgent::createBuffer(SMemTask *task) {
+  static const unsigned bankID[4] = {XCL_MEM_DDR_BANK0, XCL_MEM_DDR_BANK1, XCL_MEM_DDR_BANK2, XCL_MEM_DDR_BANK3};
   cl_context context = device_.context;
   for (int i=0; i<SMEM_BANK_NUM; i++) {
+    cl_mem_ext_ptr_t ext;
+    ext.flags = bankID[i];
+    ext.obj = 0; ext.param=0;
     task->i_seq_buf[i] = clCreateBuffer( context, 
-                                         CL_MEM_READ_ONLY, 
+                                         CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX, 
                                          task->i_seq_size[i],/*sizeof(uint8_t)*task->max_i_seq_len_*task->max_i_seq_num_, */
-                                         NULL, 
+                                         &ext, 
                                          NULL );
     task->i_seq_len_buf[i] = clCreateBuffer( context, 
-                                             CL_MEM_READ_ONLY, 
+                                             CL_MEM_READ_ONLY|CL_MEM_EXT_PTR_XILINX, 
                                              task->i_seq_len_size[i],/*sizeof(uint8_t)*task->max_i_seq_num_, */
-                                             NULL, 
+                                             &ext, 
                                              NULL );
-    cl_mem_ext_ptr_t ext;
-    ext.flags = XCL_MEM_DDR_BANK0; ext.obj = 0; ext.param=0;
     task->o_mem_buf[i] = clCreateBuffer( context,
                                          CL_MEM_WRITE_ONLY|CL_MEM_EXT_PTR_XILINX, 
                                          task->o_mem_size[i],/*sizeof(bwtintv_t)*task->max_intv_alloc_*task->max_i_seq_num_,*/
@@ -60,10 +61,16 @@ void SMemXCLAgent::createBuffer(SMemTask *task) {
 void SMemXCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
   if (size > 0) {
     cl_command_queue cmd = device_.cmd;
-    cl_int err = clEnqueueWriteBuffer( cmd, buf, CL_FALSE, 0,
+    // non-blocking writing input
+    //cl_int err = clEnqueueWriteBuffer( cmd, buf, CL_FALSE, 0,
+    //                                   size, host_ptr, 
+    //                                   0, NULL, &write_events_[bank] );
+
+    // blocking writing input
+    cl_int err = clEnqueueWriteBuffer( cmd, buf, CL_TRUE, 0,
                                        size, host_ptr, 
-                                       0, NULL, &write_events_[bank] );
-    
+                                       0, NULL, NULL );
+
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error writing buffer of size " << size
                   << " err: " << err;
@@ -126,14 +133,22 @@ void SMemXCLAgent::start(Task* task, FPGAAgent* agent) {
     // enqueue kernel
     cl_command_queue cmd = device_.cmd;
     if (prev_agent) {
-      cl_event wait_list[2];
-      wait_list[0] = prev_agent->kernel_event_[i];
-      wait_list[1] = write_events_[i];
-      err = clEnqueueTask(cmd, kernel_[i], 2, wait_list, &kernel_event_[i]);
+      // non-blocking writing input
+      //cl_event wait_list[2];
+      //wait_list[0] = prev_agent->kernel_event_[i];
+      //wait_list[1] = write_events_[i];
+      //err = clEnqueueTask(cmd, kernel_[i], 2, wait_list, &kernel_event_[i]);
+      
+      // blocking writing input
+      err = clEnqueueTask(cmd, kernel_[i], 1, &(prev_agent->kernel_event_[i]), &kernel_event_[i]);
       
     }
     else {
-      err = clEnqueueTask(cmd, kernel_[i], 1, &write_events_[i], &kernel_event_[i]);
+      // non-blocking writing input
+      //err = clEnqueueTask(cmd, kernel_[i], 1, &write_events_[i], &kernel_event_[i]);
+
+      // blocking writing input
+      err = clEnqueueTask(cmd, kernel_[i], 0, NULL, &kernel_event_[i]);
     }
     if (err) {
       LOG(ERROR) << "failed to execute kernels: " << err;
