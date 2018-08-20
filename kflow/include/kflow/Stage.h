@@ -30,6 +30,7 @@ class StageBase {
   float accx_priority_ = 1.0;
 
   int getMaxNumThreads();
+  int incFinalizedThreads();
 
   virtual void start();
   virtual void stop();
@@ -105,7 +106,8 @@ class StageBase {
   mutable boost::atomic<int>  num_finalized_upstream_stages_;
   mutable boost::atomic<bool> is_final_;
   boost::thread_group         worker_threads_;
-
+  
+  boost::mutex mtx_;
 };
 
 template <

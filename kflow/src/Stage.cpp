@@ -93,8 +93,7 @@ void StageBase::finalize() {
   }
   else {
     // otherwise this will be called by compute()
-    num_finalized_workers_.fetch_add(1);
-    if (num_finalized_workers_.load() == num_workers_) {
+    if (incFinalizedThreads() == num_workers_) {
       for (int i = 0; i < downstream_stages_.size(); i++) {
         downstream_stages_[i]->final();
       }
@@ -121,6 +120,13 @@ int StageBase::getNumThreads() {
   else {
     return num_workers_;
   }
+}
+
+int StageBase::incFinalizedThreads() {
+  boost::lock_guard<boost::mutex> guard(mtx_);
+  num_finalized_workers_.fetch_add(1); 
+  int val = num_finalized_workers_.load();
+  return val;
 }
 
 int StageBase::getMaxNumThreads() {
