@@ -20,7 +20,7 @@ class SinkStage :
 {
   public:
     // force one worker for IO stages
-    SinkStage(int n_workers, bool is_dyn);
+    SinkStage(int n_workers = 1, bool is_dyn = false);
 
   protected:
     virtual void compute(int wid) = 0;
@@ -34,7 +34,7 @@ class SinkStage :
 };
 
 template <typename U, int IN_DEPTH>
-SinkStage<U, IN_DEPTH>::SinkStage(int n_workers=1, bool is_dyn=false): 
+SinkStage<U, IN_DEPTH>::SinkStage(int n_workers, bool is_dyn): 
   Stage<U, void, IN_DEPTH, 0>(n_workers, is_dyn) 
 {}
 
