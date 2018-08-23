@@ -49,7 +49,7 @@ BWAOCLEnv* opencl_env;
 
 // use flexlm
 #ifdef USELICENSE
-#include "falcon-lic/license.h"
+#include "falcon-lic/genome.h"
 #endif
 
 // global parameters
@@ -76,25 +76,12 @@ int main(int argc, char *argv[]) {
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
 
-#ifdef USELICENSE
-  namespace fc   = falconlic;
-#ifdef DEPLOY_aws
-  fc::enable_aws();
-#endif
-#ifdef DEPLOY_hwc
-  fc::enable_hwc();
-#endif
-  fc::enable_flexlm();
-
-  namespace fclm = falconlic::flexlm;
-  fclm::add_feature(fclm::FALCON_DNA);
-  int licret = fc::license_verify();
-  if (licret != fc::SUCCESS) {
+  int licret = 0;
+  if (0 != (licret = license_verify())) {
     LOG(ERROR) << "Cannot authorize software usage: " << licret;
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return -1;
   }
-#endif
 
   // Preprocessing
   extern char *bwa_pg;
