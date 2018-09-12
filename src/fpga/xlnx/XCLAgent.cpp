@@ -49,7 +49,8 @@ XCLAgent::~XCLAgent() {
 }
 
 void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
-  cl_command_queue cmd = pe_.accx->cmd;
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
   if (size > 0) {
     cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 0, NULL, &write_events_[bank]);
     //cl_int err = clEnqueueMigrateMemObjects(cmd, 1, &buf, 0, 0, NULL, &write_events_[bank]);
@@ -63,7 +64,8 @@ void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
 }
 
 void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
-  cl_command_queue cmd = pe_.accx->cmd;
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
   if (size > 0) {
     cl_event read;
     cl_int err = clEnqueueReadBuffer(cmd, buf, CL_TRUE, 0, size, host_ptr, 1, &kernel_event_, &read);
@@ -83,7 +85,8 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
 void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 
   SWTask *task = (SWTask *)i_task;
-  cl_command_queue cmd = pe_.accx->cmd;
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
 
   XCLAgent* prev_agent = NULL;
   if (agent) {
@@ -148,7 +151,8 @@ void XCLAgent::finish() {
 }
 
 void XCLAgent::fence() {
-  cl_command_queue cmd = pe_.accx->cmd;
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
   clFlush(cmd);
   clFinish(cmd);
 }

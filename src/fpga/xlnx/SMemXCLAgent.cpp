@@ -68,7 +68,8 @@ void SMemXCLAgent::createBuffer(SMemTask *task) {
 
 void SMemXCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
   if (size > 0) {
-    cl_command_queue cmd = pe_.accx->cmd;
+    //cl_command_queue cmd = pe_.accx->cmd;
+    cl_command_queue cmd = pe_.cmd;
     // non-blocking writing input
     cl_int err = clEnqueueWriteBuffer( cmd, buf, CL_FALSE, 0,
                                        size, host_ptr, 
@@ -101,7 +102,8 @@ void SMemXCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
     else if ( status == CL_COMPLETE  )  DLOG(INFO) << "Complete.";
     else                                DLOG(INFO) << "Unknown status";
 #endif
-    cl_command_queue cmd = pe_.accx->cmd;
+    //cl_command_queue cmd = pe_.accx->cmd;
+    cl_command_queue cmd = pe_.cmd;
     cl_int err = clEnqueueReadBuffer( cmd, buf, CL_TRUE, 0,
                                       size, host_ptr,
                                       1, &kernel_event_, NULL );
@@ -143,7 +145,8 @@ void SMemXCLAgent::start(Task* task, FPGAAgent* agent) {
   }
 
   // enqueue kernel
-  cl_command_queue cmd = pe_.accx->cmd;
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
   if (prev_agent) {
     //DLOG(INFO) << "with prev";
     // non-blocking writing input
