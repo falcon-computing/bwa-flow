@@ -30,29 +30,29 @@
     OCL_CHECK(err, msg); \
   }
 
-struct cl_device_env {
-  int              env_id;
-  cl_context       context;
+struct cl_accx {
+  int              accx_id;
+  int              accx_group_id;
   cl_device_id     device_id;
+  cl_context       context;
   cl_command_queue cmd;
   cl_program       program;
-  cl_device_env(): env_id(-1), context(NULL), device_id(NULL), cmd(NULL), program(NULL) {;}
+  cl_accx(): accx_id(-1), accx_group_id(-1), context(NULL), device_id(NULL), cmd(NULL), program(NULL) {;}
 };
 
-const cl_device_env NULL_DEVICE_ENV;
+const cl_accx NULL_DEVICE_ENV;
 
 class OpenCLEnv 
 : public boost::basic_lockable_adapter<boost::mutex> 
 {
   public:
-    OpenCLEnv(const char* bin_path, 
-              const char* kernel_name): device_envs_()
+    OpenCLEnv(std::vector<int> &group_sizes, std::vector<const char*> &bin_paths): device_envs_()
     {
       boost::lock_guard<OpenCLEnv> guard(*this);
       // start platform setting up
       cl_int err;
 
-      cl_platform_id* platform_id = new cl_platform_id[2];
+      cl_platform_id platform_id[2];
 
       char cl_platform_vendor[1001];
       char cl_platform_name[1001];
@@ -92,40 +92,20 @@ class OpenCLEnv
         }
       }
 
-      // Load binary from disk
-      unsigned char *kernelbinary;
-
-      int n_i = load_file(bin_path, (char **) &kernelbinary);
-      if (n_i < 0) {
-        throw std::runtime_error(
-            "failed to load kernel from xclbin");
-      }
-      size_t n_t = n_i;
-
-      // Connect to a compute devices
-      cl_uint num_devices = 0;
-
-      err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR,
-          0, NULL, &num_devices);
-      if (err != CL_SUCCESS) {
-        throw std::runtime_error("Failed to create a device group: " +
-            std::to_string((long long)err));
-      }
+      // Split devices into groups 
+      cl_uint num_devices = getMaxNumDevices();
 
       cl_device_id* device_ids = (cl_device_id*)malloc(
           num_devices*sizeof(cl_device_id));
 
       err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR,
-          num_devices, device_ids, &num_devices);
+          num_devices, device_ids, NULL);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create a device group: " +
             std::to_string((long long)err));
       }
 
       int max_devices = FLAGS_max_fpga_thread;
-#ifdef DEPLOY_aws
-      num_devices = num_devices/2;
-#endif
 
       if (FLAGS_max_fpga_thread < 0) {
         max_devices = num_devices;
@@ -135,35 +115,73 @@ class OpenCLEnv
       DLOG(INFO) << "Found " << num_devices << " devices, "
                  << "using " << max_devices;
 
-      for (int i = 0; i < max_devices; i++) {
-        cl_int err = 0;
-        int status = 0;
+      int num_groups = std::min(group_sizes.size(), bin_paths.size());
+      //int total_num = 0;
+      //for (int i = 0; i < num_groups; i++) {
+      //  if (total_num < 0 || group_sizes[i] < 0)
+      //    total_num = -1;
+      //  else
+      //    total_num += group_sizes[i];
+      //}
+      //if (total_num < 0 || total_num > max_devices) {
+      //  for (int i = 0; i < num_groups; i++) {
+      //     group_sizes[i] = max_devices/num_groups;
+      //     if (i < max_devices%num_groups) group_sizes[i] += 1;
+      //  }
+      //}
 
-        cl_device_env env;
+      int total_id = 0;
+      for (int gid = 0; gid < num_groups; gid++) {
+        if (group_sizes[gid] <= 0) continue;
 
-        env.env_id = i;
-        env.device_id = device_ids[i];
-        env.context = clCreateContext(0, 1, &device_ids[i], NULL, NULL, &err);
-        DLOG(INFO) << "creating context for device #" << i;
-        OCL_CHECK(err, "failed to create context");
+        // Load binary from disk
+        unsigned char *kernelbinary;
 
-        //env.cmd = clCreateCommandQueue(env.context, env.device_id, 0, &err);
-        env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-        OCL_CHECK(err, "failed to create cmd_queue");
+        int n_i = load_file(bin_paths[gid], (char **) &kernelbinary);
+        if (n_i < 0) {
+          throw std::runtime_error("failed to load kernel from xclbin - " + std::string(bin_paths[gid]));
+        }
+        size_t n_t = n_i;
 
-        env.program = clCreateProgramWithBinary(env.context, 1, &env.device_id, &n_t,
-            (const unsigned char **) &kernelbinary, &status, &err);
-        OCL_CHECK(err, "failed to create program from binary");
+        for (int i = 0; i < group_sizes[gid]; i++) {
+          cl_int err = 0;
+          cl_int status = 0;
 
-        OCL_CHECKRUN(clBuildProgram(env.program, 0, NULL, NULL, NULL, NULL), 
-            "failed to build program executable");
+          cl_accx env;
 
-        device_envs_.push_back(env);
-        DLOG(INFO) << "setup opencl env for one device";
+          env.accx_id = total_id;
+          env.accx_group_id = gid;
+          env.device_id = device_ids[total_id];
+          DLOG(INFO) << "creating context for device #" << total_id;
+
+          env.context = clCreateContext(NULL, 1, &env.device_id, NULL, NULL, &err);
+          OCL_CHECK(err, "failed to create context");
+
+          //if (gid == 0)
+          //  env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_PROFILING_ENABLE, &err);
+          //else
+          env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_PROFILING_ENABLE|CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+          OCL_CHECK(err, "failed to create cmd_queue");
+
+          env.program = clCreateProgramWithBinary(env.context, 1, &env.device_id, &n_t,
+              (const unsigned char **) &kernelbinary, &status, &err);
+          if (err == CL_INVALID_CONTEXT) DLOG(ERROR) << "ctx";
+          if (err == CL_INVALID_VALUE) DLOG(ERROR) << "val";
+          if (err == CL_INVALID_DEVICE) DLOG(ERROR) << "dvc";
+          if (err == CL_INVALID_BINARY) DLOG(ERROR) << "bin";
+          if (err == CL_OUT_OF_HOST_MEMORY) DLOG(ERROR) << "mem";
+          OCL_CHECK(err, "failed to create program from binary");
+
+          OCL_CHECKRUN(clBuildProgram(env.program, 0, NULL, NULL, NULL, NULL), 
+              "failed to build program executable");
+
+          device_envs_.push_back(env);
+          DLOG(INFO) << "setup opencl env for one device";
+          total_id++;
+        }
       }
 
       FLAGS_max_fpga_thread = max_devices;
-
       free(device_ids);
     }
 
@@ -172,7 +190,7 @@ class OpenCLEnv
       // need to pay attention to the class destroy
       // order
       while (!device_envs_.empty()) {
-        cl_device_env env = device_envs_.front();
+        cl_accx env = device_envs_.front();
 
         clReleaseCommandQueue(env.cmd);
         clReleaseContext(env.context);
@@ -182,8 +200,68 @@ class OpenCLEnv
       }
     }
 
+    int getMaxNumDevices() {
+      cl_int err;
+
+      cl_platform_id platform_id[2];
+
+      char cl_platform_vendor[1001];
+      char cl_platform_name[1001];
+
+      cl_uint num_platforms = 0;
+
+      // Connect to first platform
+      OCL_CHECKRUN(clGetPlatformIDs(2, platform_id, &num_platforms),
+          "Failed to find an OpenCL platform!");
+
+      DLOG(INFO) << "Found " << num_platforms << " opencl platforms";
+
+      int platform_idx;
+      for (int i = 0; i < num_platforms; i++) {
+        char cl_platform_name[1001];
+
+        err = clGetPlatformInfo(
+            platform_id[i], 
+            CL_PLATFORM_NAME, 
+            1000, 
+            (void *)cl_platform_name,NULL);
+
+        DLOG(INFO) << "Found platform " << cl_platform_name;
+
+        if (err != CL_SUCCESS) {
+          throw std::runtime_error(
+              "clGetPlatformInfo(CL_PLATFORM_NAME) failed!");
+        }
+
+        if (strstr(cl_platform_name, "Xilinx") != NULL || 
+            strstr(cl_platform_name, "Intel") != NULL ||
+            strstr(cl_platform_name, "Altera") != NULL) {
+          // found platform
+          platform_idx = i;
+          DLOG(INFO) << "Selecting platform " << cl_platform_name;
+          break;
+        }
+      }
+
+      cl_uint num_devices = 0;
+
+      err = clGetDeviceIDs(platform_id[platform_idx], CL_DEVICE_TYPE_ACCELERATOR,
+          0, NULL, &num_devices);
+      if (err != CL_SUCCESS) {
+        throw std::runtime_error("Failed to request the devices number: " +
+            std::to_string((long long)err));
+      }
+
+#ifdef DEPLOY_aws
+      //num_devices = num_devices/2;
+#endif
+
+      return num_devices;
+    }
+
+/*
     // exclusive access to a device's context and queue
-    cl_device_env getDevice() {
+    cl_accx getDevice() {
       boost::lock_guard<OpenCLEnv> guard(*this);
       uint32_t tid = getTid();
       if (device_registry_.count(tid)) {
@@ -198,7 +276,7 @@ class OpenCLEnv
       }
       else {
         // return next device and accumulate the index
-        cl_device_env ret = device_envs_.front();
+        cl_accx ret = device_envs_.front();
         device_envs_.pop_front();
         device_registry_[tid] = ret;
         device_ref_counter_[tid] = 0;
@@ -207,7 +285,7 @@ class OpenCLEnv
       }
     }
 
-    void releaseDevice(cl_device_env env) {
+    void releaseDevice(cl_accx env) {
       boost::lock_guard<OpenCLEnv> guard(*this);
       uint32_t tid = getTid();
       device_ref_counter_[tid]--;
@@ -218,6 +296,7 @@ class OpenCLEnv
       }
       DLOG(INFO) << "release one opencl device";
     }
+*/
 
   private:
     int load_file(
@@ -244,6 +323,7 @@ class OpenCLEnv
       return size;
     }
 
+/*
     // get current thread id
     // using the same code from googlelog/src/utilities.cc
     // without OS checking
@@ -265,11 +345,12 @@ class OpenCLEnv
       // If gettid() could not be used, we use one of the following.
       return (uint32_t)getpid();
     }
+*/
 
   protected:
-    std::map<uint32_t, cl_device_env> device_registry_;
+    std::map<uint32_t, cl_accx> device_registry_;
     std::map<uint32_t, int> device_ref_counter_;
-    std::deque<cl_device_env> device_envs_;
+    std::deque<cl_accx> device_envs_;
 };
 
 #endif

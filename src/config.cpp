@@ -137,8 +137,11 @@ DEFINE_bool(use_fpga, false,
 DEFINE_bool(sort, true,
     "Enable in-memory sorting of output bam file");
 
-DEFINE_string(fpga_path, "",
+DEFINE_string(sw_fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
+
+DEFINE_string(smem_fpga_path, "",
+    "File path of the SMem FPGA bitstream");
 
 DEFINE_int32(chunk_size, 2000,
     "Size of each batch send to the FPGA accelerator");

@@ -18,7 +18,7 @@ class ChainsToRegionsFPGA
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n, false) {;}
 
   void compute(int wid);
-  void processOutput(SWTask* task);
+  void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &read_ts, uint64_t &post_ts);
 };
 
 class SeqsToChainsFPGA

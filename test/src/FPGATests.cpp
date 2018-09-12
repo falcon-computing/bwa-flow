@@ -53,7 +53,7 @@ TEST_F(FPGATests, FPGATest) {
   //int test_num = batch_num;
 
   try {
-    opencl_env = new BWAOCLEnv(bit_path_.c_str(), "sw_top");
+    opencl_env = new BWAOCLEnv();
 
     SeqsRecord input;
     input.start_idx = 0;

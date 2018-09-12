@@ -205,17 +205,23 @@ int main(int argc, char *argv[]) {
   // Set up OpenCL environment
 #ifdef BUILD_FPGA
   if (FLAGS_offload && FLAGS_use_fpga) {
-    boost::filesystem::wpath file_path(FLAGS_fpga_path);
-    if (!boost::filesystem::exists(file_path)) {
-      DLOG(ERROR) << "Cannot find FPGA bitstream at " 
-                  << FLAGS_fpga_path;
+    boost::filesystem::wpath sw_file_path(FLAGS_sw_fpga_path);
+    boost::filesystem::wpath smem_file_path(FLAGS_smem_fpga_path);
+    
+    if (!boost::filesystem::exists(sw_file_path)   && 
+        !boost::filesystem::exists(smem_file_path)    ) {
+      DLOG(ERROR) << "Cannot find SW FPGA bitstream at " << FLAGS_sw_fpga_path;
+      DLOG(ERROR) << "Cannot find SMem FPGA bitstream at " << FLAGS_smem_fpga_path;
       DLOG(WARNING) << "Continue without using FPGA";
       FLAGS_use_fpga = false;
     }
+    if (!boost::filesystem::exists(sw_file_path)) FLAGS_sw_fpga_path = "";
+    if (!boost::filesystem::exists(smem_file_path)) FLAGS_smem_fpga_path = "";
     try {
-      opencl_env = new BWAOCLEnv( FLAGS_fpga_path.c_str(), "sw_top");
-      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from " 
-                                   << FLAGS_fpga_path;
+      opencl_env = new BWAOCLEnv();
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "Configured FPGA bitstream from - ";
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "  sw:   " << FLAGS_sw_fpga_path; 
+      DLOG_IF(INFO, VLOG_IS_ON(1)) << "  smem: " << FLAGS_smem_fpga_path; 
     }
     catch (std::runtime_error &e) {
       DLOG(ERROR) << "Cannot initialize BWA OpenCL environment";
@@ -248,11 +254,17 @@ int main(int argc, char *argv[]) {
   int num_compute_stages = 8;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
-  if (FLAGS_use_fpga) num_threads -= FLAGS_max_fpga_thread;
+#ifdef BUILD_FPGA
+  int smem_fpga_thread = (opencl_env)?opencl_env->smem_fpga_thread_:0;
+  int sw_fpga_thread = (opencl_env)?opencl_env->sw_fpga_thread_:0;
+  if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
+#endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
-  DLOG(INFO) << "Using " << num_threads << " threads in total";
-  DLOG(INFO) << "Using " << FLAGS_max_fpga_thread << " for fpga";
+  DLOG(INFO) << "Using " << num_threads << " threads for cpu";
+#ifdef BUILD_FPGA
+  DLOG(INFO) << "Using " << smem_fpga_thread + sw_fpga_thread << " for fpga";
+#endif
 
   // Stages for bwa file in/out
   KseqsRead       kread_stage;
@@ -267,9 +279,11 @@ int main(int argc, char *argv[]) {
   RegionsToSam     reg2sam_stage(FLAGS_stage_3_nt);
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
-  SeqsToChainsFPGA      seq2chain_fpga_stage(FLAGS_max_fpga_thread);
+  SeqsToChainsFPGA      seq2chain_fpga_stage(smem_fpga_thread);
   // Stages for FPGA acceleration of stage_2
-  ChainsToRegionsFPGA   chain2reg_fpga_stage(FLAGS_max_fpga_thread);
+  ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread);
+  //SeqsToChainsFPGA      seq2chain_fpga_stage(std::max(opencl_env->smem_fpga_thread_, 1));
+  //ChainsToRegionsFPGA   chain2reg_fpga_stage(std::max(opencl_env->sw_fpga_thread_,1));
 #endif
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
@@ -281,6 +295,7 @@ int main(int argc, char *argv[]) {
     compute_flow.addStage(0, &kread_stage);
     compute_flow.addStage(1, &k2b_stage);
     compute_flow.addStage(2, &seq2chain_stage);
+    //compute_flow.addStage(2, &seq2chain_fpga_stage);
     compute_flow.addStage(3, &chain2reg_stage);
     compute_flow.addStage(4, &reg2sam_stage);
     compute_flow.addStage(5, &reorder_stage);
@@ -291,8 +306,10 @@ int main(int argc, char *argv[]) {
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 1);
-      // compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
+      if (smem_fpga_thread > 0)
+        compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 2);
+      if (sw_fpga_thread > 0)
+        compute_flow.addAccxBckStage(3, &chain2reg_fpga_stage, 8);
     }
 #endif
     

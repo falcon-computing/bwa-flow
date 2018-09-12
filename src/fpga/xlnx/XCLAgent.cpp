@@ -8,38 +8,51 @@
 
 XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task): env_(env) {
 
-  device_ = env->getDevice();
+  pe_ = env->getPE("sw");
 
   cl_int     err     = 0;
-  cl_context context = device_.context;
-  cl_program program = device_.program;
+  cl_context context = pe_.accx->context;
+  cl_program program = pe_.accx->program;
   
   kernel_ = clCreateKernel(program, "sw_top", &err);
   OCL_CHECK(err, "failed to create kernel: sw_top");
 
-  cl_mem_ext_ptr_t ext_a, ext_b;
-  ext_a.flags = XCL_MEM_DDR_BANK0; ext_a.obj = 0; ext_a.param = 0;
-  ext_b.flags = XCL_MEM_DDR_BANK2; ext_b.obj = 0; ext_b.param = 0;
-  task->i_buf[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*task->max_i_size_, &ext_a, NULL);
-  task->i_buf[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*task->max_i_size_, &ext_b, NULL);
-  task->o_buf[0] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*task->max_o_size_, &ext_a, NULL);
-  task->o_buf[1] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX,
-      sizeof(int)*task->max_o_size_, &ext_b, NULL);
+  cl_mem_ext_ptr_t ext_in0, ext_in1, ext_out0, ext_out1;
+
+  ext_in0.flags = XCL_MEM_DDR_BANK1; ext_in0.obj = 0; ext_in0.param = 0;
+  ext_in1.flags = XCL_MEM_DDR_BANK1; ext_in1.obj = 0; ext_in1.param = 0;
+  task->i_buf[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_i_size_, &ext_in0, NULL);
+  task->i_buf[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_i_size_, &ext_in1, NULL);
+
+  ext_out0.flags = XCL_MEM_DDR_BANK1; ext_out0.obj = 0; ext_out0.param = 0;
+  ext_out1.flags = XCL_MEM_DDR_BANK1; ext_out1.obj = 0; ext_out1.param = 0;
+  task->o_buf[0] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_o_size_, &ext_out0, NULL);
+  task->o_buf[1] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_o_size_, &ext_out1, NULL);
+
+  kernel_time_ = 0;
+  kernel_invks_ = 0;
+  writing_time_ = 0;
+  reading_time_ = 0;
 }
 
 XCLAgent::~XCLAgent() {
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Kernel total time: " << kernel_time_ << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Kernel average time: " << (double)kernel_time_/(double)kernel_invks_ << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Writing total time: " << writing_time_ << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Reading total time: " << reading_time_ << " us";
   clReleaseKernel(kernel_);
-  env_->releaseDevice(device_);
+  env_->releasePE(pe_);
 }
 
 void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
-  cl_command_queue cmd = device_.cmd;
+  cl_command_queue cmd = pe_.accx->cmd;
   if (size > 0) {
-    cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, 
-        host_ptr, 0, NULL, &write_events_[bank]);
+    cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 0, NULL, &write_events_[bank]);
+    //cl_int err = clEnqueueMigrateMemObjects(cmd, 1, &buf, 0, 0, NULL, &write_events_[bank]);
 
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error writing buffer of size " << size
@@ -50,10 +63,15 @@ void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
 }
 
 void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
-  cl_command_queue cmd = device_.cmd;
+  cl_command_queue cmd = pe_.accx->cmd;
   if (size > 0) {
-    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_TRUE, 0, size, 
-        host_ptr, 1, &kernel_event_, NULL);
+    cl_event read;
+    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_TRUE, 0, size, host_ptr, 1, &kernel_event_, &read);
+    cl_ulong k_start, k_end;
+    clGetEventProfilingInfo(read, CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+    clGetEventProfilingInfo(read, CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+    reading_time_ += (uint64_t)(k_end - k_start)/1000;
+    clReleaseEvent(read);
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error reading buffer of size " << size
         << " err: " << err;
@@ -65,7 +83,7 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
 void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 
   SWTask *task = (SWTask *)i_task;
-  cl_command_queue cmd = device_.cmd;
+  cl_command_queue cmd = pe_.accx->cmd;
 
   XCLAgent* prev_agent = NULL;
   if (agent) {
@@ -82,8 +100,8 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_list_[device_.env_id]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_list_[device_.env_id]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_list_[pe_.accx->accx_id]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_list_[pe_.accx->accx_id]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
   err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
 
@@ -96,7 +114,6 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
     wait_list[0] = prev_agent->kernel_event_;
     wait_list[1] = write_events_[0];
     wait_list[2] = write_events_[1];
-    uint64_t start_ts_compute = getUs();
     if (task->i_size[1] > 0) {
       err = clEnqueueTask(cmd, kernel_, 3, wait_list, &kernel_event_);
       valid_2nd_event_ = true;
@@ -105,8 +122,6 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
       err = clEnqueueTask(cmd, kernel_, 2, wait_list, &kernel_event_);
       valid_2nd_event_ = false;
     }
-    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Enqueue compute task takes " <<
-      getUs() - start_ts_compute << " us";
   }
   else {
     if (task->i_size[1] > 0) {
@@ -121,7 +136,7 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
   if (err) {
     LOG(ERROR) << "failed to execute kernels: " << err;
   }
-  clFlush(cmd);
+  //clFlush(cmd);
 }
 
 void XCLAgent::finish() {
@@ -133,7 +148,26 @@ void XCLAgent::finish() {
 }
 
 void XCLAgent::fence() {
-  cl_command_queue cmd = device_.cmd;
+  cl_command_queue cmd = pe_.accx->cmd;
   clFlush(cmd);
   clFinish(cmd);
+}
+
+void XCLAgent::wait() {
+  clWaitForEvents(1, &kernel_event_);
+
+  cl_ulong k_start, k_end;
+  clGetEventProfilingInfo(write_events_[0], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+  clGetEventProfilingInfo(write_events_[0], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+  writing_time_ += (uint64_t)(k_end - k_start)/1000;
+  if (valid_2nd_event_) {
+    clGetEventProfilingInfo(write_events_[1], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+    clGetEventProfilingInfo(write_events_[1], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+    writing_time_ += (uint64_t)(k_end - k_start)/1000;
+  }
+
+  clGetEventProfilingInfo(kernel_event_, CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+  clGetEventProfilingInfo(kernel_event_, CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+  kernel_time_ += (uint64_t)(k_end - k_start)/1000;
+  kernel_invks_++;
 }

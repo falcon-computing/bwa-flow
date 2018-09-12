@@ -247,7 +247,7 @@ mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const 
 	mem_collect_intv_new(opt, bwt, len, seq, aux);
 #endif
         smem_aux_t *a = (smem_aux_t *)buf;
-        ks_introsort(mem_intv, a->mem.n, (int *)a->mem.a);
+        //ks_introsort(mem_intv, a->mem.n, (int *)a->mem.a);
 	int i, b, e, l_rep;
 	int64_t l_pac = bns->l_pac;
 	mem_chain_v chain;

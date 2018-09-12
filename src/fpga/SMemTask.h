@@ -6,8 +6,6 @@
 #include "FPGAAgent.h"
 #include "BWAOCLEnv.h"
 
-#define SMEM_BANK_NUM 4
-
 class SMemTask : public Task {
 
  public:
@@ -15,30 +13,34 @@ class SMemTask : public Task {
   ~SMemTask();
 
   void start(SMemTask* prev_task);
+  void start(SMemTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts);
   void finish();
+  void finish(uint64_t &deq_ts, uint64_t &read_ts);
 
-  cl_mem     i_seq_buf[SMEM_BANK_NUM];
-  cl_mem     i_seq_len_buf[SMEM_BANK_NUM];
-  cl_mem     o_mem_buf[SMEM_BANK_NUM];
-  cl_mem     o_num_buf[SMEM_BANK_NUM];
+  cl_mem     i_bwt;
+  cl_mem     i_bwt_param;
 
-  size_t     i_seq_size[SMEM_BANK_NUM];
-  size_t     i_seq_len_size[SMEM_BANK_NUM];
-  size_t     o_mem_size[SMEM_BANK_NUM];
-  size_t     o_num_size[SMEM_BANK_NUM];
+  cl_mem     i_seq_buf;
+  cl_mem     i_seq_len_buf;
+  cl_mem     o_mem_buf;
+  cl_mem     o_num_buf;
 
-  uint8_t   *i_seq_data[SMEM_BANK_NUM];
-  uint8_t   *i_seq_len_data[SMEM_BANK_NUM];
-  bwtintv_t *o_mem_data[SMEM_BANK_NUM];
-  int       *o_num_data[SMEM_BANK_NUM];
+  size_t     i_seq_size;
+  size_t     i_seq_len_size;
+  size_t     o_mem_size;
+  size_t     o_num_size;
+
+  uint8_t   *i_seq_data;
+  uint8_t   *i_seq_len_data;
+  bwtintv_t *o_mem_data;
+  int       *o_num_data;
 
   int        i_seq_base_idx;
-  int        i_seq_num[SMEM_BANK_NUM];
-  int        total_i_seq_num;
+  int        i_seq_num;
 
-  size_t     max_i_seq_num_ = 1024;
-  size_t     max_i_seq_len_ = 256;
-  size_t     max_intv_alloc_ = 256;
+  static const size_t max_i_seq_num_;
+  static const size_t max_i_seq_len_;
+  static const size_t max_intv_alloc_;
 
  private:
   FPGAAgent* agent_;
