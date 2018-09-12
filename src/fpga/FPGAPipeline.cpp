@@ -346,8 +346,35 @@ inline void packReadData(ktp_aux_t* aux,
 }
 
 void ChainsToRegionsFPGA::compute(int wid) {
+  try {
+    compute_func(wid);
+  }
+  catch (boost::thread_interrupted &e) {
+    DLOG(WARNING) << "Interrupted SW worker " << wid << " due to timeout";
+    if (timeout_.tasklist[wid*2+0] != NULL) delete timeout_.tasklist[wid*2+0];
+    if (timeout_.tasklist[wid*2+1] != NULL) delete timeout_.tasklist[wid*2+1];
+
+    //redirect
+    cpu_stage->getInputQueue()->push(timeout_.records[wid]);
+    mtx_.lock();
+    if (n_active_ == 1) {
+      cpu_stage->setUseAccx(false);
+      boost::this_thread::sleep_for(boost::chrono::seconds(10));
+      while (!inputQueueEmpty()) {
+        ChainsRecord chains_record;
+        this->getInputQueue()->pop(chains_record);
+        cpu_stage->getInputQueue()->push(chains_record);
+      }
+    }
+    n_active_--;
+    mtx_.unlock();
+  }
+}
+
+void ChainsToRegionsFPGA::compute_func(int wid) {
   DLOG(INFO) << "start FPGA worker #" << wid;
   int chunk_size = FLAGS_chunk_size;
+  uint64_t g_prep_ts=0, g_write_ts=0, g_enq_ts=0, g_deq_ts=0, g_read_ts=0, g_post_ts=0;
 
   // Create SWTasks
   std::deque<SWTask*> task_queue;
@@ -406,9 +433,15 @@ void ChainsToRegionsFPGA::compute(int wid) {
       flag_more_reads = false;
       break;
     }
+
+    timeout_.timecard[wid].store(getUs()/1000);
+    timeout_.records[wid] = record; 
+    timeout_.status[wid].store(1);
+
     // record = preprocessBatch(prerecord);
     uint64_t prep_ts=0, write_ts=0, enq_ts=0, deq_ts=0, read_ts=0, post_ts=0;
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "SW start idx: " << record.start_idx;
 
     uint64_t start_ts = getUs();
     uint64_t pre_start_ts = getUs();
@@ -427,6 +460,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       throw std::runtime_error(err_string);
     }
 
+    int chunk_id = 0;
     int i = 0;
     bool reach_half = false;
     bool reach_end = false;
@@ -468,6 +502,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
                                      << getUs() - pre_start_ts << " us";
 
         // start sending task to FPGA
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
         task->start(task_queue[1], write_ts, enq_ts);
 
         // circulate the task
@@ -477,10 +512,12 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task = task_queue.front();
         // if task is available
         if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
+          DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
           processOutput(task, deq_ts, read_ts, post_ts);
           //DLOG_IF(INFO, VLOG_IS_ON(4)) << "This chunk of FPGA takes " << 
           //                                getUs()- last_batch_ts << " us";
         }
+        chunk_id++;
 
         // reset 
         task_num = 0;
@@ -516,6 +553,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
       prep_ts += getUs() - pre_start_ts;
 
+      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
       task->start(task_queue[1], write_ts, enq_ts);
     }
 
@@ -526,8 +564,10 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
       task = task_queue.front();
       if (task->i_size[0] > 0) { 
+        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
         processOutput(task, deq_ts, read_ts, post_ts);
       }
+      chunk_id++;
     }
    
     // reset for one batch
@@ -553,10 +593,20 @@ void ChainsToRegionsFPGA::compute(int wid) {
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Dequeuing task takes " << deq_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Reading buffer takes " << read_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Post-processing takes " << post_ts << " us";
+    g_prep_ts  += prep_ts;
+    g_write_ts += write_ts;
+    g_enq_ts   += enq_ts;
+    g_deq_ts   += deq_ts;
+    g_read_ts  += read_ts;
+    g_post_ts  += post_ts;
+
+    timeout_.status[wid].store(0);
 
     pushOutput(outputRecord);
     //last_output_ts = getUs();
   }
+
+  timeout_.status[wid].store(-1);
 
   // delete everything
   while (!task_queue.empty()) {
@@ -564,12 +614,45 @@ void ChainsToRegionsFPGA::compute(int wid) {
     delete task;
     task_queue.pop_front();
   }
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Pre-processing takes " << g_prep_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Writing buffer takes " << g_write_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Enqueuing task takes " << g_enq_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Dequeuing task takes " << g_deq_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Reading buffer takes " << g_read_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Post-processing takes " << g_post_ts << " us";
 }
 
 
 //ChainsRecord SeqsToChainsFPGA::compute(SeqsRecord const & seqs_record) {
 void SeqsToChainsFPGA::compute(int wid) {
+  try {
+    compute_func(wid);
+  }
+  catch (boost::thread_interrupted &e) {
+    DLOG_IF(INFO, VLOG_IS_ON(2)) << "Interrupted SMem worker " << wid << " due to timeout";
+    if (timeout_.tasklist[wid*2+0] != NULL) delete timeout_.tasklist[wid*2+0];
+    if (timeout_.tasklist[wid*2+1] != NULL) delete timeout_.tasklist[wid*2+1];
+
+    // redirect
+    cpu_stage->getInputQueue()->push(timeout_.records[wid]);
+    mtx_.lock();
+    if (n_active_ == 1) {
+      cpu_stage->setUseAccx(false);
+      boost::this_thread::sleep_for(boost::chrono::seconds(10));
+      while (!inputQueueEmpty()) {
+        SeqsRecord seqs_record;
+        this->getInputQueue()->pop(seqs_record);
+        cpu_stage->getInputQueue()->push(seqs_record);
+      }
+    }
+    n_active_--;
+    mtx_.unlock();
+  }
+}
+
+void SeqsToChainsFPGA::compute_func(int wid) {
   DLOG(INFO) << "start FPGA worker #" << wid;
+  uint64_t g_prep_ts=0, g_write_ts=0, g_enq_ts=0, g_deq_ts=0, g_read_ts=0, g_post_ts=0;
 
   const int max_task_size = SMemTask::max_i_seq_num_;
   const int max_seq_len   = SMemTask::max_i_seq_len_;
@@ -579,6 +662,7 @@ void SeqsToChainsFPGA::compute(int wid) {
   std::deque<SMemTask*> task_queue;
   for (int i = 0; i < 2; i++) {
     task_queue.push_back( new SMemTask(opencl_env) );
+    timeout_.tasklist[2*wid+i] = task_queue[i];
   }
 
   bool flag_more_reads = true;
@@ -595,6 +679,10 @@ void SeqsToChainsFPGA::compute(int wid) {
       flag_more_reads = false;
       break;
     }
+
+    timeout_.timecard[wid].store(getUs()/1000);
+    timeout_.records[wid] = seqs_record; 
+    timeout_.status[wid].store(1);
 
     uint64_t prep_ts=0, write_ts=0, enq_ts=0, deq_ts=0, read_ts=0, post_ts=0;
     uint64_t start_ts = getUs();
@@ -809,13 +897,29 @@ void SeqsToChainsFPGA::compute(int wid) {
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem] Dequeuing task takes " << deq_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem] Reading buffer takes " << read_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem] Post-processing takes " << post_ts << " us";
+    g_prep_ts  += prep_ts;
+    g_write_ts += write_ts;
+    g_enq_ts   += enq_ts;
+    g_deq_ts   += deq_ts;
+    g_read_ts  += read_ts;
+    g_post_ts  += post_ts;
+    
+    timeout_.status[wid].store(0);
 
     pushOutput(output);
   }
+
+  timeout_.status[wid].store(-1);
 
   // delete tasks
   while (!task_queue.empty()) {
     delete task_queue.front();
     task_queue.pop_front();
   }
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Pre-processing takes " << g_prep_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Writing buffer takes " << g_write_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Enqueuing task takes " << g_enq_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Dequeuing task takes " << g_deq_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Reading buffer takes " << g_read_ts << " us";
+  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[smem_global] Post-processing takes " << g_post_ts << " us";
 }

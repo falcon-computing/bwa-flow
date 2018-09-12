@@ -170,6 +170,8 @@ void SWTask::finish(uint64_t &deq_ts, uint64_t &read_ts) {
   uint64_t start_ts = getUs();
   ((XCLAgent *)agent_)->wait();
   deq_ts += getUs() - start_ts;
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue compute task takes "
+                               << getUs() - start_ts << " us";
 
   start_ts = getUs();
   agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);

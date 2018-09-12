@@ -284,6 +284,8 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread);
   //SeqsToChainsFPGA      seq2chain_fpga_stage(std::max(opencl_env->smem_fpga_thread_, 1));
   //ChainsToRegionsFPGA   chain2reg_fpga_stage(std::max(opencl_env->sw_fpga_thread_,1));
+  seq2chain_fpga_stage.cpu_stage=&seq2chain_stage;
+  chain2reg_fpga_stage.cpu_stage=&chain2reg_stage;
 #endif
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
