@@ -40,15 +40,19 @@ struct ChainsRecord {
   int batch_num;
   bseq1_t* seqs;
   mem_chain_v* chains;
+  bwtintv_t** bwtintvs;
+  size_t* bwtintv_nums;
   mem_alnreg_v* alnreg;
   mem_chainref_t** chain_ref;
   const char* name = "ChainsRecord";
+  int tag;
 };
 
 struct RegionsRecord {
   uint64_t start_idx;
   int batch_num;
   bseq1_t* seqs;
+  mem_chain_v* chains;
   mem_alnreg_v* alnreg;
   const char* name = "RegionsRecord";
 };
@@ -127,6 +131,17 @@ class SeqsToChains
   ChainsRecord compute(SeqsRecord const & record);
 };
 
+class ChainsPipe
+: public kestrelFlow::MapStage<
+      ChainsRecord, ChainsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH> {
+ public:
+  ChainsPipe(int n=1): 
+      kestrelFlow::MapStage<
+          ChainsRecord, ChainsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n)
+  {;}
+  ChainsRecord compute(ChainsRecord const & record);
+};
+
 class ChainsToRegions
 : public kestrelFlow::MapStage<
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>
@@ -196,13 +211,13 @@ class WriteOutput
 :public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
     WriteOutput(int n=1):
-      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n) {;}
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n, false) {;}
     int compute(BamsRecord const &input);
 #else
 :public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0> {
   public:
     WriteOutput(int n=1):
-      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0>(n) {;}
+      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0>(n, false) {;}
     int compute(SeqsRecord const &input);
 #endif
 };

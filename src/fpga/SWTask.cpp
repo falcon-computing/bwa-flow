@@ -40,19 +40,6 @@ inline void *sw_malloc(size_t size, int data_width) {
 SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   max_i_size_ = 32*1024*1024;
   max_o_size_ = 2*2*chunk_size*FPGA_RET_PARAM_NUM;
-#ifdef INTEL_FPGA
-  agent_ = new IntelAgent(env, this);
-#elif XILINX_FPGA
-  agent_ = new XCLAgent(env, this);
-#endif
-  if (NULL == agent_) {
-    std::string err_string = "Memory allocation failed";
-    if (errno==12)
-      err_string += " due to out-of-memory";
-    else
-      err_string += " due to internal failure"; 
-    throw std::runtime_error(err_string);
-  }
   for (int k = 0; k < 2; k++) {
     i_size[k] = 0;
     o_size[k] = 0;
@@ -71,6 +58,19 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   }
   chain_batch  = new mem_chain_t*[2*chunk_size];
   if (NULL == chain_batch) {
+    std::string err_string = "Memory allocation failed";
+    if (errno==12)
+      err_string += " due to out-of-memory";
+    else
+      err_string += " due to internal failure"; 
+    throw std::runtime_error(err_string);
+  }
+#ifdef INTEL_FPGA
+  agent_ = new IntelAgent(env, this);
+#elif XILINX_FPGA
+  agent_ = new XCLAgent(env, this);
+#endif
+  if (NULL == agent_) {
     std::string err_string = "Memory allocation failed";
     if (errno==12)
       err_string += " due to out-of-memory";
@@ -100,7 +100,7 @@ void SWTask::start(SWTask* prev_task) {
     DLOG(ERROR) << "exceeding max memory size";
     throw std::runtime_error("exceeding max memory size");
   }
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Task info: " 
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Task info: " 
     << "i_size[0] = " << i_size[0] << ", "
     << "i_size[1] = " << i_size[1];
                                
@@ -108,26 +108,65 @@ void SWTask::start(SWTask* prev_task) {
   uint64_t start_ts = getUs();
   agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
   agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+
   if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
     agent_->start(this, NULL);
   }
   else {
     agent_->start(this, prev_task->agent_);
   }
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Write OpenCL buffer takes " << 
-                               getUs() - start_ts << " us";
-}
-
-void SWTask::finish() {
-  uint64_t start_ts = getUs();
 
   agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
   agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
 
-  // release events
-  agent_->finish();
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
+    getUs() - start_ts << " us";
+}
 
-  DLOG_IF(INFO, VLOG_IS_ON(3)) << "Read OpenCL buffer takes " 
+void SWTask::start(SWTask* prev_task, uint64_t &enq_ts) {
+  if (i_size[0]*sizeof(int) >= max_i_size_ || 
+      i_size[1]*sizeof(int) >= max_i_size_ ||
+      o_size[0] + o_size[1] >= max_o_size_) 
+  {
+    DLOG(ERROR) << "exceeding max memory size";
+    throw std::runtime_error("exceeding max memory size");
+  }
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Task info: " 
+    << "i_size[0] = " << i_size[0] << ", "
+    << "i_size[1] = " << i_size[1];
+                               
+
+  uint64_t start_ts = getUs();
+  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
+  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+
+  if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
+    agent_->start(this, NULL);
+  }
+  else {
+    agent_->start(this, prev_task->agent_);
+  }
+
+  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
+  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+
+  enq_ts += getUs() - start_ts;
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
+    getUs() - start_ts << " us";
+}
+
+void SWTask::finish() {
+  uint64_t start_ts = getUs();
+  agent_->finish();
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
+                               << getUs() - start_ts << " us";
+}
+
+void SWTask::finish(uint64_t &deq_ts) {
+  uint64_t start_ts = getUs();
+  agent_->finish();
+  deq_ts += getUs() - start_ts;
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
                                << getUs() - start_ts << " us";
 }
 

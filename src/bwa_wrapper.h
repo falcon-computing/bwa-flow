@@ -138,6 +138,8 @@ mem_chain_v mem_seq2chain_wrapper(ktp_aux_t *aux, bseq1_t *seqs);
 
 mem_chain_v mem_chain_new(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
 
+mem_chain_v mem_chain_postprocess(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);
+
 void mem_collect_intv_new(const mem_opt_t *opt, const bwt_t *bwt, int len, const uint8_t *seq, smem_aux_t *a);
 
 int bwt_smem1a_new(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_intv, uint64_t max_intv, bwtintv_v *mem, bwtintv_v *tmpvec[2],int min_seed_len);
