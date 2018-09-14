@@ -292,12 +292,59 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
   }
 
   ChainsRecord ret;
-  ret.start_idx    = seqs_record.start_idx;
+  ret.start_idx    = start_idx;
   ret.batch_num    = batch_num;
   ret.seqs         = seqs;
   ret.chains       = chains;
+  ret.tag          = 1;
  
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SeqsToChains() on CPU in " 
+    << getUs() - start_ts << " us";
+
+  return ret;
+}
+
+ChainsRecord ChainsPipe::compute(ChainsRecord const & record) {
+  if (record.tag == 1) return record;
+
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsPipe() on CPU for one input";
+
+  uint64_t start_ts = getUs();
+  uint64_t ref_time = 0;
+
+  uint64_t start_idx  = record.start_idx;
+  int batch_num       = record.batch_num;
+  bseq1_t* seqs       = record.seqs;
+  bwtintv_t** bwtintvs = record.bwtintvs;
+  size_t* bwtintv_nums = record.bwtintv_nums;
+
+  mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+
+  for (int i = 0; i < batch_num; i++) {
+    bseq1_t *seq = &seqs[i];
+    smem_aux_t *smem_aux = smem_aux_init();
+    //bwtintv_t *temp = smem_aux->mem.a;
+    smem_aux->mem.a = bwtintvs[i]; smem_aux->mem.n = bwtintv_nums[i];
+    chains[i] = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seq->l_seq, (uint8_t*)seq->seq, smem_aux);
+    //smem_aux->mem.a = temp;
+    smem_aux_destroy(smem_aux);
+
+    chains[i].n = mem_chain_flt(aux->opt, chains[i].n, chains[i].a);
+    mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seq->l_seq, (uint8_t*)seq->seq, chains[i].n, chains[i].a);
+  }
+  free(bwtintvs);
+  free(bwtintv_nums);
+
+  ChainsRecord ret;
+  ret.start_idx    = start_idx;
+  ret.batch_num    = batch_num;
+  ret.seqs         = seqs;
+  ret.chains       = chains;
+  ret.bwtintvs     = NULL;
+  ret.bwtintv_nums = NULL;
+  ret.tag          = record.tag;
+
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsPipe() on CPU in "
     << getUs() - start_ts << " us";
 
   return ret;
@@ -325,16 +372,20 @@ RegionsRecord ChainsToRegions::compute(ChainsRecord const & record) {
           (uint8_t*)seqs[i].seq,
           &chains[i].a[j],
           alnreg+i);
+
+      free(chains[i].a[j].seeds);
     }
+    free(chains[i].a);
   }
+  free(chains);
+  //freeChains(chains, batch_num);
 
   RegionsRecord output;
   output.start_idx = record.start_idx;
   output.batch_num = batch_num;
   output.seqs = seqs;
+  output.chains = NULL;
   output.alnreg = alnreg;
-
-  freeChains(chains, batch_num);
 
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on CPU for "
     << getUs() - start_ts << " us";
@@ -351,9 +402,11 @@ SeqsRecord RegionsToSam::compute(RegionsRecord const & record) {
 
   uint64_t start_idx   = record.start_idx;
   int batch_num        = record.batch_num;
+  mem_chain_v* chains  = record.chains;
   mem_alnreg_v* alnreg = record.alnreg;
   bseq1_t* seqs        = record.seqs;
 
+  if (chains != NULL ) freeChains(chains, batch_num);
   for (int i = 0; i < batch_num; i++) {
     // Post-process each chain before output
     alnreg[i].n = mem_sort_dedup_patch(

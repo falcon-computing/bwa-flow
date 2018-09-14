@@ -13,9 +13,9 @@ class SWTask : public Task {
   ~SWTask();
 
   void start(SWTask* prev_task);
-  void start(SWTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts);
+  void start(SWTask* prev_task, uint64_t &enq_ts);
   void finish();
-  void finish(uint64_t &deq_ts, uint64_t &read_ts);
+  void finish(uint64_t &deq_ts);
   void redo();
 
   int     i_size[2];

@@ -14,7 +14,6 @@ class XCLAgent : public FPGAAgent {
   void start(Task* task, FPGAAgent* prev_agent = NULL);
   void finish();
   void fence();
-  void wait();
 
  private:
   cl_pe         pe_;
@@ -24,9 +23,8 @@ class XCLAgent : public FPGAAgent {
 
   cl_event      kernel_event_;
   cl_event      write_events_[2];
-  cl_event      prev_kernel_event_;
+  cl_event      read_events_[2];
 
-  bool          valid_prev_event_;
   bool          valid_2nd_event_;
 
   uint64_t      kernel_time_;

@@ -14,7 +14,7 @@ class TimeoutMonitor
 {
  public:
   TimeoutMonitor(int n, kestrelFlow::StageBase *stage) : n_(n), timecard(n), status(n), tasklist(2*n), records(n), stage_(stage) {;}
-  ~TimeoutMonitor() { t_.join(); };
+  ~TimeoutMonitor() { t_.interrupt(); };
 
   std::vector<boost::atomic<uint64_t>>   timecard;
   std::vector<boost::atomic<int>>        status;
@@ -76,7 +76,7 @@ class ChainsToRegionsFPGA
 
   void compute(int wid);
   void compute_func(int wid);
-  void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &read_ts, uint64_t &post_ts);
+  //void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &post_ts);
 
   ChainsToRegions * cpu_stage;
 

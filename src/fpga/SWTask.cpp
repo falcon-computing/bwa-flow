@@ -108,21 +108,22 @@ void SWTask::start(SWTask* prev_task) {
   uint64_t start_ts = getUs();
   agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
   agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Write OpenCL buffer takes " << 
-                               getUs() - start_ts << " us";
 
-  start_ts = getUs();
   if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
     agent_->start(this, NULL);
   }
   else {
     agent_->start(this, prev_task->agent_);
   }
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue compute task takes " <<
+
+  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
+  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
     getUs() - start_ts << " us";
 }
 
-void SWTask::start(SWTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts) {
+void SWTask::start(SWTask* prev_task, uint64_t &enq_ts) {
   if (i_size[0]*sizeof(int) >= max_i_size_ || 
       i_size[1]*sizeof(int) >= max_i_size_ ||
       o_size[0] + o_size[1] >= max_o_size_) 
@@ -138,50 +139,34 @@ void SWTask::start(SWTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts) {
   uint64_t start_ts = getUs();
   agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
   agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
-  write_ts += getUs() - start_ts;
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Write OpenCL buffer takes " << 
-                               getUs() - start_ts << " us";
-  start_ts = getUs();
+
   if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
     agent_->start(this, NULL);
   }
   else {
     agent_->start(this, prev_task->agent_);
   }
+
+  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
+  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+
   enq_ts += getUs() - start_ts;
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue compute task takes " <<
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
     getUs() - start_ts << " us";
 }
 
 void SWTask::finish() {
   uint64_t start_ts = getUs();
-
-  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
-  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
-
-  // release events
   agent_->finish();
-
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Read OpenCL buffer takes " 
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
                                << getUs() - start_ts << " us";
 }
 
-void SWTask::finish(uint64_t &deq_ts, uint64_t &read_ts) {
+void SWTask::finish(uint64_t &deq_ts) {
   uint64_t start_ts = getUs();
-  ((XCLAgent *)agent_)->wait();
-  deq_ts += getUs() - start_ts;
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue compute task takes "
-                               << getUs() - start_ts << " us";
-
-  start_ts = getUs();
-  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
-  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
-
-  // release events
   agent_->finish();
-
-  read_ts += getUs() - start_ts;
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Read OpenCL buffer takes " 
+  deq_ts += getUs() - start_ts;
+  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
                                << getUs() - start_ts << " us";
 }
 

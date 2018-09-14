@@ -67,13 +67,7 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
   //cl_command_queue cmd = pe_.accx->cmd;
   cl_command_queue cmd = pe_.cmd;
   if (size > 0) {
-    cl_event read;
-    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_TRUE, 0, size, host_ptr, 1, &kernel_event_, &read);
-    cl_ulong k_start, k_end;
-    clGetEventProfilingInfo(read, CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
-    clGetEventProfilingInfo(read, CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
-    reading_time_ += (uint64_t)(k_end - k_start)/1000;
-    clReleaseEvent(read);
+    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 1, &kernel_event_, &read_events_[bank]);
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error reading buffer of size " << size
         << " err: " << err;
@@ -143,22 +137,10 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 }
 
 void XCLAgent::finish() {
-  clReleaseEvent(kernel_event_);
-  clReleaseEvent(write_events_[0]);
-  if (valid_2nd_event_) {
-    clReleaseEvent(write_events_[1]);
-  }
-}
-
-void XCLAgent::fence() {
-  //cl_command_queue cmd = pe_.accx->cmd;
-  cl_command_queue cmd = pe_.cmd;
-  clFlush(cmd);
-  clFinish(cmd);
-}
-
-void XCLAgent::wait() {
-  clWaitForEvents(1, &kernel_event_);
+  if (valid_2nd_event_)
+    clWaitForEvents(2, read_events_);
+  else
+    clWaitForEvents(1, read_events_);
 
   cl_ulong k_start, k_end;
   clGetEventProfilingInfo(write_events_[0], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
@@ -174,4 +156,30 @@ void XCLAgent::wait() {
   clGetEventProfilingInfo(kernel_event_, CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
   kernel_time_ += (uint64_t)(k_end - k_start)/1000;
   kernel_invks_++;
+
+  clGetEventProfilingInfo(read_events_[0], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+  clGetEventProfilingInfo(read_events_[0], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+  reading_time_ += (uint64_t)(k_end - k_start)/1000;
+  if (valid_2nd_event_) {
+    clGetEventProfilingInfo(read_events_[1], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
+    clGetEventProfilingInfo(read_events_[1], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
+    reading_time_ += (uint64_t)(k_end - k_start)/1000;
+  }
+
+  clReleaseEvent(write_events_[0]);
+  if (valid_2nd_event_) {
+    clReleaseEvent(write_events_[1]);
+  }
+  clReleaseEvent(kernel_event_);
+  clReleaseEvent(read_events_[0]);
+  if (valid_2nd_event_) {
+    clReleaseEvent(read_events_[1]);
+  }
+}
+
+void XCLAgent::fence() {
+  //cl_command_queue cmd = pe_.accx->cmd;
+  cl_command_queue cmd = pe_.cmd;
+  clFlush(cmd);
+  clFinish(cmd);
 }

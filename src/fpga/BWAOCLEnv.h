@@ -108,6 +108,7 @@ class BWAOCLEnv : public OpenCLEnv{
       pe.type = "sw";
       pe.accx = &device_envs_[i];
       pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_PROFILING_ENABLE, &err);
+      //pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, 0, &err);
       OCL_CHECK(err, "failed to create cmd_queue");
       sw_pe_list_.push_back(pe);
     }
@@ -208,6 +209,7 @@ class BWAOCLEnv : public OpenCLEnv{
         pe.type = "smem";
         pe.accx = &device_envs_[i];
         pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_PROFILING_ENABLE|CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+        //pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
         OCL_CHECK(err, "failed to create cmd_queue");
         smem_pe_list_.push_back(pe);
       }
@@ -264,34 +266,23 @@ class BWAOCLEnv : public OpenCLEnv{
 
  private:
   std::vector<int> &get_group_sizes() {
-    group_sizes_.clear();
+    group_sizes_ = new std::vector<int>();
     
     int max_devices = getMaxNumDevices();
     if (FLAGS_max_fpga_thread >= 0) {
       max_devices = std::min(FLAGS_max_fpga_thread, int(max_devices));
     }
-    bool use_sw_fpga = !FLAGS_sw_fpga_path.empty();
-    bool use_smem_fpga = !FLAGS_smem_fpga_path.empty();
 
-    sw_fpga_devices_ = (use_sw_fpga) ? (max_devices+1)/2 : 0;
-    smem_fpga_devices_ = (use_smem_fpga) ? (max_devices)/2 : 0;
+    group_sizes_->push_back(max_devices);
 
-    if (!use_sw_fpga && use_smem_fpga) smem_fpga_devices_ = max_devices;
-    if (use_sw_fpga && !use_smem_fpga) sw_fpga_devices_ = max_devices;
-    
-    group_sizes_.push_back(sw_fpga_devices_);
-    group_sizes_.push_back(smem_fpga_devices_);
-   DLOG(INFO) << sw_fpga_devices_ << ";" << smem_fpga_devices_;
-
-    return group_sizes_;
+    return *group_sizes_;
   }
 
   std::vector<const char*> &get_bin_paths() {
-    bin_paths_;
-    bin_paths_.push_back(FLAGS_sw_fpga_path.c_str());
-    bin_paths_.push_back(FLAGS_smem_fpga_path.c_str());
+    bin_paths_ = new std::vector<const char*>();
+    bin_paths_->push_back(FLAGS_fpga_path.c_str());
 
-    return bin_paths_;
+    return *bin_paths_;
   }
 
  public:
@@ -345,10 +336,8 @@ class BWAOCLEnv : public OpenCLEnv{
   std::vector<cl_mem> pac_input_a_list_;
   std::vector<cl_mem> pac_input_b_list_;
 
-  int sw_fpga_devices_;
-  int smem_fpga_devices_;
-  std::vector<int> group_sizes_;
-  std::vector<const char*> bin_paths_;
+  std::vector<int> *group_sizes_;
+  std::vector<const char*> *bin_paths_;
 
   int num_pe_;
   int sw_num_pe_;

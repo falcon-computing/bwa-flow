@@ -53,6 +53,7 @@ TEST_F(FPGATests, FPGATest) {
   //int test_num = batch_num;
 
   try {
+    FLAGS_fpga_path = bit_path_;
     opencl_env = new BWAOCLEnv();
 
     SeqsRecord input;

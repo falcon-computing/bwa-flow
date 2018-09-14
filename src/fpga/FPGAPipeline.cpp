@@ -26,9 +26,9 @@
 #include "SMemTask.h"
 
 
-void ChainsToRegionsFPGA::processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &read_ts, uint64_t &post_ts) {
+inline void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &post_ts) {
   // finish task and get output buffers
-  task->finish( deq_ts, read_ts );
+  task->finish( deq_ts );
   int total_task_num = (task->o_size[0]+task->o_size[1])/FPGA_RET_PARAM_NUM;
   int actual_tasks = 0;
 
@@ -368,7 +368,11 @@ void ChainsToRegionsFPGA::compute(int wid) {
     }
     n_active_--;
     mtx_.unlock();
+    return;
   }
+  mtx_.lock();
+  n_active_--;
+  mtx_.unlock();
 }
 
 void ChainsToRegionsFPGA::compute_func(int wid) {
@@ -439,9 +443,10 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
     timeout_.status[wid].store(1);
 
     // record = preprocessBatch(prerecord);
-    uint64_t prep_ts=0, write_ts=0, enq_ts=0, deq_ts=0, read_ts=0, post_ts=0;
+    uint64_t prep_ts=0, enq_ts=0, deq_ts=0, post_ts=0;
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ChainsToRegions() on FPGA ";
     DLOG_IF(INFO, VLOG_IS_ON(3)) << "SW start idx: " << record.start_idx;
+    DLOG_IF(INFO, VLOG_IS_ON(3)) << "Record tag: " << record.tag;
 
     uint64_t start_ts = getUs();
     uint64_t pre_start_ts = getUs();
@@ -503,7 +508,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
 
         // start sending task to FPGA
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
-        task->start(task_queue[1], write_ts, enq_ts);
+        task->start(task_queue[1], enq_ts);
 
         // circulate the task
         task_queue.push_back(task);
@@ -513,7 +518,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
         // if task is available
         if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
-          processOutput(task, deq_ts, read_ts, post_ts);
+          processOutput(task, deq_ts, post_ts);
           //DLOG_IF(INFO, VLOG_IS_ON(4)) << "This chunk of FPGA takes " << 
           //                                getUs()- last_batch_ts << " us";
         }
@@ -554,7 +559,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
       prep_ts += getUs() - pre_start_ts;
 
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
-      task->start(task_queue[1], write_ts, enq_ts);
+      task->start(task_queue[1], enq_ts);
     }
 
     for (int iter = 0; iter < 2; iter++) {
@@ -565,7 +570,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
       task = task_queue.front();
       if (task->i_size[0] > 0) { 
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
-        processOutput(task, deq_ts, read_ts, post_ts);
+        processOutput(task, deq_ts, post_ts);
       }
       chunk_id++;
     }
@@ -581,23 +586,20 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
     outputRecord.start_idx = start_idx;
     outputRecord.batch_num = batch_num;
     outputRecord.seqs = seqs;
+    outputRecord.chains = chains;
     outputRecord.alnreg = alnreg;
-
-    freeChains(chains, batch_num);
 
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
                                  << getUs() - start_ts << " us";
+    //freeChains(chains, batch_num);
+
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Pre-processing takes " << prep_ts << " us";
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Writing buffer takes " << write_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Enqueuing task takes " << enq_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Dequeuing task takes " << deq_ts << " us";
-    DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Reading buffer takes " << read_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw] Post-processing takes " << post_ts << " us";
     g_prep_ts  += prep_ts;
-    g_write_ts += write_ts;
     g_enq_ts   += enq_ts;
     g_deq_ts   += deq_ts;
-    g_read_ts  += read_ts;
     g_post_ts  += post_ts;
 
     timeout_.status[wid].store(0);
@@ -615,10 +617,8 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
     task_queue.pop_front();
   }
   DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Pre-processing takes " << g_prep_ts << " us";
-  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Writing buffer takes " << g_write_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Enqueuing task takes " << g_enq_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Dequeuing task takes " << g_deq_ts << " us";
-  DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Reading buffer takes " << g_read_ts << " us";
   DLOG_IF(INFO, VLOG_IS_ON(2)) << "[sw_global] Post-processing takes " << g_post_ts << " us";
 }
 
@@ -647,7 +647,11 @@ void SeqsToChainsFPGA::compute(int wid) {
     }
     n_active_--;
     mtx_.unlock();
+    return;
   }
+  mtx_.lock();
+  n_active_--;
+  mtx_.unlock();
 }
 
 void SeqsToChainsFPGA::compute_func(int wid) {
@@ -692,7 +696,9 @@ void SeqsToChainsFPGA::compute_func(int wid) {
     uint64_t start_idx = seqs_record.start_idx;
     int batch_num = seqs_record.batch_num;
 
-    mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+    //mem_chain_v* chains = (mem_chain_v*)malloc(batch_num*sizeof(mem_chain_v));
+    bwtintv_t** bwtintvs = (bwtintv_t**)malloc(batch_num*sizeof(bwtintv_t*)); 
+    size_t* bwtintv_nums = (size_t*)malloc(batch_num*sizeof(size_t));
 
 #if 0
     for (int i1 = 0; i1 < (batch_num+max_task_size-1)/max_task_size; i1++) {
@@ -771,50 +777,36 @@ void SeqsToChainsFPGA::compute_func(int wid) {
           
         inner_ts = getUs();
         for (int i2 = 0; i2 < task->i_seq_num; i2++) {
-#if 0
-          int i = task->i_seq_base_idx+i2;
-          bseq1_t *seqs = &srseqs[i];
-          mem_chain_v chn;
-          if (task->o_num_data[i2] <= max_intv_alloc) {
-            smem_aux_t *smem_aux_fpga = smem_aux_init();
-            bwtintv_t *smem_temp = smem_aux_fpga->mem.a;
-            smem_aux_fpga->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
-            smem_aux_fpga->mem.n = task->o_num_data[i2];
-
-            chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux_fpga);
-            smem_aux_fpga->mem.a = smem_temp;
-            smem_aux_destroy(smem_aux_fpga);
-          }
-          else {
-            DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
-            chn = mem_chain_new(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);
-          }
-          chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
-          mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
-          chains[i] = chn;
-#endif
-
           // unpack the data
           int i = task->i_seq_base_idx+i2;
-          smem_aux_t *smem_aux = smem_aux_init();
-          bwtintv_t *temp = smem_aux->mem.a;
-          smem_aux->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
-          smem_aux->mem.n = task->o_num_data[i2];
+          size_t n = task->o_num_data[i2];
+          //smem_aux_t *smem_aux = smem_aux_init();
+          //bwtintv_t *temp = smem_aux->mem.a;
+          //smem_aux->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
+          //smem_aux->mem.n = task->o_num_data[i2];
           // postprocess
-          mem_chain_v chn;
+          //mem_chain_v chn;
           bseq1_t *seqs = &srseqs[i];
-          if (smem_aux->mem.n > max_intv_alloc) {
-            smem_aux->mem.a = temp;
-            smem_aux->mem.n = 0;
-            mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+          if (n > max_intv_alloc) {
             DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
+            smem_aux_t *smem_aux = smem_aux_init();
+            mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+            n = smem_aux->mem.n;
+            bwtintvs[i] = (bwtintv_t*)malloc(n*sizeof(bwtintv_t));
+            memcpy(bwtintvs[i], smem_aux->mem.a, n*sizeof(bwtintv_t));
+            smem_aux_destroy(smem_aux);
           }
-          chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
-          smem_aux->mem.a = temp;
-          smem_aux_destroy(smem_aux);
-          chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
-          mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
-          chains[i] = chn;
+          else {
+            bwtintvs[i] = (bwtintv_t*)malloc(n*sizeof(bwtintv_t));
+            memcpy(bwtintvs[i], &(task->o_mem_data[i2*task->max_intv_alloc_]), n*sizeof(bwtintv_t));
+          }
+          bwtintv_nums[i] = n;
+          //chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+          //smem_aux->mem.a = temp;
+          //smem_aux_destroy(smem_aux);
+          //chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
+          //mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
+          //chains[i] = chn;
         }
 
         task->i_seq_num = 0;
@@ -836,29 +828,25 @@ void SeqsToChainsFPGA::compute_func(int wid) {
         
       uint64_t inner_ts = getUs();
       for (int i2 = 0; i2 < task->i_seq_num; i2++) {
-#if 0
-        int i = task->i_seq_base_idx+i2;
-        bseq1_t *seqs = &srseqs[i];
-        mem_chain_v chn;
-        if (task->o_num_data[i2] <= max_intv_alloc) {
-          smem_aux_t *smem_aux_fpga = smem_aux_init();
-          bwtintv_t *smem_temp = smem_aux_fpga->mem.a;
-          smem_aux_fpga->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
-          smem_aux_fpga->mem.n = task->o_num_data[i2];
-          chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux_fpga);
-          smem_aux_fpga->mem.a = smem_temp;
-          smem_aux_destroy(smem_aux_fpga);
-        }
-        else {
-          DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
-          chn = mem_chain_new(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);
-        }
-        chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
-        mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
-        chains[i] = chn;
-#endif
         // unpack the data
         int i = task->i_seq_base_idx+i2;
+        size_t n = task->o_num_data[i2];
+        bseq1_t *seqs = &srseqs[i];
+        if (n > max_intv_alloc) {
+          DLOG_IF(WARNING, VLOG_IS_ON(3)) << "Seq " << i << " in SeqsRecord[start_idx:" << seqs_record.start_idx << "] overflowed. Redo on CPU";
+          smem_aux_t *smem_aux = smem_aux_init();
+          mem_collect_intv_new(aux->opt, aux->idx->bwt, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
+          n = smem_aux->mem.n;
+          bwtintvs[i] = (bwtintv_t*)malloc(n*sizeof(bwtintv_t));
+          memcpy(bwtintvs[i], smem_aux->mem.a, n*sizeof(bwtintv_t));
+          smem_aux_destroy(smem_aux);
+        }
+        else {
+          bwtintvs[i] = (bwtintv_t*)malloc(n*sizeof(bwtintv_t));
+          memcpy(bwtintvs[i], &(task->o_mem_data[i2*task->max_intv_alloc_]), n*sizeof(bwtintv_t));
+        }
+        bwtintv_nums[i] = n;
+#if 0
         smem_aux_t *smem_aux = smem_aux_init();
         bwtintv_t *temp = smem_aux->mem.a;
         smem_aux->mem.a = &(task->o_mem_data[i2*task->max_intv_alloc_]);
@@ -874,9 +862,10 @@ void SeqsToChainsFPGA::compute_func(int wid) {
         chn = mem_chain_postprocess(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, smem_aux);
         smem_aux->mem.a = temp;
         smem_aux_destroy(smem_aux);
-        chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
-        mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
+        //chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
+        //mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
         chains[i] = chn;
+#endif
       }
 
       task->i_seq_num = 0;
@@ -887,7 +876,9 @@ void SeqsToChainsFPGA::compute_func(int wid) {
     output.start_idx    = seqs_record.start_idx;
     output.batch_num    = batch_num;
     output.seqs         = srseqs;
-    output.chains       = chains;
+    output.bwtintvs     = bwtintvs;
+    output.bwtintv_nums = bwtintv_nums;
+    output.tag          = 0;
  
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished SeqsToChains() on FPGA in " 
                                  << getUs() - start_ts << " us";
