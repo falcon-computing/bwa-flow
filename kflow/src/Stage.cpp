@@ -32,6 +32,7 @@ StageBase::StageBase(int num_workers, bool is_dyn):
   for (int i = 0; i < num_workers; i++) {
     perf_meters_[i] = new uint64_t[4]();
   }
+  worker_thread_ptr_ = new boost::thread*[num_workers];
 }
 
 StageBase::~StageBase() {
@@ -39,6 +40,7 @@ StageBase::~StageBase() {
     delete [] perf_meters_[i];
   }
   delete [] perf_meters_;
+  delete [] worker_thread_ptr_;
 }
 
 void StageBase::start() {
@@ -52,7 +54,7 @@ void StageBase::start() {
   start_ts_ = getUs();
 
   for (int i = 0; i < num_workers_; i++) {
-    worker_threads_.create_thread(
+    worker_thread_ptr_[i] = worker_threads_.create_thread(
         boost::bind(&StageBase::worker_func, this, i));
   }
 }
@@ -120,6 +122,10 @@ int StageBase::getNumThreads() {
   else {
     return num_workers_;
   }
+}
+
+int StageBase::getNumActiveThreads() {
+  return num_active_threads_.load();
 }
 
 int StageBase::incFinalizedThreads() {

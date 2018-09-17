@@ -95,7 +95,7 @@ int MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_new() {
     int accx_queue_size = this->getAccxQueue()->get_size();
     int accx_queue_capacity = this->getAccxQueue()->get_capacity();
     if ( accx_queue_size < accx_queue_capacity &&
-         accx_queue_size <= ((StageBase*)this)->accx_backend_stage_->getMaxNumThreads() * ((StageBase*)this)->accx_priority_ ) {
+         accx_queue_size <= ((StageBase*)this)->accx_backend_stage_->getNumActiveThreads() * ((StageBase*)this)->accx_priority_ ) {
       this->getAccxQueue()->push(input);
       return 0;
     }

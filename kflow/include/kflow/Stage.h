@@ -30,6 +30,7 @@ class StageBase {
   float accx_priority_ = 1.0;
 
   int getMaxNumThreads();
+  int getNumActiveThreads();
   int incFinalizedThreads();
 
   virtual void start();
@@ -40,9 +41,12 @@ class StageBase {
   int  getPriority() { return priority_; }
 
   bool useAccx() { return use_accx_; }
+  void setUseAccx(bool flag) { use_accx_ = flag; }
   StageBase *getAccxStage() { return accx_backend_stage_; }
 
   boost::any getConst(std::string key);
+
+  boost::thread *getThread(int i) { return worker_thread_ptr_[i]; }
 
  protected:
   void final();
@@ -96,7 +100,7 @@ class StageBase {
   }
 
   bool is_dynamic_;
-  bool use_accx_;
+  mutable boost::atomic<bool> use_accx_;
   int  num_workers_;
   int  num_upstream_stages_; 
   int  priority_ = 1;
@@ -106,6 +110,7 @@ class StageBase {
   mutable boost::atomic<int>  num_finalized_upstream_stages_;
   mutable boost::atomic<bool> is_final_;
   boost::thread_group         worker_threads_;
+  boost::thread             **worker_thread_ptr_;
   
   boost::mutex mtx_;
 };
@@ -124,7 +129,7 @@ class Stage : public StageBase {
   Stage(int num_workers=1, bool is_dyn=true):
       StageBase(num_workers, is_dyn) {}
 
- protected:
+ public:
   Queue<U, IN_DEPTH>* getInputQueue() {
     if (IN_DEPTH == 0) return NULL;
     if (!input_queue_) {
