@@ -35,21 +35,17 @@
 #define VERSION "untracked"
 #endif
 
+#include "allocation_wrapper.h"
 #include "bwa_wrapper.h"
 #include "config.h"
+#include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "allocation_wrapper.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
 #include "FPGAPipeline.h"
 BWAOCLEnv* opencl_env;
-#endif
-
-// use flexlm
-#ifdef USELICENSE
-#include "falcon-lic/genome.h"
 #endif
 
 // global parameters
