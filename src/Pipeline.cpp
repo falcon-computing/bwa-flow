@@ -70,21 +70,58 @@ void getKseqBatch(int chunk_size,
   *n_ = t;
 }
 
-const int kseq_buffer_size = INPUT_DEPTH;
-kestrelFlow::Queue<kseq_new_t*, kseq_buffer_size+1> kseq_queue;
+template <int KSEQ_BUFF_SIZE>
+class KseqBuffer
+{
+ public:
+  KseqBuffer() : queue_(KSEQ_BUFF_SIZE)
+  {
+    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
+      kseq_new_t *ks_new = (kseq_new_t*)calloc(140000, sizeof(kseq_new_t));
+      queue_.push(ks_new);
+    }
+  }
+
+  ~KseqBuffer() {
+    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
+      if (queue_.empty()) {
+        std::cerr << "Internal memory corruption" << std::endl;
+        break;
+      }
+      kseq_new_t *ks;
+      queue_.pop(ks);
+      for (int j = 0; j < 140000; j++) {
+        if (ks[j].name.l) free(ks[j].name.s);
+        if (ks[j].comment.l) free(ks[j].comment.s);
+        if (ks[j].seq.l) free(ks[j].seq.s);
+        if (ks[j].qual.l) free(ks[j].qual.s);
+      }
+      free(ks);
+    }
+  }
+
+  void push(kseq_new_t *ks) {
+    queue_.push(ks);
+  }
+
+  void pop(kseq_new_t *&ks) {
+    queue_.pop(ks);
+  }
+
+ private:
+  kestrelFlow::Queue<kseq_new_t*, KSEQ_BUFF_SIZE+1> queue_;
+};
+
+KseqBuffer<INPUT_DEPTH> kseq_queue;
 
 void KseqsRead::compute() {
   uint64_t num_seqs_produced = 0;
   // initialize kseq_queue, TODO calculate the size instead of the magic number
-  for (int i = 0; i < kseq_buffer_size; i++) {
-    kseq_new_t *ks_new = (kseq_new_t*)calloc(140000, sizeof(kseq_new_t));
-    kseq_queue.push(ks_new);
-  }
   while (true) {
     uint64_t start_ts = getUs();
 
     int batch_num = 0;
-    kseq_new_t *ks_buffer ;
+    kseq_new_t *ks_buffer;
     kseq_queue.pop(ks_buffer);
 
     // Get the kseq batch
@@ -94,7 +131,10 @@ void KseqsRead::compute() {
                                  << getUs() - start_ts << " us";
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Read " << batch_num << " seqs in "
             << getUs() - start_ts << " us";
-    if (batch_num == 0) break;
+    if (batch_num == 0) {
+      kseq_queue.push(ks_buffer);
+      break;
+    }
 
     KseqsRecord record;
     record.ks_buffer = ks_buffer;

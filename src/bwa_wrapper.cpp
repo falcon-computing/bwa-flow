@@ -418,11 +418,14 @@ int bwt_smem1a_new(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_i
     } 
     i = i+1; 
     // compute the max len of next iteration
-    int max_len =(temp.info>>32) + (int)curr->a[i].info;
-    while (max_len < min_seed_len && i < curr->n){
-      i = i + 1;
-      stop = (int)curr->a[i].info;
-      max_len = (temp.info>>32) + stop;
+    if (i < curr->n) {
+      int max_len =(temp.info>>32) + (int)curr->a[i].info;
+      while (max_len < min_seed_len && i < curr->n){
+        i = i + 1;
+        if (i < curr->n)
+          stop = (int)curr->a[i].info;
+        max_len = (temp.info>>32) + stop;
+      }
     }
     if(i >= curr->n && (int)temp.info - (temp.info>>32) >= min_seed_len )
       kv_push(bwtintv_t,*mem,temp);
