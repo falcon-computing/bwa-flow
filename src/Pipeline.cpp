@@ -167,13 +167,12 @@ SeqsRecord KseqsToBseqs::compute(KseqsRecord const & input) {
   kseq_queue.push(ks_buffer);
 
   // Finish the remain steps
-	if (!aux->copy_comment) {
-		for (int i = 0; i < batch_num; i++) {
-			free(seqs[i].comment);
-			seqs[i].comment = 0;
-		}
-    DLOG_IF(INFO, FLAGS_v >= 2 && input.start_idx == 0) << 
-      "Do not append seq comment";
+  if (!aux->copy_comment) {
+    for (int i = 0; i < batch_num; i++) {
+      free(seqs[i].comment);
+      seqs[i].comment = NULL;
+    }
+    DLOG_IF(INFO, FLAGS_v >= 2 && input.start_idx == 0) << "Do not append seq comment";
   }
 
   SeqsRecord record;
@@ -331,6 +330,51 @@ ChainsRecord SeqsToChains::compute(SeqsRecord const & seqs_record) {
     chains[i] = mem_seq2chain_wrapper(aux, &seqs[i]);
   }
 
+#if 0
+  int num_err_seqs = 0;
+  for (int i = 0; i < batch_num; i++) {
+    mem_chain_v chn = mem_seq2chain_origin(aux, &seqs[i]);
+    if (chains[i].n != chn.n) {
+      DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - "
+                 << "Wrong number of chains: " << chains[i].n << " (expecting " << chn.n << ")";
+      num_err_seqs++;
+      continue;
+    }
+    int num_err_chains = 0;
+    for (int chain_id = 0; chain_id < chn.n ; chain_id++) {
+      if (chains[i].a[chain_id].n != chn.a[chain_id].n) {
+        DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - "
+                   << "Wrong number of seeds: " << chains[i].a[chain_id].n << " (expecting " << chn.a[chain_id].n << ")";
+        num_err_chains++;
+        continue;
+      }
+      int num_rbeg_mismatch = 0, num_qbeg_mismatch = 0, num_len_mismatch = 0;
+      for (int seed_id = 0; seed_id < chn.a[chain_id].n; seed_id++) {
+        if (chains[i].a[chain_id].seeds[seed_id].rbeg != chn.a[chain_id].seeds[seed_id].rbeg) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds rbeg: " << chains[i].a[chain_id].seeds[seed_id].rbeg << " e. " << chn.a[chain_id].seeds[seed_id].rbeg;
+          num_rbeg_mismatch++;
+        }
+        if (chains[i].a[chain_id].seeds[seed_id].qbeg != chn.a[chain_id].seeds[seed_id].qbeg) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds qbeg: " << chains[i].a[chain_id].seeds[seed_id].qbeg << " e. " << chn.a[chain_id].seeds[seed_id].qbeg;
+          num_qbeg_mismatch++;
+        }
+        if (chains[i].a[chain_id].seeds[seed_id].len != chn.a[chain_id].seeds[seed_id].len) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds len: " << chains[i].a[chain_id].seeds[seed_id].len << " e. " << chn.a[chain_id].seeds[seed_id].len;
+          num_len_mismatch++;
+        }
+      }
+      if (num_rbeg_mismatch != 0 || num_qbeg_mismatch != 0 || num_len_mismatch != 0)
+        num_err_chains++;
+    }
+    if (num_err_chains != 0)
+      num_err_seqs++;
+  }
+  LOG(INFO) << "Found " << num_err_seqs << " / " << batch_num << " error seqs";
+#endif
+
   ChainsRecord ret;
   ret.start_idx    = start_idx;
   ret.batch_num    = batch_num;
@@ -374,6 +418,55 @@ ChainsRecord ChainsPipe::compute(ChainsRecord const & record) {
   }
   free(bwtintvs);
   free(bwtintv_nums);
+
+#if 0
+  int num_err_seqs = 0;
+  for (int i = 0; i < batch_num; i++) {
+    mem_chain_v chn = mem_seq2chain_origin(aux, &seqs[i]);
+    if (chains[i].n != chn.n) {
+      DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - "
+                 << "Wrong number of chains: " << chains[i].n << " (expecting " << chn.n << ")";
+      num_err_seqs++;
+      continue;
+    }
+    int num_err_chains = 0;
+    for (int chain_id = 0; chain_id < chn.n ; chain_id++) {
+      if (chains[i].a[chain_id].n != chn.a[chain_id].n) {
+        DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - "
+                   << "Wrong number of seeds: " << chains[i].a[chain_id].n << " (expecting " << chn.a[chain_id].n << ")";
+        num_err_chains++;
+        continue;
+      }
+      int num_rbeg_mismatch = 0, num_qbeg_mismatch = 0, num_len_mismatch = 0;
+      for (int seed_id = 0; seed_id < chn.a[chain_id].n; seed_id++) {
+        if (chains[i].a[chain_id].seeds[seed_id].rbeg != chn.a[chain_id].seeds[seed_id].rbeg) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds rbeg: " << chains[i].a[chain_id].seeds[seed_id].rbeg << " e. " << chn.a[chain_id].seeds[seed_id].rbeg;
+          num_rbeg_mismatch++;
+        }
+        if (chains[i].a[chain_id].seeds[seed_id].qbeg != chn.a[chain_id].seeds[seed_id].qbeg) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds qbeg: " << chains[i].a[chain_id].seeds[seed_id].qbeg << " e. " << chn.a[chain_id].seeds[seed_id].qbeg;
+          num_qbeg_mismatch++;
+        }
+        if (chains[i].a[chain_id].seeds[seed_id].len != chn.a[chain_id].seeds[seed_id].len) {
+          DLOG(INFO) << "Sdx " << start_idx << " - Seq " << i << " - Chain " << chain_id << " - Seed " << seed_id << " - "
+                     << "Wrong seeds len: " << chains[i].a[chain_id].seeds[seed_id].len << " e. " << chn.a[chain_id].seeds[seed_id].len;
+          num_len_mismatch++;
+        }
+      }
+      if (num_rbeg_mismatch != 0 || num_qbeg_mismatch != 0 || num_len_mismatch != 0)
+        num_err_chains++;
+    }
+    if (num_err_chains != 0)
+      num_err_seqs++;
+
+    for (int j = 0; j < chn.n; j++)
+      free(chn.a[j].seeds);
+    free(chn.a);
+  }
+  LOG(INFO) << "Found " << num_err_seqs << " / " << batch_num << " error seqs";
+#endif
 
   ChainsRecord ret;
   ret.start_idx    = start_idx;
@@ -632,6 +725,12 @@ typedef bam1_t *bam1_p;
 KSORT_INIT(sort, bam1_p, bam1_lt)
 #endif
 
+inline int num_seqs_accumulator(std::vector<SeqsRecord> *records_list) {
+  int num_seqs = 0;
+  for (int id = 0; id < records_list->size(); id++) num_seqs+=(*records_list)[id].batch_num;
+  return num_seqs;
+}
+
 #ifdef USE_HTSLIB
 BamsRecord SamsSort::compute(BamsRecord const & input)
 {
@@ -644,6 +743,8 @@ BamsRecord SamsSort::compute(BamsRecord const & input)
 
   uint64_t start_ts_st = getUs();
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started SamsSort() for one input";
+  DLOG(INFO) << "Sort " << num_seqs_accumulator(input.records_list) 
+            << " seqs starting " << (*input.records_list)[0].start_idx;
 
   // step: copy
   std::vector<SeqsRecord> *records_list = input.records_list;

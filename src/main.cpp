@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <execinfo.h>
+#include <signal.h>
 #include <string.h>
 #include <string>
 #include <unistd.h>
@@ -57,7 +59,18 @@ gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
 
+
+void trace_dumper(int sig) {
+  void *bt_array[64];
+  size_t size;
+  size = backtrace(bt_array, 64);
+  fprintf(stderr, "Error: signal%d:\n", sig);
+  backtrace_symbols_fd(bt_array, size, STDERR_FILENO);
+  exit(1);
+}
+
 int main(int argc, char *argv[]) {
+  signal(SIGSEGV, trace_dumper);
 
   // Print arguments for records
   std::stringstream ss;

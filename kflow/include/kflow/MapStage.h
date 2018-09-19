@@ -117,9 +117,9 @@ void MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_func(U input) {
     /* disabled pipeline-level threading control */
     OccupancyCounter seat(this->pipeline_, this); 
 
-    DLOG(INFO) << "Instantiate a work for MapStage, there are "
-               << this->getNumThreads()
-               << " active threads in this stage";
+    //DLOG(INFO) << "Instantiate a work for MapStage, there are "
+    //           << this->getNumThreads()
+    //           << " active threads in this stage";
 
     // wait to get a cpu token
     while (!this->pipeline_->megapipe_->acqThrd()) {
