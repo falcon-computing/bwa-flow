@@ -9,7 +9,6 @@
 #endif
 extern "C" {
 #include "bwa/kstring.h"
-}
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
 #include "bwa/ksw.h"
@@ -17,6 +16,7 @@ extern "C" {
 #include "bwa/ksort.h"
 #include "bwa/kbtree.h"
 #include "bwa/utils.h"
+}
 #include "bwa_wrapper.h"
 
 #include "allocation_wrapper.h"
@@ -102,6 +102,19 @@ int kseq_read_new (kseq_new_t* seq_new, kseq_t *seq)
   return seq_new->seq.l;
 }
 
+mem_chain_v mem_seq2chain_origin(ktp_aux_t *aux, bseq1_t *seqs) {
+  int i;
+  mem_chain_v chn;
+  for (i = 0; i < seqs->l_seq; ++i)
+    seqs->seq[i] = seqs->seq[i] < 4? seqs->seq[i] : nst_nt4_table[(int)seqs->seq[i]];
+
+  chn = mem_chain(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);
+  chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
+  mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
+
+  return chn;
+}
+
 mem_chain_v mem_seq2chain_wrapper(
     ktp_aux_t *aux,
     bseq1_t *seqs
@@ -112,7 +125,6 @@ mem_chain_v mem_seq2chain_wrapper(
     seqs->seq[i] = seqs->seq[i] < 4? seqs->seq[i] : nst_nt4_table[(int)seqs->seq[i]];
 
   chn = mem_chain_new(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);         // the 0 should be reconsidered
-  //chn = mem_chain(aux->opt, aux->idx->bwt, aux->idx->bns, seqs->l_seq, (uint8_t*)seqs->seq, 0);         // the 0 should be reconsidered
   chn.n = mem_chain_flt(aux->opt, chn.n, chn.a);
   mem_flt_chained_seeds(aux->opt, aux->idx->bns, aux->idx->pac, seqs->l_seq, (uint8_t*)seqs->seq, chn.n, chn.a);
 
@@ -418,11 +430,14 @@ int bwt_smem1a_new(const bwt_t *bwt, int len, const uint8_t *q, int x, int min_i
     } 
     i = i+1; 
     // compute the max len of next iteration
-    int max_len =(temp.info>>32) + (int)curr->a[i].info;
-    while (max_len < min_seed_len && i < curr->n){
-      i = i + 1;
-      stop = (int)curr->a[i].info;
-      max_len = (temp.info>>32) + stop;
+    if (i < curr->n) {
+      int max_len =(temp.info>>32) + (int)curr->a[i].info;
+      while (max_len < min_seed_len && i < curr->n){
+        i = i + 1;
+        if (i < curr->n)
+          stop = (int)curr->a[i].info;
+        max_len = (temp.info>>32) + stop;
+      }
     }
     if(i >= curr->n && (int)temp.info - (temp.info>>32) >= min_seed_len )
       kv_push(bwtintv_t,*mem,temp);

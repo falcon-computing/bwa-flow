@@ -134,6 +134,7 @@ char **mem_gen_alt(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 
 int kseq_read_new(kseq_new_t *seq_new, kseq_t *seq);
 
+mem_chain_v mem_seq2chain_origin(ktp_aux_t *aux, bseq1_t *seqs);
 mem_chain_v mem_seq2chain_wrapper(ktp_aux_t *aux, bseq1_t *seqs);
 
 mem_chain_v mem_chain_new(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, int len, const uint8_t *seq, void *buf);

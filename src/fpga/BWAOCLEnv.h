@@ -44,13 +44,17 @@ class BWAOCLEnv : public OpenCLEnv{
     : OpenCLEnv(get_group_sizes(), get_bin_paths())
   {
     num_pe_ = 0;
-    initPAC();
-    initBWT();
+    if (!FLAGS_no_use_sw_fpga)
+      initPAC();
+    if (!FLAGS_no_use_smem_fpga)
+      initBWT();
   }
 
   ~BWAOCLEnv() {
-    releasePAC();
-    releaseBWT();
+    if (!FLAGS_no_use_sw_fpga)
+      releasePAC();
+    if (!FLAGS_no_use_smem_fpga)
+      releaseBWT();
   }
 
   void initPAC() {

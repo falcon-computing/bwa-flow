@@ -132,7 +132,19 @@ DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
     "on the FLAG field, similar to the -F argument in samtools");
 
 DEFINE_bool(use_fpga, false,
-    "Enable FPGA accelerator for SmithWaterman computation");
+    "Enable FPGA accelerator for SMem & SmithWaterman computation");
+
+DEFINE_bool(no_use_smem_fpga, false,
+    "Disable FPGA accelerator for SMem computation");
+
+DEFINE_bool(no_use_smem_cpu, false,
+    "Disable CPU for SMem computation");
+
+DEFINE_bool(no_use_sw_fpga, false,
+    "Disable FPGA accelerator for SmithWaterman computation");
+
+DEFINE_bool(no_use_sw_cpu, false,
+    "Disable CPU for SmithWaterman computation");
 
 DEFINE_bool(sort, true,
     "Enable in-memory sorting of output bam file");

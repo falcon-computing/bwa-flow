@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <execinfo.h>
+#include <signal.h>
 #include <string.h>
 #include <string>
 #include <unistd.h>
@@ -53,7 +55,22 @@ gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
 
+#ifndef NDEBUG
+void trace_dumper(int sig) {
+  void *bt_array[64];
+  size_t size;
+  size = backtrace(bt_array, 64);
+  fprintf(stderr, "Debug: caught error signal%d:\n", sig);
+  backtrace_symbols_fd(bt_array, size, STDERR_FILENO);
+  exit(1);
+}
+#endif
+
 int main(int argc, char *argv[]) {
+#ifndef NDEBUG
+  signal(SIGSEGV, trace_dumper);
+  fprintf(stderr, "Debug: registered trace dumper for SIGSEGV\n");
+#endif
 
   // Print arguments for records
   std::stringstream ss;
@@ -254,7 +271,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for bwa computation
   SeqsToChains      seq2chain_stage(FLAGS_stage_1_nt);
-  ChainsPipe  chainpipe_stage(FLAGS_stage_1_nt);
+  ChainsPipe        chainpipe_stage(FLAGS_stage_1_nt);
   ChainsToRegions   chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam      reg2sam_stage(FLAGS_stage_3_nt);
 #ifdef BUILD_FPGA
@@ -275,9 +292,39 @@ int main(int argc, char *argv[]) {
   
     compute_flow.addStage(0, &kread_stage);
     compute_flow.addStage(1, &k2b_stage);
-    compute_flow.addStage(2, &seq2chain_stage);
+    if (!FLAGS_no_use_smem_cpu)
+      compute_flow.addStage(2, &seq2chain_stage);
+    else
+#ifdef BUILD_FPGA
+      if (smem_fpga_thread > 0)
+        compute_flow.addStage(2, &seq2chain_fpga_stage);
+      else {
+        LOG(ERROR) << "broken pipeline at seq2chain stage";
+        throw std::runtime_error("broken pipeline at seq2chain stage");
+      } 
+#else
+    {
+      LOG(ERROR) << "broken pipeline at seq2chain stage";
+      throw std::runtime_error("broken pipeline at seq2chain stage");
+    }
+#endif
     compute_flow.addStage(3, &chainpipe_stage);
-    compute_flow.addStage(4, &chain2reg_stage);
+    if (!FLAGS_no_use_sw_cpu)
+      compute_flow.addStage(4, &chain2reg_stage);
+    else
+#ifdef BUILD_FPGA
+      if (sw_fpga_thread > 0)
+        compute_flow.addStage(4, &chain2reg_fpga_stage);
+      else {
+        LOG(ERROR) << "broken pipeline at chain2reg stage";
+        throw std::runtime_error("broken pipeline at chain2reg stage");
+      }
+#else
+    {
+      LOG(ERROR) << "broken pipeline at chain2reg stage";
+      throw std::runtime_error("broken pipeline at chain2reg stage");
+    }
+#endif
     compute_flow.addStage(5, &reg2sam_stage);
     compute_flow.addStage(6, &reorder_stage);
     compute_flow.addStage(7, &sort_stage);
@@ -287,9 +334,9 @@ int main(int argc, char *argv[]) {
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      if (smem_fpga_thread > 0)
+      if (smem_fpga_thread > 0 && !FLAGS_no_use_smem_cpu)
         compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 2.5);
-      if (sw_fpga_thread > 0)
+      if (sw_fpga_thread > 0 && !FLAGS_no_use_sw_cpu)
         compute_flow.addAccxBckStage(4, &chain2reg_fpga_stage, 10);
     }
 #endif
