@@ -62,19 +62,22 @@ inline void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &post_ts) {
       wrong_results = true;
     }
     if (wrong_results) {
-      //// dump results   
-      //FILE* fout = fopen("dump-input.dat", "wb+");
-      //int k = wrong_half;
-      //fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
-      //fclose(fout);
-      //DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
       if (num_redo < 10) {
         DLOG(WARNING) << "Incurred wrong fpga results. Redo.";
         task->redo();
         num_redo++;
       }
-      else
+      else {
+#if 0
+        // dump results   
+        FILE* fout = fopen("dump-input.dat", "wb+");
+        int k = wrong_half;
+        fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
+        fclose(fout);
+        DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
+#endif
         throw std::runtime_error("wrong fpga results and failure in re-do");
+      }
     }
     else {
       if (num_redo != 0) {
@@ -134,9 +137,6 @@ inline void processOutput(SWTask* task, uint64_t &deq_ts, uint64_t &post_ts) {
       }
       newreg->seedcov = seedcov;
     }
-    // reset
-    // task->i_size[k] = 0;
-    // task->o_size[k] = 0;
   }
 
   // reset
@@ -340,6 +340,7 @@ inline void packReadData(ktp_aux_t* aux,
   if (buffer_idx >= task->max_i_size_ * 0.9) {
     task->max_i_size_ = (int)(task->max_i_size_ * 1.2);
     task->i_data[0] = (char*)realloc(task->i_data[0], task->max_i_size_);
+    task->i_data[1] = (char*)realloc(task->i_data[1], task->max_i_size_);
   }
 
   free(ref);
@@ -469,6 +470,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
     int i = 0;
     bool reach_half = false;
     bool reach_end = false;
+    task_queue.front()->start_seq = 0;
     while (i < batch_num) {
       if (task_num < chunk_size/2) {
         SWTask* task = task_queue.front();
@@ -489,18 +491,19 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
       }
       else if (task_num < chunk_size) {
         SWTask* task = task_queue.front();
-
         packReadData(aux, seqs+i, chains+i, alnreg+i, 
             task->i_data[1], 
             kernel_buffer_idx, task_num,
             task);
-
         i++;
       }
       else if (task_num >= chunk_size) {
         SWTask* task = task_queue.front();
         task->i_size[1] = kernel_buffer_idx/sizeof(int);
         task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
+        if (task->o_size[0] == 0) task->i_size[0] = 0;
+        if (task->o_size[1] == 0) task->i_size[1] = 0;
+        task->end_seq = i;
 
         prep_ts += getUs() - pre_start_ts;
         DLOG_IF(INFO, VLOG_IS_ON(4)) << "Prepare data for " << task_num << " tasks takes "
@@ -508,6 +511,7 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
 
         // start sending task to FPGA
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
+        DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
         task->start(task_queue[1], enq_ts);
 
         // circulate the task
@@ -519,8 +523,6 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
         if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
           processOutput(task, deq_ts, post_ts);
-          //DLOG_IF(INFO, VLOG_IS_ON(4)) << "This chunk of FPGA takes " << 
-          //                                getUs()- last_batch_ts << " us";
         }
         chunk_id++;
 
@@ -528,6 +530,8 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
         task_num = 0;
         kernel_buffer_idx = 0;
         reach_half = false;
+        task->start_seq = i;
+        task->end_seq = 0;
 
         pre_start_ts = getUs();
 
@@ -555,10 +559,14 @@ void ChainsToRegionsFPGA::compute_func(int wid) {
         task->i_size[1] = kernel_buffer_idx/sizeof(int);
         task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
       }
+      if (task->o_size[0] == 0) task->i_size[0] = 0;
+      if (task->o_size[1] == 0) task->i_size[1] = 0;
+      task->end_seq = i;
 
       prep_ts += getUs() - pre_start_ts;
 
       DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
+      DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
       task->start(task_queue[1], enq_ts);
     }
 
