@@ -59,18 +59,22 @@ gzFile fp_idx, fp2_read2 = 0;
 void *ko_read1 = 0, *ko_read2 = 0;
 ktp_aux_t* aux;
 
-
+#ifndef NDEBUG
 void trace_dumper(int sig) {
   void *bt_array[64];
   size_t size;
   size = backtrace(bt_array, 64);
-  fprintf(stderr, "Error: signal%d:\n", sig);
+  fprintf(stderr, "Debug: caught error signal%d:\n", sig);
   backtrace_symbols_fd(bt_array, size, STDERR_FILENO);
   exit(1);
 }
+#endif
 
 int main(int argc, char *argv[]) {
+#ifndef NDEBUG
   signal(SIGSEGV, trace_dumper);
+  fprintf(stderr, "Debug: registered trace dumper for SIGSEGV\n");
+#endif
 
   // Print arguments for records
   std::stringstream ss;
