@@ -31,6 +31,9 @@ class SWTask : public Task {
 
   size_t     max_i_size_;
   size_t     max_o_size_;
+
+  int        start_seq = 0;
+  int        end_seq = 0;
  private:
   FPGAAgent* agent_;
 };
