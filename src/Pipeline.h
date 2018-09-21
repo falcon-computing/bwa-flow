@@ -21,10 +21,15 @@
 #define COMPUTE_DEPTH 64
 
 // Common data structures
+struct kseq_buf_t {
+  kseq_new_t* ks;
+  int size;
+};
+
 struct KseqsRecord {
   uint64_t start_idx;
   int batch_num;
-  kseq_new_t* ks_buffer;
+  kseq_buf_t ks_buffer;
   const char* name = "KseqsRecord";
 };
 
