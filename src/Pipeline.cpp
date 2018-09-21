@@ -41,25 +41,78 @@ static inline void trim_readno(kstring_t *s)
 		s->l -= 2, s->s[s->l] = 0;
 }
 
+const int max_kseq_buf_size = 200000;
+
+template <int KSEQ_BUFF_SIZE>
+class KseqBuffer
+{
+ public:
+  KseqBuffer() : queue_(KSEQ_BUFF_SIZE)
+  {
+    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
+      kseq_new_t *ks_new = (kseq_new_t*)calloc(max_kseq_buf_size, sizeof(kseq_new_t));
+      kseq_buf_t buf;
+      buf.ks = ks_new;
+      buf.size = max_kseq_buf_size;
+      queue_.push(buf);
+    }
+  }
+
+  ~KseqBuffer() {
+    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
+      if (queue_.empty()) {
+        DLOG(ERROR) << "Internal memory corruption";
+        break;
+      }
+      kseq_buf_t buf;
+      queue_.pop(buf);
+      kseq_new_t* ks = buf.ks;
+      for (int j = 0; j < buf.size; j++) {
+        if (ks[j].name.l) free(ks[j].name.s);
+        if (ks[j].comment.l) free(ks[j].comment.s);
+        if (ks[j].seq.l) free(ks[j].seq.s);
+        if (ks[j].qual.l) free(ks[j].qual.s);
+      }
+      free(ks);
+    }
+  }
+
+  void push(kseq_buf_t buf) {
+    queue_.push(buf);
+  }
+
+  void pop(kseq_buf_t &buf) {
+    queue_.pop(buf);
+  }
+
+ private:
+  kestrelFlow::Queue<kseq_buf_t, KSEQ_BUFF_SIZE+1> queue_;
+};
+
 void getKseqBatch(int chunk_size, 
     int *n_, 
     void *ks1_, void *ks2_,
-    kseq_new_t *ks_buffer)
+    kseq_buf_t ks_buffer)
 {
   kseq_t *ks = (kseq_t*)ks1_, *ks2 = (kseq_t*)ks2_;
   int size = 0, t = 0;
 
   while (true) {
-    if (kseq_read_new(&ks_buffer[t], ks) <0) {
+    if (t >= ks_buffer.size) {
+      ks_buffer.ks = (kseq_new_t*)realloc(ks_buffer.ks, ks_buffer.size * 2 * sizeof(kseq_new_t));
+      ks_buffer.size = ks_buffer.size * 2;
+    }
+    kseq_new_t* ks_new = ks_buffer.ks;
+    if (kseq_read_new(&ks_new[t], ks) <0) {
       break;
     }
-    size += strlen(ks_buffer[t++].seq.s);
+    size += strlen(ks_new[t++].seq.s);
     if(ks2) {
-      if(kseq_read_new(&ks_buffer[t], ks2) < 0) {
+      if(kseq_read_new(&ks_new[t], ks2) < 0) {
         fprintf(stderr,"[W::%s] the 2nd file has fewer sequences.\n", __func__);
         break;
       }
-      size += strlen(ks_buffer[t++].seq.s);
+      size += strlen(ks_new[t++].seq.s);
     }
     if (size >= chunk_size && (t&1) ==0) break;
   }
@@ -70,48 +123,6 @@ void getKseqBatch(int chunk_size,
   *n_ = t;
 }
 
-template <int KSEQ_BUFF_SIZE>
-class KseqBuffer
-{
- public:
-  KseqBuffer() : queue_(KSEQ_BUFF_SIZE)
-  {
-    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
-      kseq_new_t *ks_new = (kseq_new_t*)calloc(140000, sizeof(kseq_new_t));
-      queue_.push(ks_new);
-    }
-  }
-
-  ~KseqBuffer() {
-    for (int i = 0; i < KSEQ_BUFF_SIZE; i++) {
-      if (queue_.empty()) {
-        std::cerr << "Internal memory corruption" << std::endl;
-        break;
-      }
-      kseq_new_t *ks;
-      queue_.pop(ks);
-      for (int j = 0; j < 140000; j++) {
-        if (ks[j].name.l) free(ks[j].name.s);
-        if (ks[j].comment.l) free(ks[j].comment.s);
-        if (ks[j].seq.l) free(ks[j].seq.s);
-        if (ks[j].qual.l) free(ks[j].qual.s);
-      }
-      free(ks);
-    }
-  }
-
-  void push(kseq_new_t *ks) {
-    queue_.push(ks);
-  }
-
-  void pop(kseq_new_t *&ks) {
-    queue_.pop(ks);
-  }
-
- private:
-  kestrelFlow::Queue<kseq_new_t*, KSEQ_BUFF_SIZE+1> queue_;
-};
-
 KseqBuffer<INPUT_DEPTH> kseq_queue;
 
 void KseqsRead::compute() {
@@ -121,7 +132,7 @@ void KseqsRead::compute() {
     uint64_t start_ts = getUs();
 
     int batch_num = 0;
-    kseq_new_t *ks_buffer;
+    kseq_buf_t ks_buffer;
     kseq_queue.pop(ks_buffer);
 
     // Get the kseq batch
@@ -151,20 +162,20 @@ SeqsRecord KseqsToBseqs::compute(KseqsRecord const & input) {
   uint64_t start_ts = getUs();
   
   int batch_num = input.batch_num;
-  kseq_new_t *ks_buffer = input.ks_buffer;
+  kseq_new_t *ks = input.ks_buffer.ks;
   bseq1_t* seqs = (bseq1_t*)calloc(batch_num, sizeof(bseq1_t));
 
   for (int i=0; i<batch_num; i++) { 
-    trim_readno(&ks_buffer[i].name);
-    seqs[i].name = strdup(ks_buffer[i].name.s);
-    seqs[i].comment = ks_buffer[i].comment.l ? strdup(ks_buffer[i].comment.s) : 0;
-    seqs[i].seq = strdup(ks_buffer[i].seq.s);
-    seqs[i].qual = ks_buffer[i].qual.l? strdup(ks_buffer[i].qual.s) : 0;
+    trim_readno(&ks[i].name);
+    seqs[i].name = strdup(ks[i].name.s);
+    seqs[i].comment = ks[i].comment.l ? strdup(ks[i].comment.s) : 0;
+    seqs[i].seq = strdup(ks[i].seq.s);
+    seqs[i].qual = ks[i].qual.l? strdup(ks[i].qual.s) : 0;
     seqs[i].l_seq = strlen(seqs[i].seq);
   }
 
   // return the ks_buffer to the queue
-  kseq_queue.push(ks_buffer);
+  kseq_queue.push(input.ks_buffer);
 
   // Finish the remain steps
   if (!aux->copy_comment) {
