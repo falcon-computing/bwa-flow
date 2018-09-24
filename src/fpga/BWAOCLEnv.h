@@ -46,8 +46,10 @@ class BWAOCLEnv : public OpenCLEnv{
     num_pe_ = 0;
     if (!FLAGS_no_use_sw_fpga)
       initPAC();
+    sw_fpga_thread_ = sw_pe_list_.size();
     if (!FLAGS_no_use_smem_fpga)
       initBWT();
+    smem_fpga_thread_ = smem_pe_list_.size();
   }
 
   ~BWAOCLEnv() {

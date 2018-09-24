@@ -276,12 +276,9 @@ int main(int argc, char *argv[]) {
   RegionsToSam      reg2sam_stage(FLAGS_stage_3_nt);
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
-  SeqsToChainsFPGA      seq2chain_fpga_stage(smem_fpga_thread);
+  SeqsToChainsFPGA      seq2chain_fpga_stage(smem_fpga_thread, &seq2chain_stage);
   // Stages for FPGA acceleration of stage_2
-  ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread);
-  // timeout backup stage
-  seq2chain_fpga_stage.cpu_stage=&seq2chain_stage;
-  chain2reg_fpga_stage.cpu_stage=&chain2reg_stage;
+  ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);

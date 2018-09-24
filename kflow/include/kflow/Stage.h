@@ -177,10 +177,17 @@ class Stage : public StageBase {
 
   bool inputQueueEmpty() {
     if (this->getInputQueue()) {
-      return this->getInputQueue()->empty();
+      if (!this->getInputQueue()->empty())
+        return false;
+      else {
+        if (accx_backend_stage_ != nullptr)
+          return this->getAccxQueue()->empty();
+        else
+          return true;
+      }
     }
     else {
-      return false;
+      return true;
     }
   }
 };
