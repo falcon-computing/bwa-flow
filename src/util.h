@@ -18,6 +18,12 @@ class resultsError : public std::runtime_error {
     std::runtime_error(what_arg) {;}
 };
 
+class fpgaHangError : public std::runtime_error {
+ public:
+  explicit fpgaHangError(const std::string& what_arg):
+    std::runtime_error(what_arg) {;}
+};
+
 inline uint64_t getUs() {
   struct timespec tr;
   clock_gettime(CLOCK_REALTIME, &tr);

@@ -78,9 +78,16 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
       err_string += " due to internal failure"; 
     throw std::runtime_error(err_string);
   }
+
+  mtx_.lock();
+  state_.store(0);
+  helper_ = boost::thread(boost::bind(&SWTask::helper_func, this));
 }
 
 SWTask::~SWTask() {
+  helper_.interrupt();
+  //pthread_kill(helper_.native_handle(), 9);
+
   delete region_batch;
   delete chain_batch;
   for (int k = 0; k < 2; k++) {
@@ -93,37 +100,19 @@ SWTask::~SWTask() {
 }
 
 void SWTask::start(SWTask* prev_task) {
-  if (i_size[0]*sizeof(int) >= max_i_size_ || 
-      i_size[1]*sizeof(int) >= max_i_size_ ||
-      o_size[0] + o_size[1] >= max_o_size_) 
-  {
-    DLOG(ERROR) << "exceeding max memory size";
-    throw std::runtime_error("exceeding max memory size");
+  state_.store(1);
+  prv_task_.store(prev_task);
+  mtx_.unlock();
+
+  int wait = 0;
+  while (!mtx_.try_lock()) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (wait++ >= 12000000)
+      throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Task info: " 
-    << "i_size[0] = " << i_size[0] << ", "
-    << "i_size[1] = " << i_size[1];
-                               
-
-  uint64_t start_ts = getUs();
-  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
-  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
-
-  if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
-    agent_->start(this, NULL);
-  }
-  else {
-    agent_->start(this, prev_task->agent_);
-  }
-
-  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
-  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
-
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
-    getUs() - start_ts << " us";
 }
 
-void SWTask::start(SWTask* prev_task, uint64_t &enq_ts) {
+void SWTask::start_func(SWTask* prev_task) {
   if (i_size[0]*sizeof(int) >= max_i_size_ || 
       i_size[1]*sizeof(int) >= max_i_size_ ||
       o_size[0] + o_size[1] >= max_o_size_) 
@@ -150,27 +139,42 @@ void SWTask::start(SWTask* prev_task, uint64_t &enq_ts) {
   agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
   agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
 
-  enq_ts += getUs() - start_ts;
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
     getUs() - start_ts << " us";
 }
 
 void SWTask::finish() {
-  uint64_t start_ts = getUs();
-  agent_->finish();
-  DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
-                               << getUs() - start_ts << " us";
+  state_.store(2);
+  mtx_.unlock();
+
+  int wait = 0;
+  while (!mtx_.try_lock()) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (wait++ >= 12000000)
+      throw fpgaHangError("smithwater kernel stuck at finish on fpga");
+  }
 }
 
-void SWTask::finish(uint64_t &deq_ts) {
+void SWTask::finish_func() {
   uint64_t start_ts = getUs();
   agent_->finish();
-  deq_ts += getUs() - start_ts;
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Dequeue write, kernel & read takes "
                                << getUs() - start_ts << " us";
 }
 
 void SWTask::redo() {
+  state_.store(3);
+  mtx_.unlock();
+
+  int wait = 0;
+  while (!mtx_.try_lock()) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (wait++ >= 12000000)
+      throw fpgaHangError("smithwater kernel stuck at redo on fpga");
+  }
+}
+
+void SWTask::redo_func() {
   ((XCLAgent *)agent_)->fence();
   agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
   agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
@@ -178,4 +182,28 @@ void SWTask::redo() {
   agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
   agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
   agent_->finish();
+}
+
+void SWTask::helper_func() {
+  while (true) {
+    mtx_.lock();
+    int exec_state = state_.load();
+    if (exec_state == 0) {
+      boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    }
+    else if (exec_state == 1) {
+      SWTask *dep_task = this->prv_task_.load();
+      this->start_func(dep_task);
+      state_.store(0);
+    }
+    else if (exec_state == 2) {
+      this->finish_func();
+      state_.store(0);
+    }
+    else if (exec_state == 3) {
+      this->redo_func();
+      state_.store(0);
+    }
+    mtx_.unlock();
+  }
 }

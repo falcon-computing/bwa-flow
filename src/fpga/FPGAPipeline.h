@@ -18,7 +18,6 @@ class ChainsToRegionsFPGA
  public:
   ChainsToRegionsFPGA(int n=1, ChainsToRegions *stage=NULL) : kestrelFlow::MapPartitionStage<
       ChainsRecord, RegionsRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n, false),
-      mtx_list_(n),
       n_active_(n),
       cpu_stage_(stage)
   {;}
@@ -27,7 +26,6 @@ class ChainsToRegionsFPGA
   void swtask_func(int wid, void *param_list[3]);
 
  private:
-  std::vector<boost::mutex> mtx_list_;
   boost::atomic<int> n_active_;
   ChainsToRegions * cpu_stage_;
 };
@@ -38,7 +36,6 @@ class SeqsToChainsFPGA
  public:
   SeqsToChainsFPGA(int n=1, SeqsToChains *stage=NULL) : kestrelFlow::MapPartitionStage<
       SeqsRecord, ChainsRecord, INPUT_DEPTH, COMPUTE_DEPTH>(n, false),
-      mtx_list_(n),
       n_active_(n),
       cpu_stage_(stage)
   {;}
@@ -46,7 +43,6 @@ class SeqsToChainsFPGA
   void compute(int wid);
 
  private:
-  std::vector<boost::mutex> mtx_list_;
   boost::atomic<int> n_active_;
   SeqsToChains * cpu_stage_;
 };

@@ -356,38 +356,8 @@ inline void finishUpOnCPU(RegionsRecord record, int start_seq) {
 }
 
 
-void ChainsToRegionsFPGA::swtask_func(int wid, void *param_list[4]) {
-  while (true) {
-    mtx_list_[wid].lock();
-    int      *step     = (int *)    param_list[0];
-    SWTask   *cur_task = (SWTask*)  param_list[1];
-    SWTask   *prv_task = (SWTask*)  param_list[2];
-    uint64_t *time     = (uint64_t*)param_list[3];
-    if (*step == 0) { //
-      if (time == NULL)
-        cur_task->start(prv_task);
-      else
-        cur_task->start(prv_task, *time);
-    }
-    else if (*step == 1) {
-      if (time == NULL)
-        cur_task->finish();
-      else
-        cur_task->finish(*time);
-    }
-    else {
-      while (true) ;
-    }
-    mtx_list_[wid].unlock();
-  }
-}
-
 void ChainsToRegionsFPGA::compute(int wid) {
   DLOG(INFO) << "start FPGA worker #" << wid;
-
-  void *swtask_helper_params[4];
-  mtx_list_[wid].lock();
-  boost::thread swtask_helper(boost::bind(&ChainsToRegionsFPGA::swtask_func, this, wid, swtask_helper_params));
 
   int chunk_size = FLAGS_chunk_size;
   uint64_t g_prep_ts=0, g_write_ts=0, g_enq_ts=0, g_deq_ts=0, g_read_ts=0, g_post_ts=0;
@@ -425,7 +395,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
   bool flag_need_reads = false;
   bool flag_more_reads = true;
 
-  // ChainsRecord prerecord;
   ChainsRecord record; 
   while (flag_more_reads) { 
     // get one Chains record
@@ -438,7 +407,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
     DLOG_IF(INFO, VLOG_IS_ON(2)) << "Wait for input for FPGA takes " << getUs() - wait_input_start_ts << " us";
     if(!ready) {
       n_active_--;
-      if (n_active_ == 0) cpu_stage_->setUseAccx(false);
+      if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
       flag_more_reads = false;
       break;
     }
@@ -472,164 +441,143 @@ void ChainsToRegionsFPGA::compute(int wid) {
     outputRecord.chains = chains;
     outputRecord.alnreg = alnreg;
 
-    int chunk_id = 0;
-    int i = 0;
-    bool reach_half = false;
-    bool reach_end = false;
-    task_queue.front()->start_seq = 0;
-    while (i < batch_num) {
-      if (task_num < chunk_size/2) {
-        SWTask* task = task_queue.front();
-        packReadData(aux, seqs+i, chains+i, alnreg+i, 
-            task->i_data[0], 
-            kernel_buffer_idx, task_num,
-            task);
-        i++;
-      }
-      else if (task_num >= chunk_size/2 && reach_half == false) {
-        SWTask* task = task_queue.front();
+    try {
+      int chunk_id = 0;
+      int i = 0;
+      bool reach_half = false;
+      bool reach_end = false;
+      task_queue.front()->start_seq = 0;
+      while (i < batch_num) {
+        if (task_num < chunk_size/2) {
+          SWTask* task = task_queue.front();
+          packReadData(aux, seqs+i, chains+i, alnreg+i, 
+              task->i_data[0], 
+              kernel_buffer_idx, task_num,
+              task);
+          i++;
+        }
+        else if (task_num >= chunk_size/2 && reach_half == false) {
+          SWTask* task = task_queue.front();
 
-        task->i_size[0] = kernel_buffer_idx/sizeof(int);
-        task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
+          task->i_size[0] = kernel_buffer_idx/sizeof(int);
+          task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
 
-        kernel_buffer_idx = 0;
-        reach_half = true;
+          kernel_buffer_idx = 0;
+          reach_half = true;
+        }
+        else if (task_num < chunk_size) {
+          SWTask* task = task_queue.front();
+          packReadData(aux, seqs+i, chains+i, alnreg+i, 
+              task->i_data[1], 
+              kernel_buffer_idx, task_num,
+              task);
+          i++;
+        }
+        else if (task_num >= chunk_size) {
+          SWTask* task = task_queue.front();
+          task->i_size[1] = kernel_buffer_idx/sizeof(int);
+          task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
+          if (task->o_size[0] == 0) task->i_size[0] = 0;
+          if (task->o_size[1] == 0) task->i_size[1] = 0;
+          task->end_seq = i;
+
+          prep_ts += getUs() - pre_start_ts;
+          DLOG_IF(INFO, VLOG_IS_ON(4)) << "Prepare data for " << task_num << " tasks takes "
+                                       << getUs() - pre_start_ts << " us";
+
+          // start sending task to FPGA
+          DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
+          DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
+
+          uint64_t enq_start_ts = getUs();
+          task->start(task_queue[1]);
+          enq_ts += getUs() - enq_start_ts;
+
+          // circulate the task
+          task_queue.push_back(task);
+          task_queue.pop_front();
+
+          task = task_queue.front();
+          // if task is available
+          if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
+            DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
+            uint64_t deq_start_ts = getUs();
+            task->finish();
+            deq_ts += getUs() - deq_start_ts;
+            processOutput(task, post_ts);
+          }
+          chunk_id++;
+
+          // reset 
+          task_num = 0;
+          kernel_buffer_idx = 0;
+          reach_half = false;
+          task->start_seq = i;
+          task->end_seq = 0;
+
+          pre_start_ts = getUs();
+
+        }
+
+        if (i == batch_num - 1) {
+          reach_end = true;
+        }
+        else {
+          reach_end = false;
+        }
       }
-      else if (task_num < chunk_size) {
+      DLOG_IF(INFO, VLOG_IS_ON(4)) << "Starting the remaining tasks";
+
+      // finish the remain reads even with small task number 
+      if (!reach_end && task_num != 0) {
         SWTask* task = task_queue.front();
-        packReadData(aux, seqs+i, chains+i, alnreg+i, 
-            task->i_data[1], 
-            kernel_buffer_idx, task_num,
-            task);
-        i++;
-      }
-      else if (task_num >= chunk_size) {
-        SWTask* task = task_queue.front();
-        task->i_size[1] = kernel_buffer_idx/sizeof(int);
-        task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
+        if (task_num < chunk_size/2 || reach_half == false) {
+          task->i_size[0] = kernel_buffer_idx/sizeof(int);
+          task->i_size[1] = 0;
+          task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
+          task->o_size[1] = 0;
+        }
+        else {
+          task->i_size[1] = kernel_buffer_idx/sizeof(int);
+          task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
+        }
         if (task->o_size[0] == 0) task->i_size[0] = 0;
         if (task->o_size[1] == 0) task->i_size[1] = 0;
         task->end_seq = i;
 
         prep_ts += getUs() - pre_start_ts;
-        DLOG_IF(INFO, VLOG_IS_ON(4)) << "Prepare data for " << task_num << " tasks takes "
-                                     << getUs() - pre_start_ts << " us";
 
-        // start sending task to FPGA
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
         DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
+        uint64_t enq_start_ts = getUs();
+        task->start(task_queue[1]);
+        enq_ts += getUs() - enq_start_ts;
+      }
 
-        //task->start(task_queue[1], enq_ts);
-        boost::thread swtask_invoke(boost::bind(&SWTask::start, task, task_queue[1], enq_ts));
-        bool swtask_err = swtask_invoke.try_join_for(boost::chrono::seconds(60));
-        if (!swtask_err) {
-          n_active_--;
-          if (n_active_ == 0) cpu_stage_->setUseAccx(false);
-          finishUpOnCPU(outputRecord, task->start_seq);
-          pushOutput(outputRecord);
-          delete task_queue[0]; delete task_queue[1];
-          return;
-        }
-
-        // circulate the task
+      for (int iter = 0; iter < 2; iter++) {
+        SWTask* task = task_queue.front();
         task_queue.push_back(task);
         task_queue.pop_front();
 
         task = task_queue.front();
-        // if task is available
-        if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
+        if (task->i_size[0] > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
-          //task->finish( deq_ts );
-          boost::thread swtask_wait(boost::bind(&SWTask::finish, task, deq_ts));
-          bool swtask_err = swtask_wait.try_join_for(boost::chrono::seconds(60));
-          if (!swtask_err) {
-            n_active_--;
-            if (n_active_ == 0) cpu_stage_->setUseAccx(false);
-            finishUpOnCPU(outputRecord, task->start_seq);
-            pushOutput(outputRecord);
-            delete task_queue[0]; delete task_queue[1];
-            return;
-          }
+          uint64_t deq_start_ts = getUs();
+          task->finish();
+          deq_ts += getUs() - deq_start_ts;
           processOutput(task, post_ts);
         }
         chunk_id++;
-
-        // reset 
-        task_num = 0;
-        kernel_buffer_idx = 0;
-        reach_half = false;
-        task->start_seq = i;
-        task->end_seq = 0;
-
-        pre_start_ts = getUs();
-
-      }
-
-      if (i == batch_num - 1) {
-        reach_end = true;
-      }
-      else {
-        reach_end = false;
       }
     }
-    DLOG_IF(INFO, VLOG_IS_ON(4)) << "Starting the remaining tasks";
-
-    // finish the remain reads even with small task number 
-    if (!reach_end && task_num != 0) {
-      SWTask* task = task_queue.front();
-      if (task_num < chunk_size/2 || reach_half == false) {
-        task->i_size[0] = kernel_buffer_idx/sizeof(int);
-        task->i_size[1] = 0;
-        task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
-        task->o_size[1] = 0;
-      }
-      else {
-        task->i_size[1] = kernel_buffer_idx/sizeof(int);
-        task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
-      }
-      if (task->o_size[0] == 0) task->i_size[0] = 0;
-      if (task->o_size[1] == 0) task->i_size[1] = 0;
-      task->end_seq = i;
-
-      prep_ts += getUs() - pre_start_ts;
-
-      DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
-      DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
-      //task->start(task_queue[1], enq_ts);
-      boost::thread swtask_invoke(boost::bind(&SWTask::start, task, task_queue[1], enq_ts));
-      bool swtask_err = swtask_invoke.try_join_for(boost::chrono::seconds(60));
-      if (!swtask_err) {
-        n_active_--;
-        if (n_active_ == 0) cpu_stage_->setUseAccx(false);
-        finishUpOnCPU(outputRecord, task->start_seq);
-        pushOutput(outputRecord);
-        delete task_queue[0]; delete task_queue[1];
-        return;
-      }
-    }
-
-    for (int iter = 0; iter < 2; iter++) {
-      SWTask* task = task_queue.front();
-      task_queue.push_back(task);
-      task_queue.pop_front();
-
-      task = task_queue.front();
-      if (task->i_size[0] > 0) { 
-        DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
-        //task->finish( deq_ts );
-        boost::thread swtask_wait(boost::bind(&SWTask::finish, task, deq_ts));
-        bool swtask_err = swtask_wait.try_join_for(boost::chrono::seconds(60));
-        if (!swtask_err) {
-          n_active_--;
-          if (n_active_ == 0) cpu_stage_->setUseAccx(false);
-          finishUpOnCPU(outputRecord, task->start_seq);
-          pushOutput(outputRecord);
-          delete task_queue[0]; delete task_queue[1];
-          return;
-        }
-        processOutput(task, post_ts);
-      }
-      chunk_id++;
+    catch (fpgaHangError &e) {
+      DLOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
+      n_active_--;
+      if (n_active_ == 0) cpu_stage_->setUseAccx(false);
+      SWTask *err_task = task_queue.front();
+      finishUpOnCPU(outputRecord, err_task->start_seq);
+      pushOutput(outputRecord);
+      break;
     }
    
     // reset for one batch
@@ -694,7 +642,7 @@ void SeqsToChainsFPGA::compute(int wid) {
     }
     if (!ready) {
       n_active_--;
-      if (n_active_ == 0) cpu_stage_->setUseAccx(false);
+      if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
       flag_more_reads = false;
       break;
     }
