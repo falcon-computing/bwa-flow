@@ -75,7 +75,7 @@ inline void processOutput(SWTask* task, uint64_t &post_ts) {
         fclose(fout);
         DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
 #endif
-        throw std::runtime_error("wrong fpga results and failure in re-do");
+        throw fpgaResultsError("wrong results in smithwaterman kernel");
       }
     }
     else {
@@ -575,6 +575,15 @@ void ChainsToRegionsFPGA::compute(int wid) {
     }
     catch (fpgaHangError &e) {
       DLOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
+      n_active_--;
+      if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
+      SWTask *err_task = task_queue.front();
+      finishUpOnCPU(outputRecord, err_task->start_seq);
+      pushOutput(outputRecord);
+      break;
+    }
+    catch (fpgaResultsError &e) {
+      DLOG(WARNING) << "FPGA generated wrong results in smithwaterman kernel.";
       n_active_--;
       if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
       SWTask *err_task = task_queue.front();
