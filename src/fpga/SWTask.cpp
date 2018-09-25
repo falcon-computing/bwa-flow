@@ -86,7 +86,6 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 
 SWTask::~SWTask() {
   helper_.interrupt();
-  //pthread_kill(helper_.native_handle(), 9);
 
   delete region_batch;
   delete chain_batch;
@@ -104,10 +103,15 @@ void SWTask::start(SWTask* prev_task) {
   prv_task_.store(prev_task);
   mtx_.unlock();
 
-  int wait = 0;
+  uint64_t start_ts = getUs();
+  while (state_.load() != 0) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (getUs() >= start_ts+60000000)
+      throw fpgaHangError("smithwater kernel stuck at start on fpga");
+  }
   while (!mtx_.try_lock()) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (wait++ >= 12000000)
+    if (getUs() >= start_ts+60000000)
       throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
 }
@@ -147,11 +151,16 @@ void SWTask::finish() {
   state_.store(2);
   mtx_.unlock();
 
-  int wait = 0;
+  uint64_t start_ts = getUs();
+  while (state_.load() != 0) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (getUs() >= start_ts+60000000)
+      throw fpgaHangError("smithwater kernel stuck at finish on fpga");
+  }
   while (!mtx_.try_lock()) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (wait++ >= 12000000)
-      throw fpgaHangError("smithwater kernel stuck at finish on fpga");
+    if (getUs() >= start_ts+60000000)
+      throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
 }
 
@@ -166,11 +175,16 @@ void SWTask::redo() {
   state_.store(3);
   mtx_.unlock();
 
-  int wait = 0;
+  uint64_t start_ts = getUs();
+  while (state_.load() != 0) {
+    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
+    if (getUs() >= start_ts+60000000)
+      throw fpgaHangError("smithwater kernel stuck at redo on fpga");
+  }
   while (!mtx_.try_lock()) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (wait++ >= 12000000)
-      throw fpgaHangError("smithwater kernel stuck at redo on fpga");
+    if (getUs() >= start_ts+60000000)
+      throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
 }
 

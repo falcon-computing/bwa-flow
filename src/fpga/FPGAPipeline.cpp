@@ -210,6 +210,21 @@ inline void packReadData(ktp_aux_t* aux,
     int &task_num, 
     SWTask* task) 
 {
+  // empty filter & overflow filter
+  if (chains->n == 0 || chains->n == 0 >= 2000) {
+    kv_init(*alnregs);
+    for (int j = 0; j < chains->n; j++) {
+      mem_chain2aln(aux->opt,
+                    aux->idx->bns,
+                    aux->idx->pac,
+                    seq->l_seq,
+          (uint8_t*)seq->seq,
+                    &chains->a[j],
+                    alnregs);
+    }
+    return;
+  }
+
   // preprocess
   int chain_idx = 0;
   int seed_idx = chains->a[0].n -1;
@@ -364,7 +379,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
   // Create SWTasks
   std::deque<SWTask*> task_queue;
-
   for (int i = 0; i < 2; i++) {
     SWTask* task = new SWTask(opencl_env, chunk_size);
     if (NULL == task) {
@@ -377,20 +391,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
     }
     task_queue.push_back(task);
   }
-
-  // elements of the Regions record
-  bseq1_t* seqs;
-  mem_chain_v* chains;
-  mem_alnreg_v* alnreg;
-
-  int kernel_buffer_idx = 0;
-  int task_num = 0;
-
-  // For statistics
-  uint64_t start_ts;
-
-  int  start_idx = 0;
-  int  batch_num = 0;
 
   bool flag_need_reads = false;
   bool flag_more_reads = true;
@@ -420,10 +420,10 @@ void ChainsToRegionsFPGA::compute(int wid) {
     uint64_t start_ts = getUs();
     uint64_t pre_start_ts = getUs();
 
-    start_idx = record.start_idx;
-    batch_num = record.batch_num;
-    seqs = record.seqs;
-    chains = record.chains;
+    int        start_idx = record.start_idx;
+    int        batch_num = record.batch_num;
+    bseq1_t*        seqs = record.seqs;
+    mem_chain_v*  chains = record.chains;
     mem_alnreg_v* alnreg = new mem_alnreg_v[batch_num];
     if (NULL == alnreg) {
       std::string err_string = "Memory allocation failed";
@@ -443,10 +443,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
     try {
       int chunk_id = 0;
-      int i = 0;
+      int task_num = 0;
+      int kernel_buffer_idx = 0;
       bool reach_half = false;
       bool reach_end = false;
       task_queue.front()->start_seq = 0;
+
+      int i = 0;
       while (i < batch_num) {
         if (task_num < chunk_size/2) {
           SWTask* task = task_queue.front();
@@ -560,7 +563,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_queue.pop_front();
 
         task = task_queue.front();
-        if (task->i_size[0] > 0) { 
+        if (task->i_size[0] > 0 && task->o_size[0] > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
           uint64_t deq_start_ts = getUs();
           task->finish();
@@ -573,20 +576,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
     catch (fpgaHangError &e) {
       DLOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
       n_active_--;
-      if (n_active_ == 0) cpu_stage_->setUseAccx(false);
+      if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
       SWTask *err_task = task_queue.front();
       finishUpOnCPU(outputRecord, err_task->start_seq);
       pushOutput(outputRecord);
       break;
     }
    
-    // reset for one batch
-    task_num = 0;
-    kernel_buffer_idx = 0;
-    // reset for one batch (unnecessary)
-    //reach_half = false;
-    //i = 0;
-
     DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ChainsToRegions() on FPGA for "
                                  << getUs() - start_ts << " us";
     //freeChains(chains, batch_num);
