@@ -136,14 +136,16 @@ class BWAOCLEnv : public OpenCLEnv{
 
   void initBWT() {
     smem_num_pe_ = 0;
-    uint32_t *bwt          = aux->idx->bwt->bwt;
-    size_t    bwt_size     = aux->idx->bwt->bwt_size*sizeof(uint32_t);
-    uint64_t  bwt_param[6] = {aux->idx->bwt->primary,
-                              aux->idx->bwt->L2[0],
-                              aux->idx->bwt->L2[1],
-                              aux->idx->bwt->L2[2],
-                              aux->idx->bwt->L2[3],
-                              aux->idx->bwt->L2[4]};
+    uint32_t *bwt           = aux->idx->bwt->bwt;
+    uint64_t  bwt_param[7]  = {aux->idx->bwt->primary,
+                               aux->idx->bwt->L2[0],
+                               aux->idx->bwt->L2[1],
+                               aux->idx->bwt->L2[2],
+                               aux->idx->bwt->L2[3],
+                               aux->idx->bwt->L2[4],
+                               (aux->idx->bwt->bwt_size+15)/16};
+    size_t    bwt_bytes_pad = bwt_param[6]*16*sizeof(uint32_t);
+    size_t    bwt_param_num = 7;
 
     cl_int err = 0;
     cl_mem_ext_ptr_t ext[4];
@@ -164,16 +166,16 @@ class BWAOCLEnv : public OpenCLEnv{
         if (p == 1) continue;
         bwt_input[p] = clCreateBuffer( context,
                                   CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-                                  bwt_size,
+                                  bwt_bytes_pad, /*create the ocl buffer with padded size*/
                                   &(ext[ p ]),
                                   &err );
         if (err != CL_SUCCESS)
           throw std::runtime_error("Failed to create BWT reference OpenCL buffer!");
         bwt_param_input[p] = clCreateBuffer( context,
-                                        CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-                                        6*sizeof(uint64_t),
-                                        &(ext[ p ]),
-                                        &err );
+                                             CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+                                             bwt_param_num*sizeof(uint64_t),
+                                             &(ext[ p ]),
+                                             &err );
         if (err != CL_SUCCESS)
           throw std::runtime_error("Failed to create BWT reference (param) OpenCL buffer!");
       }
@@ -181,9 +183,9 @@ class BWAOCLEnv : public OpenCLEnv{
       cl_event bwt_events[4], bwt_param_events[4];
       for (int p = 0; p < 4; p++) {
         if (p == 1) continue;
-        err |= clEnqueueWriteBuffer( cmd, bwt_input[p], CL_FALSE, 0, bwt_size,
+        err |= clEnqueueWriteBuffer( cmd, bwt_input[p], CL_FALSE, 0, aux->idx->bwt->bwt_size*sizeof(uint32_t), /*transfer bwt with original size*/
                                      bwt, 0, NULL, &bwt_events[p]);
-        err |= clEnqueueWriteBuffer( cmd, bwt_param_input[p], CL_FALSE, 0, 6*sizeof(uint64_t),
+        err |= clEnqueueWriteBuffer( cmd, bwt_param_input[p], CL_FALSE, 0, bwt_param_num*sizeof(uint64_t),
                                      bwt_param, 0, NULL, &bwt_param_events[p]);
       }
       cl_event tmp1[3] = {bwt_events[0], bwt_events[2], bwt_events[3]};
