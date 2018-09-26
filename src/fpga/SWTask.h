@@ -37,7 +37,6 @@ class SWTask : public Task {
   FPGAAgent* agent_;
 
   boost::thread helper_;
-  boost::mutex mtx_;
   boost::atomic<int> state_;
   boost::atomic<SWTask*> prv_task_;
 

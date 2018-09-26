@@ -79,7 +79,6 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
     throw std::runtime_error(err_string);
   }
 
-  mtx_.lock();
   state_.store(0);
   helper_ = boost::thread(boost::bind(&SWTask::helper_func, this));
 }
@@ -101,15 +100,9 @@ SWTask::~SWTask() {
 void SWTask::start(SWTask* prev_task) {
   state_.store(1);
   prv_task_.store(prev_task);
-  mtx_.unlock();
 
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
-    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
-      throw fpgaHangError("smithwater kernel stuck at start on fpga");
-  }
-  while (!mtx_.try_lock()) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
     if (getUs() >= start_ts+60000000)
       throw fpgaHangError("smithwater kernel stuck at start on fpga");
@@ -149,18 +142,12 @@ void SWTask::start_func(SWTask* prev_task) {
 
 void SWTask::finish() {
   state_.store(2);
-  mtx_.unlock();
 
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
     if (getUs() >= start_ts+60000000)
       throw fpgaHangError("smithwater kernel stuck at finish on fpga");
-  }
-  while (!mtx_.try_lock()) {
-    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
-      throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
 }
 
@@ -173,18 +160,12 @@ void SWTask::finish_func() {
 
 void SWTask::redo() {
   state_.store(3);
-  mtx_.unlock();
 
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
     if (getUs() >= start_ts+60000000)
       throw fpgaHangError("smithwater kernel stuck at redo on fpga");
-  }
-  while (!mtx_.try_lock()) {
-    boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
-      throw fpgaHangError("smithwater kernel stuck at start on fpga");
   }
 }
 
@@ -200,7 +181,6 @@ void SWTask::redo_func() {
 
 void SWTask::helper_func() {
   while (true) {
-    mtx_.lock();
     int exec_state = state_.load();
     if (exec_state == 0) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(5));
@@ -218,6 +198,5 @@ void SWTask::helper_func() {
       this->redo_func();
       state_.store(0);
     }
-    mtx_.unlock();
   }
 }

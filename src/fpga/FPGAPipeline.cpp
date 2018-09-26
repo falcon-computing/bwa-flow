@@ -577,7 +577,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       LOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
       LOG(WARNING) << "batch start idx: " << start_idx
                    << "batch num: " << batch_num
-                   << "tag: " << tag
+                   << "tag: " << record.tag
                    << "task start seq: " << task_queue.front()->start_seq
                    << "task end seq: " << task_queue.front()->end_seq
                    << task_queue.front()->i_size[0] << "," << task_queue.front()->i_size[1]
