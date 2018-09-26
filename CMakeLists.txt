@@ -10,7 +10,7 @@ project(bwa-flow)
 
 # set up dependency
 find_package( Boost 1.53.0 REQUIRED
-              COMPONENTS system thread iostreams filesystem regex )
+              COMPONENTS system thread chrono iostreams filesystem regex )
 find_package( ZLIB         REQUIRED )
 find_package( Threads      REQUIRED )
 

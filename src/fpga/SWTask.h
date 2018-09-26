@@ -13,9 +13,7 @@ class SWTask : public Task {
   ~SWTask();
 
   void start(SWTask* prev_task);
-  void start(SWTask* prev_task, uint64_t &enq_ts);
   void finish();
-  void finish(uint64_t &deq_ts);
   void redo();
 
   int     i_size[2];
@@ -34,7 +32,21 @@ class SWTask : public Task {
 
   int        start_seq = 0;
   int        end_seq = 0;
+
  private:
   FPGAAgent* agent_;
+
+  boost::thread helper_;
+  boost::mutex mtx_;
+  boost::atomic<int> state_;
+  boost::atomic<SWTask*> prv_task_;
+
+ private:
+  void start_func(SWTask* prev_task);
+  void finish_func();
+  void redo_func();
+
+  void helper_func();
+
 };
 #endif

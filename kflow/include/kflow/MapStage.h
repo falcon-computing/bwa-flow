@@ -81,6 +81,15 @@ int MapStage<U, V, IN_DEPTH, OUT_DEPTH>::execute_new() {
     return 2;
   }
 
+  // Before checking the input queue, merge accx input queue if accx is down (due to time/error)
+  if ( !((StageBase*)this)->useAccx() &&
+       ((StageBase*)this)->accx_backend_stage_ != NULL ) {
+    while (this->getAccxQueue()->get_size() > 0) {
+      U temp;
+      bool isValid = this->getAccxQueue()->async_pop(temp);
+      if (isValid) this->getInputQueue()->push(temp);
+    }
+  }
   // Try to get one input from the input queue
   if (this->inputQueueEmpty()) return 1;
   U input;

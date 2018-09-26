@@ -46,8 +46,10 @@ class BWAOCLEnv : public OpenCLEnv{
     num_pe_ = 0;
     if (!FLAGS_no_use_sw_fpga)
       initPAC();
+    sw_fpga_thread_ = sw_pe_list_.size();
     if (!FLAGS_no_use_smem_fpga)
       initBWT();
+    smem_fpga_thread_ = smem_pe_list_.size();
   }
 
   ~BWAOCLEnv() {
@@ -77,20 +79,8 @@ class BWAOCLEnv : public OpenCLEnv{
 
       cl_mem pac_input_a_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
           pac_size, &ext_c, &err);
-        if (err == CL_INVALID_CONTEXT) DLOG(ERROR) << "ctx";
-        if (err == CL_INVALID_VALUE) DLOG(ERROR) << "val";
-        if (err == CL_INVALID_BUFFER_SIZE) DLOG(ERROR) << "bsz";
-        if (err == CL_INVALID_HOST_PTR) DLOG(ERROR) << "ptr";
-        if (err == CL_MEM_OBJECT_ALLOCATION_FAILURE) DLOG(ERROR) << "alc";
-        if (err == CL_OUT_OF_HOST_MEMORY) DLOG(ERROR) << "oom";
       cl_mem pac_input_b_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
           pac_size, &ext_d, &err);
-        if (err == CL_INVALID_CONTEXT) DLOG(ERROR) << "ctx";
-        if (err == CL_INVALID_VALUE) DLOG(ERROR) << "val";
-        if (err == CL_INVALID_BUFFER_SIZE) DLOG(ERROR) << "bsz";
-        if (err == CL_INVALID_HOST_PTR) DLOG(ERROR) << "ptr";
-        if (err == CL_MEM_OBJECT_ALLOCATION_FAILURE) DLOG(ERROR) << "alc";
-        if (err == CL_OUT_OF_HOST_MEMORY) DLOG(ERROR) << "oom";
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create reference OpenCL buffer!");
       }
@@ -120,16 +110,18 @@ class BWAOCLEnv : public OpenCLEnv{
     DLOG(ERROR) << "This feature is currently only supported in Xilinx";
 #endif
     free(pac);
-    sw_fpga_thread_ = sw_pe_list_.size();
   }
 
   void releasePAC() {
 #ifdef XILINX_FPGA
-    for (int i = 0; i < pac_input_a_list_.size(); i++) {
+    for (int i = 0; i < pac_input_a_list_.size(); i++)
       clReleaseMemObject(pac_input_a_list_[i]);
-    }
-    for (int i = 0; i < pac_input_b_list_.size(); i++) {
+    for (int i = 0; i < pac_input_b_list_.size(); i++)
       clReleaseMemObject(pac_input_b_list_[i]);
+    for (int i = 0; i < sw_pe_list_.size(); i++) {
+      cl_int err = clReleaseCommandQueue(sw_pe_list_[i].cmd);
+      if (err != CL_SUCCESS)
+        DLOG(WARNING) << "Failed to release cmd for " << sw_pe_list_[i].type << "-" << sw_pe_list_[i].bank_id;
     }
 #endif
   }
@@ -218,15 +210,18 @@ class BWAOCLEnv : public OpenCLEnv{
         smem_pe_list_.push_back(pe);
       }
     }
-    smem_fpga_thread_ = smem_pe_list_.size();
   }
 
   void releaseBWT() {
     for (int i = 0; i < bwt_list_.size(); i++)
-        clReleaseMemObject(bwt_list_[i]);
-
+      clReleaseMemObject(bwt_list_[i]);
     for (int i = 0; i < bwt_param_list_.size(); i++)
-        clReleaseMemObject(bwt_param_list_[i]);
+      clReleaseMemObject(bwt_param_list_[i]);
+    for (int i = 0; i < smem_pe_list_.size(); i++) {
+      cl_int err = clReleaseCommandQueue(smem_pe_list_[i].cmd);
+      if (err != CL_SUCCESS)
+        DLOG(WARNING) << "Failed to release cmd for " << smem_pe_list_[i].type << "-" << sw_pe_list_[i].bank_id;
+    }
   }
 
   cl_pe getPE(std::string type) {
