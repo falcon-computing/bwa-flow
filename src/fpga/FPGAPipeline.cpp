@@ -574,7 +574,14 @@ void ChainsToRegionsFPGA::compute(int wid) {
       }
     }
     catch (fpgaHangError &e) {
-      DLOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
+      LOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
+      LOG(WARNING) << "batch start idx: " << start_idx
+                   << "batch num: " << batch_num
+                   << "tag: " << tag
+                   << "task start seq: " << task_queue.front()->start_seq
+                   << "task end seq: " << task_queue.front()->end_seq
+                   << task_queue.front()->i_size[0] << "," << task_queue.front()->i_size[1]
+                   << task_queue.front()->o_size[0] << "," << task_queue.front()->o_size[1];
       n_active_--;
       if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);
       SWTask *err_task = task_queue.front();
