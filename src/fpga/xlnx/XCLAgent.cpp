@@ -19,15 +19,35 @@ XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task): env_(env) {
 
   cl_mem_ext_ptr_t ext_in0, ext_in1, ext_out0, ext_out1;
 
-  ext_in0.flags = XCL_MEM_DDR_BANK1; ext_in0.obj = 0; ext_in0.param = 0;
-  ext_in1.flags = XCL_MEM_DDR_BANK1; ext_in1.obj = 0; ext_in1.param = 0;
+#ifdef DEPLOY_aws
+  ext_in0.flags = XCL_MEM_DDR_BANK0;
+#else
+  ext_in0.flags = XCL_MEM_DDR_BANK1;
+#endif
+  ext_in0.obj = 0; ext_in0.param = 0;
+#ifdef DEPLOY_aws
+  ext_in1.flags = XCL_MEM_DDR_BANK2;
+#else
+  ext_in1.flags = XCL_MEM_DDR_BANK1;
+#endif
+  ext_in1.obj = 0; ext_in1.param = 0;
   task->i_buf[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
       sizeof(int)*task->max_i_size_, &ext_in0, NULL);
   task->i_buf[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
       sizeof(int)*task->max_i_size_, &ext_in1, NULL);
 
-  ext_out0.flags = XCL_MEM_DDR_BANK1; ext_out0.obj = 0; ext_out0.param = 0;
-  ext_out1.flags = XCL_MEM_DDR_BANK1; ext_out1.obj = 0; ext_out1.param = 0;
+#ifdef DEPLOY_aws
+  ext_out0.flags = XCL_MEM_DDR_BANK0;
+#else
+  ext_out0.flags = XCL_MEM_DDR_BANK1;
+#endif
+  ext_out0.obj = 0; ext_out0.param = 0;
+#ifdef DEPLOY_aws
+  ext_out1.flags = XCL_MEM_DDR_BANK2;
+#else
+  ext_out1.flags = XCL_MEM_DDR_BANK1;
+#endif
+  ext_out1.obj = 0; ext_out1.param = 0;
   task->o_buf[0] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
       sizeof(int)*task->max_o_size_, &ext_out0, NULL);
   task->o_buf[1] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,

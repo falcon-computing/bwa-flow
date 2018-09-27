@@ -43,6 +43,9 @@ class BWAOCLEnv : public OpenCLEnv{
   BWAOCLEnv()
     : OpenCLEnv(get_group_sizes(), get_bin_paths())
   {
+#ifdef DEPLOY_aws
+    FLAGS_no_use_smem_fpga = true;
+#endif
     num_pe_ = 0;
     if (!FLAGS_no_use_sw_fpga)
       initPAC();
@@ -68,8 +71,14 @@ class BWAOCLEnv : public OpenCLEnv{
 #ifdef XILINX_FPGA
     cl_int err = 0;
     cl_mem_ext_ptr_t ext_c, ext_d;
-    ext_c.flags = XCL_MEM_DDR_BANK1; ext_c.obj = 0; ext_c.param = 0;
-    ext_d.flags = XCL_MEM_DDR_BANK1; ext_d.obj = 0; ext_d.param = 0;
+    ext_c.flags = XCL_MEM_DDR_BANK1;
+    ext_c.obj = 0; ext_c.param = 0;
+#ifdef DEPLOY_aws
+    ext_d.flags = XCL_MEM_DDR_BANK3;
+#else
+    ext_d.flags = XCL_MEM_DDR_BANK1;
+#endif
+    ext_d.obj = 0; ext_d.param = 0;
     // transfer PAC reference to all the devices
     for (int i = 0; i < device_envs_.size(); i++) {
       if (device_envs_[i].accx_group_id != 0) continue;
