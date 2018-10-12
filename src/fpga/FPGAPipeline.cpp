@@ -211,7 +211,8 @@ inline void packReadData(ktp_aux_t* aux,
     SWTask* task) 
 {
   // empty filter & overflow filter
-  if (chains->n == 0 || chains->n == 0 >= 2000) {
+#if 1 
+  if (chains->n == 0 || chains->n >= 2000) {
     kv_init(*alnregs);
     for (int j = 0; j < chains->n; j++) {
       mem_chain2aln(aux->opt,
@@ -224,6 +225,7 @@ inline void packReadData(ktp_aux_t* aux,
     }
     return;
   }
+#endif
 
   // preprocess
   int chain_idx = 0;
@@ -574,7 +576,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
       }
     }
     catch (fpgaHangError &e) {
-#if 0
+#if 1
       LOG(WARNING) << "FPGA thread hanged in smithwaterman kernel.";
       LOG(WARNING) << "batch start idx: " << start_idx
                    << "batch num: " << batch_num
