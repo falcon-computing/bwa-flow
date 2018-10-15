@@ -131,10 +131,10 @@ DEFINE_string(I, "",
 DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
     "on the FLAG field, similar to the -F argument in samtools");
 
-DEFINE_bool(use_fpga, false,
+DEFINE_bool(use_fpga, true,
     "Enable FPGA accelerator for SMem & SmithWaterman computation");
 
-DEFINE_bool(no_use_smem_fpga, false,
+DEFINE_bool(no_use_smem_fpga, true,
     "Disable FPGA accelerator for SMem computation");
 
 DEFINE_bool(no_use_smem_cpu, false,
