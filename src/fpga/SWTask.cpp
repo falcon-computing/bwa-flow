@@ -85,6 +85,8 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
 
 SWTask::~SWTask() {
   helper_.interrupt();
+  //helper_.detach();
+  //pthread_cancel(helper_.native_handle());
 
   delete region_batch;
   delete chain_batch;
@@ -104,8 +106,10 @@ void SWTask::start(SWTask* prev_task) {
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
+    if (getUs() >= start_ts+10000000) {
+      DLOG(ERROR) << "timeout in SWTask::start()";
       throw fpgaHangError("smithwater kernel stuck at start on fpga");
+    }
   }
 }
 
@@ -146,8 +150,10 @@ void SWTask::finish() {
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
+    if (getUs() >= start_ts+10000000) {
+      DLOG(ERROR) << "timeout in SWTask::finish()";
       throw fpgaHangError("smithwater kernel stuck at finish on fpga");
+    }
   }
 }
 
@@ -164,8 +170,10 @@ void SWTask::redo() {
   uint64_t start_ts = getUs();
   while (state_.load() != 0) {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
-    if (getUs() >= start_ts+60000000)
+    if (getUs() >= start_ts+10000000) {
+      DLOG(ERROR) << "timeout in SWTask::redo()";
       throw fpgaHangError("smithwater kernel stuck at redo on fpga");
+    }
   }
 }
 
@@ -179,8 +187,15 @@ void SWTask::redo_func() {
   agent_->finish();
 }
 
+void sig_handler(int sig) {
+  DLOG(INFO) << "caught sig = " << sig;
+  throw std::runtime_error("signal caught");
+}
+
 void SWTask::helper_func() {
+  signal(2, sig_handler);
   while (true) {
+    try {
     int exec_state = state_.load();
     if (exec_state == 0) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(5));
@@ -197,6 +212,10 @@ void SWTask::helper_func() {
     else if (exec_state == 3) {
       this->redo_func();
       state_.store(0);
+    }
+    } catch (std::runtime_error & e) {
+      DLOG(INFO) << "caught exception";
+      break;
     }
   }
 }
