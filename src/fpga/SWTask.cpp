@@ -152,8 +152,6 @@ void SWTask::finish() {
     boost::this_thread::sleep_for(boost::chrono::microseconds(5));
     if (getUs() >= start_ts+10000000) {
       DLOG(ERROR) << "timeout in SWTask::finish()";
-      helper_.interrupt();
-      helper_.join();
       throw fpgaHangError("smithwater kernel stuck at finish on fpga");
     }
   }
