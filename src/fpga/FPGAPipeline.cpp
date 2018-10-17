@@ -504,7 +504,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
 
           task = task_queue.front();
           // if task is available
-          if (task->i_size[0] > 0 && task->i_size[1] > 0) { 
+          if (task->o_size[0] > 0 || task->o_size[1] > 0) { 
             DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
             uint64_t deq_start_ts = getUs();
             task->finish();
@@ -565,7 +565,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_queue.pop_front();
 
         task = task_queue.front();
-        if (task->i_size[0] > 0 && task->o_size[0] > 0) { 
+        if (task->o_size[0] > 0 || task->o_size[1] > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
           uint64_t deq_start_ts = getUs();
           task->finish();
