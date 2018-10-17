@@ -162,6 +162,7 @@ void XCLAgent::finish() {
   else
     clWaitForEvents(1, read_events_);
 
+#if 0
   cl_ulong k_start, k_end;
   clGetEventProfilingInfo(write_events_[0], CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
   clGetEventProfilingInfo(write_events_[0], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
@@ -185,6 +186,7 @@ void XCLAgent::finish() {
     clGetEventProfilingInfo(read_events_[1], CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
     reading_time_ += (uint64_t)(k_end - k_start)/1000;
   }
+#endif
 
   clReleaseEvent(write_events_[0]);
   if (valid_2nd_event_) {

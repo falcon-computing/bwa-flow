@@ -190,9 +190,11 @@ void SMemXCLAgent::releaseBuffer(SMemTask *task) {
 
 void SMemXCLAgent::wait() {
   clWaitForEvents(1, &kernel_event_);
+#if 0
   cl_ulong k_start, k_end;
   clGetEventProfilingInfo(kernel_event_, CL_PROFILING_COMMAND_START, sizeof(k_start), &k_start, NULL);
   clGetEventProfilingInfo(kernel_event_, CL_PROFILING_COMMAND_END, sizeof(k_end), &k_end, NULL);
   kernel_time_ += (uint64_t)(k_end - k_start)/1000;
   kernel_invks_++;
+#endif
 }

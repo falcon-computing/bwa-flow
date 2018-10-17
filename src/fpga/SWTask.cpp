@@ -79,12 +79,16 @@ SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
     throw std::runtime_error(err_string);
   }
 
+#ifndef DEPLOY_aws
   state_.store(0);
   helper_ = boost::thread(boost::bind(&SWTask::helper_func, this));
+#endif
 }
 
 SWTask::~SWTask() {
+#ifndef DEPLOY_aws
   helper_.interrupt();
+#endif
   //helper_.detach();
   //pthread_cancel(helper_.native_handle());
 
@@ -100,6 +104,16 @@ SWTask::~SWTask() {
 }
 
 void SWTask::start(SWTask* prev_task) {
+  if (o_size[0] == 0 && o_size[1] > 0) {
+    char* tmp = i_data[0];
+    i_data[0] = i_data[1];
+    i_data[1] = tmp;
+  }
+  else if (o_size[0] == 0 && o_size[1] == 0) {
+    return;
+  }
+
+#ifndef DEPLOY_aws
   state_.store(1);
   prv_task_.store(prev_task);
 
@@ -111,6 +125,9 @@ void SWTask::start(SWTask* prev_task) {
       throw fpgaHangError("smithwater kernel stuck at start on fpga");
     }
   }
+#else
+  start_func(prev_task);
+#endif
 }
 
 void SWTask::start_func(SWTask* prev_task) {
@@ -124,7 +141,6 @@ void SWTask::start_func(SWTask* prev_task) {
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Task info: " 
     << "i_size[0] = " << i_size[0] << ", "
     << "i_size[1] = " << i_size[1];
-                               
 
   uint64_t start_ts = getUs();
   agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
@@ -145,6 +161,11 @@ void SWTask::start_func(SWTask* prev_task) {
 }
 
 void SWTask::finish() {
+  if (o_size[0] == 0 && o_size[1] == 0) {
+    return;
+  }
+
+#ifndef DEPLOY_aws
   state_.store(2);
 
   uint64_t start_ts = getUs();
@@ -155,6 +176,9 @@ void SWTask::finish() {
       throw fpgaHangError("smithwater kernel stuck at finish on fpga");
     }
   }
+#else
+  finish_func();
+#endif
 }
 
 void SWTask::finish_func() {
@@ -165,6 +189,11 @@ void SWTask::finish_func() {
 }
 
 void SWTask::redo() {
+  if (o_size[0] == 0 && o_size[1] == 0) {
+    return;
+  }
+
+#ifndef DEPLOY_aws
   state_.store(3);
 
   uint64_t start_ts = getUs();
@@ -175,6 +204,9 @@ void SWTask::redo() {
       throw fpgaHangError("smithwater kernel stuck at redo on fpga");
     }
   }
+#else
+  redo_func();
+#endif
 }
 
 void SWTask::redo_func() {

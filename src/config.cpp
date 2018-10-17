@@ -134,7 +134,7 @@ DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
 DEFINE_bool(use_fpga, true,
     "Enable FPGA accelerator for SMem & SmithWaterman computation");
 
-DEFINE_bool(no_use_smem_fpga, true,
+DEFINE_bool(no_use_smem_fpga, false,
     "Disable FPGA accelerator for SMem computation");
 
 DEFINE_bool(no_use_smem_cpu, false,
