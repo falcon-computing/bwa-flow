@@ -110,7 +110,7 @@ class BWAOCLEnv : public OpenCLEnv{
       pe.bank_id = 1;
       pe.type = "sw";
       pe.accx = &device_envs_[i];
-      pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_PROFILING_ENABLE, &err);
+      pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
       //pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, 0, &err);
       OCL_CHECK(err, "failed to create cmd_queue");
       sw_pe_list_.push_back(pe);
@@ -215,8 +215,8 @@ class BWAOCLEnv : public OpenCLEnv{
         pe.bank_id = bank_id;
         pe.type = "smem";
         pe.accx = &device_envs_[i];
-        pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_PROFILING_ENABLE|CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-        //pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+        //pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_PROFILING_ENABLE|CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+        pe.cmd = clCreateCommandQueue(pe.accx->context, pe.accx->device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
         OCL_CHECK(err, "failed to create cmd_queue");
         smem_pe_list_.push_back(pe);
       }
