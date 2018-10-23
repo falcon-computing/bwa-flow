@@ -1,4 +1,4 @@
-//update 1.0.4
+//update 1.0.5
 pipeline {
 agent {label 'merlin'}
     stages {
