@@ -1,6 +1,5 @@
 pipeline {
 agent {label 'merlin'}
-
     stages {
         stage ("build-local-bwa-flow") {
             steps {
