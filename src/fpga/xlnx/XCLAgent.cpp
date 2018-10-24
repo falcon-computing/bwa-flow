@@ -17,41 +17,17 @@ XCLAgent::XCLAgent(BWAOCLEnv* env, SWTask* task): env_(env) {
   kernel_ = clCreateKernel(program, "sw_top", &err);
   OCL_CHECK(err, "failed to create kernel: sw_top");
 
-  cl_mem_ext_ptr_t ext_in0, ext_in1, ext_out0, ext_out1;
+  cl_mem_ext_ptr_t ext_in, ext_out;
 
-#ifdef DEPLOY_aws
-  ext_in0.flags = XCL_MEM_DDR_BANK0;
-#else
-  ext_in0.flags = XCL_MEM_DDR_BANK1;
-#endif
-  ext_in0.obj = 0; ext_in0.param = 0;
-#ifdef DEPLOY_aws
-  ext_in1.flags = XCL_MEM_DDR_BANK2;
-#else
-  ext_in1.flags = XCL_MEM_DDR_BANK1;
-#endif
-  ext_in1.obj = 0; ext_in1.param = 0;
-  task->i_buf[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
-      sizeof(int)*task->max_i_size_, &ext_in0, NULL);
-  task->i_buf[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
-      sizeof(int)*task->max_i_size_, &ext_in1, NULL);
+  ext_in.flags = XCL_MEM_DDR_BANK1;
+  ext_in.obj = 0; ext_in.param = 0;
+  task->i_buf = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_i_size_, &ext_in, NULL);
 
-#ifdef DEPLOY_aws
-  ext_out0.flags = XCL_MEM_DDR_BANK0;
-#else
-  ext_out0.flags = XCL_MEM_DDR_BANK1;
-#endif
-  ext_out0.obj = 0; ext_out0.param = 0;
-#ifdef DEPLOY_aws
-  ext_out1.flags = XCL_MEM_DDR_BANK2;
-#else
-  ext_out1.flags = XCL_MEM_DDR_BANK1;
-#endif
-  ext_out1.obj = 0; ext_out1.param = 0;
-  task->o_buf[0] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
-      sizeof(int)*task->max_o_size_, &ext_out0, NULL);
-  task->o_buf[1] = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
-      sizeof(int)*task->max_o_size_, &ext_out1, NULL);
+  ext_out.flags = XCL_MEM_DDR_BANK1;
+  ext_out.obj = 0; ext_out.param = 0;
+  task->o_buf = clCreateBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX ,
+      sizeof(int)*task->max_o_size_, &ext_out, NULL);
 
   kernel_time_ = 0;
   kernel_invks_ = 0;
@@ -72,9 +48,7 @@ void XCLAgent::writeInput(cl_mem buf, void* host_ptr, int size, int bank) {
   //cl_command_queue cmd = pe_.accx->cmd;
   cl_command_queue cmd = pe_.cmd;
   if (size > 0) {
-    cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 0, NULL, &write_events_[bank]);
-    //cl_int err = clEnqueueMigrateMemObjects(cmd, 1, &buf, 0, 0, NULL, &write_events_[bank]);
-
+    cl_int err = clEnqueueWriteBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 0, NULL, &write_events_);
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error writing buffer of size " << size
         << " err: " << err;
@@ -87,7 +61,7 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
   //cl_command_queue cmd = pe_.accx->cmd;
   cl_command_queue cmd = pe_.cmd;
   if (size > 0) {
-    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 1, &kernel_event_, &read_events_[bank]);
+    cl_int err = clEnqueueReadBuffer(cmd, buf, CL_FALSE, 0, size, host_ptr, 1, &kernel_event_, &read_events_);
     if (err != CL_SUCCESS) {
       DLOG(ERROR) << "error reading buffer of size " << size
         << " err: " << err;
@@ -99,7 +73,6 @@ void XCLAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
 void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 
   SWTask *task = (SWTask *)i_task;
-  //cl_command_queue cmd = pe_.accx->cmd;
   cl_command_queue cmd = pe_.cmd;
 
   XCLAgent* prev_agent = NULL;
@@ -113,42 +86,23 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
   // kernel execution
   cl_int err = 0;
   int i_arg = 0;
-  err  = clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf[1]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_a_list_[pe_.accx->accx_id]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_b_list_[pe_.accx->accx_id]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[0]);
-  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size[1]);
+  err  = clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->i_buf);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &task->o_buf);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(cl_mem), &env_->pac_input_list_[pe_.accx->accx_id]);
+  err |= clSetKernelArg(kernel_, i_arg++, sizeof(int), &task->i_size);
 
   if (err) {
     LOG(ERROR) << "failed to set kernel args";
   }
 
   if (prev_agent) {
-    cl_event wait_list[3];
+    cl_event wait_list[2];
     wait_list[0] = prev_agent->kernel_event_;
-    wait_list[1] = write_events_[0];
-    wait_list[2] = write_events_[1];
-    if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd, kernel_, 3, wait_list, &kernel_event_);
-      valid_2nd_event_ = true;
-    }
-    else {
-      err = clEnqueueTask(cmd, kernel_, 2, wait_list, &kernel_event_);
-      valid_2nd_event_ = false;
-    }
+    wait_list[1] = write_events_;
+    err = clEnqueueTask(cmd, kernel_, 2, wait_list, &kernel_event_);
   }
   else {
-    if (task->i_size[1] > 0) {
-      err = clEnqueueTask(cmd, kernel_, 2, write_events_, &kernel_event_);
-      valid_2nd_event_ = true;
-    }
-    else {
-      err = clEnqueueTask(cmd, kernel_, 1, write_events_, &kernel_event_);
-      valid_2nd_event_ = false;
-    }
+    err = clEnqueueTask(cmd, kernel_, 1, &write_events_, &kernel_event_);
   }
   if (err) {
     LOG(ERROR) << "failed to execute kernels: " << err;
@@ -157,10 +111,7 @@ void XCLAgent::start(Task* i_task, FPGAAgent* agent) {
 }
 
 void XCLAgent::finish() {
-  if (valid_2nd_event_)
-    clWaitForEvents(2, read_events_);
-  else
-    clWaitForEvents(1, read_events_);
+  clWaitForEvents(1, &read_events_);
 
 #if 0
   cl_ulong k_start, k_end;
@@ -188,15 +139,9 @@ void XCLAgent::finish() {
   }
 #endif
 
-  clReleaseEvent(write_events_[0]);
-  if (valid_2nd_event_) {
-    clReleaseEvent(write_events_[1]);
-  }
+  clReleaseEvent(write_events_);
   clReleaseEvent(kernel_event_);
-  clReleaseEvent(read_events_[0]);
-  if (valid_2nd_event_) {
-    clReleaseEvent(read_events_[1]);
-  }
+  clReleaseEvent(read_events_);
 }
 
 void XCLAgent::fence() {

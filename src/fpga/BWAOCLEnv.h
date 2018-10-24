@@ -70,15 +70,9 @@ class BWAOCLEnv : public OpenCLEnv{
 
 #ifdef XILINX_FPGA
     cl_int err = 0;
-    cl_mem_ext_ptr_t ext_c, ext_d;
-    ext_c.flags = XCL_MEM_DDR_BANK1;
-    ext_c.obj = 0; ext_c.param = 0;
-#ifdef DEPLOY_aws
-    ext_d.flags = XCL_MEM_DDR_BANK3;
-#else
-    ext_d.flags = XCL_MEM_DDR_BANK1;
-#endif
-    ext_d.obj = 0; ext_d.param = 0;
+    cl_mem_ext_ptr_t ext_pac;
+    ext_pac.flags = XCL_MEM_DDR_BANK1;
+    ext_pac.obj = 0; ext_pac.param = 0;
     // transfer PAC reference to all the devices
     for (int i = 0; i < device_envs_.size(); i++) {
       if (device_envs_[i].accx_group_id != 0) continue;
@@ -86,24 +80,19 @@ class BWAOCLEnv : public OpenCLEnv{
       cl_context context = device_envs_[i].context;
       cl_command_queue cmd = device_envs_[i].cmd;
 
-      cl_mem pac_input_a_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-          pac_size, &ext_c, &err);
-      cl_mem pac_input_b_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
-          pac_size, &ext_d, &err);
+      cl_mem pac_input_ = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX,
+          pac_size, &ext_pac, &err);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to create reference OpenCL buffer!");
       }
-      cl_event event[2];
-      err  = clEnqueueWriteBuffer(cmd, pac_input_a_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[0]);
-      err |= clEnqueueWriteBuffer(cmd, pac_input_b_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event[1]);
-      clWaitForEvents(2, event);
+      cl_event event;
+      err  = clEnqueueWriteBuffer(cmd, pac_input_, CL_TRUE, 0, pac_size, pac, 0, NULL, &event);
+      clWaitForEvents(1, &event);
       if (err != CL_SUCCESS) {
         throw std::runtime_error("Failed to write reference to DDR!");
       }
-      clReleaseEvent(event[0]);
-      clReleaseEvent(event[1]);
-      pac_input_a_list_.push_back(pac_input_a_);
-      pac_input_b_list_.push_back(pac_input_b_);
+      clReleaseEvent(event);
+      pac_input_list_.push_back(pac_input_);
 
       cl_pe pe;
       pe.pe_id = sw_num_pe_++;
@@ -123,10 +112,8 @@ class BWAOCLEnv : public OpenCLEnv{
 
   void releasePAC() {
 #ifdef XILINX_FPGA
-    for (int i = 0; i < pac_input_a_list_.size(); i++)
-      clReleaseMemObject(pac_input_a_list_[i]);
-    for (int i = 0; i < pac_input_b_list_.size(); i++)
-      clReleaseMemObject(pac_input_b_list_[i]);
+    for (int i = 0; i < pac_input_list_.size(); i++)
+      clReleaseMemObject(pac_input_list_[i]);
     for (int i = 0; i < sw_pe_list_.size(); i++) {
       cl_int err = clReleaseCommandQueue(sw_pe_list_[i].cmd);
       if (err != CL_SUCCESS)
@@ -343,8 +330,7 @@ class BWAOCLEnv : public OpenCLEnv{
  public:
   std::vector<cl_mem> bwt_list_;
   std::vector<cl_mem> bwt_param_list_;
-  std::vector<cl_mem> pac_input_a_list_;
-  std::vector<cl_mem> pac_input_b_list_;
+  std::vector<cl_mem> pac_input_list_;
 
   std::vector<int> *group_sizes_;
   std::vector<const char*> *bin_paths_;

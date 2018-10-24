@@ -28,7 +28,7 @@
 
 inline void processOutput(SWTask* task, uint64_t &post_ts) {
   // finish task and get output buffers
-  int total_task_num = (task->o_size[0]+task->o_size[1])/FPGA_RET_PARAM_NUM;
+  int total_task_num = task->o_size/FPGA_RET_PARAM_NUM;
   int actual_tasks = 0;
 
   uint64_t post_start_ts = getUs();
@@ -38,22 +38,17 @@ inline void processOutput(SWTask* task, uint64_t &post_ts) {
   // check fpga results correctness
   while (1) {
     bool wrong_results = false;
-    for (int k = 0; k < 2; k++) {
-      int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
-      short* kernel_output = task->o_data[k];
-      for (int i = 0; i < task_num; i++) {
-        int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
-          kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
-        if (seed_idx > actual_tasks)
-          actual_tasks = seed_idx;
-        if (seed_idx > total_task_num || seed_idx < 0) {
-          DLOG(ERROR) << "Wrong fpga results at half = " << k
-                      << " task_num = " << i << " seed_idx = " << seed_idx;
-          wrong_results = true;
-          wrong_half = k;
-          k = 2;
-          break;
-        }
+    int task_num = task->o_size / FPGA_RET_PARAM_NUM;
+    short* kernel_output = task->o_data;
+    for (int i = 0; i < task_num; i++) {
+      int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+        kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+      if (seed_idx > actual_tasks)
+        actual_tasks = seed_idx;
+      if (seed_idx > total_task_num || seed_idx < 0) {
+        DLOG(ERROR) << "Wrong fpga results at"
+                    << " task_num = " << i << " seed_idx = " << seed_idx;
+        break;
       }
     }
     if ((!wrong_results) && (total_task_num != actual_tasks + 1)) {
@@ -70,10 +65,9 @@ inline void processOutput(SWTask* task, uint64_t &post_ts) {
 #if 0
         // dump results   
         FILE* fout = fopen("dump-input.dat", "wb+");
-        int k = wrong_half;
-        fwrite(task->i_data[k], sizeof(int), task->i_size[k], fout);
+        fwrite(task->i_data, sizeof(int), task->i_size, fout);
         fclose(fout);
-        DLOG(INFO) << "dump input data of output-" << k <<  " to dump-input.dat";
+        DLOG(INFO) << "dump input data of output to dump-input.dat";
 #endif
         throw fpgaResultsError("wrong results in smithwaterman kernel");
       }
@@ -90,48 +84,44 @@ inline void processOutput(SWTask* task, uint64_t &post_ts) {
   // apply fpga results
   mem_alnreg_t** region_batch = task->region_batch;
   mem_chain_t**  chain_batch = task->chain_batch;
-  for (int k = 0; k < 2; k++) {
-    int task_num = task->o_size[k] / FPGA_RET_PARAM_NUM;
-    short* kernel_output = task->o_data[k];
+  int task_num = task->o_size / FPGA_RET_PARAM_NUM;
+  short* kernel_output = task->o_data;
 
-    for (int i = 0; i < task_num; i++) {
-      int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
-        kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
+  for (int i = 0; i < task_num; i++) {
+    int seed_idx = ((int)(kernel_output[1+FPGA_RET_PARAM_NUM*2*i])<<16) |
+      kernel_output[0+FPGA_RET_PARAM_NUM*2*i];
 
-      if (seed_idx > actual_tasks) {
-        actual_tasks = seed_idx;
-      }
-      mem_alnreg_t *newreg = region_batch[seed_idx];
-
-      newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
-      newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
-      newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
-      newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
-      newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
-      newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
-      newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
-
-      // compute the seedcov here
-      mem_chain_t *chain = chain_batch[seed_idx];
-      int seedcov = 0;
-      for (int k=0; k < chain->n; k++) {
-        const mem_seed_t *seed = &chain->seeds[k];
-        if (seed->qbeg >= newreg->qb && 
-            seed->qbeg + seed->len <= newreg->qe && 
-            seed->rbeg >= newreg->rb && 
-            seed->rbeg + seed->len <= newreg->re){
-          seedcov += seed->len; 
-        }
-      }
-      newreg->seedcov = seedcov;
+    if (seed_idx > actual_tasks) {
+      actual_tasks = seed_idx;
     }
+    mem_alnreg_t *newreg = region_batch[seed_idx];
+
+    newreg->qb = kernel_output[2+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->qe += kernel_output[3+FPGA_RET_PARAM_NUM*2*i];
+    newreg->rb += kernel_output[4+FPGA_RET_PARAM_NUM*2*i];
+    newreg->re += kernel_output[5+FPGA_RET_PARAM_NUM*2*i];
+    newreg->score = kernel_output[6+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->truesc = kernel_output[7+FPGA_RET_PARAM_NUM*2*i]; 
+    newreg->w = kernel_output[8+FPGA_RET_PARAM_NUM*2*i];
+
+    // compute the seedcov here
+    mem_chain_t *chain = chain_batch[seed_idx];
+    int seedcov = 0;
+    for (int chain_id=0; chain_id < chain->n; chain_id++) {
+      const mem_seed_t *seed = &chain->seeds[chain_id];
+      if (seed->qbeg >= newreg->qb && 
+          seed->qbeg + seed->len <= newreg->qe && 
+          seed->rbeg >= newreg->rb && 
+          seed->rbeg + seed->len <= newreg->re){
+        seedcov += seed->len; 
+      }
+    }
+    newreg->seedcov = seedcov;
   }
 
   // reset
-  for (int k = 0; k < 2; k++) {
-    task->i_size[k] = 0;
-    task->o_size[k] = 0;
-  }
+  task->i_size = 0;
+  task->o_size = 0;
 
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Total " << actual_tasks << " tasks in output";
   post_ts += getUs() - post_start_ts;
@@ -212,7 +202,10 @@ inline void packReadData(ktp_aux_t* aux,
 {
   // empty filter & overflow filter
 #if 1 
-  if (chains->n == 0 || chains->n >= 2000) {
+  int total_seed_num = 0;
+  for (int chain_idx = 0; chain_idx < chains->n; chain_idx++)
+    total_seed_num += chains->a[chain_idx].n;
+  if (chains->n == 0 || total_seed_num == 0 || chains->n >= 2000) {
     kv_init(*alnregs);
     for (int j = 0; j < chains->n; j++) {
       mem_chain2aln(aux->opt,
@@ -312,8 +305,7 @@ inline void packReadData(ktp_aux_t* aux,
         task_num += 1;
         if (task_num >= task->max_o_size_/(2*FPGA_RET_PARAM_NUM)) {
           task->max_o_size_ = task->max_o_size_ + 1000;
-          task->o_data[0] = (short*)realloc(task->o_data[0], task->max_o_size_ * sizeof(short));
-          task->o_data[1] = (short*)realloc(task->o_data[1], task->max_o_size_ * sizeof(short));
+          task->o_data = (short*)realloc(task->o_data, task->max_o_size_ * sizeof(short));
         }
         seed_num += 1;
         *((int64_t*)(&buffer[buffer_idx])) = seed_array->rbeg ;
@@ -344,8 +336,7 @@ inline void packReadData(ktp_aux_t* aux,
   *((int*)(&buffer[idx_end_addr])) = buffer_idx/4 ;
   if (buffer_idx >= task->max_i_size_ * 0.9) {
     task->max_i_size_ = (int)(task->max_i_size_ * 1.2);
-    task->i_data[0] = (char*)realloc(task->i_data[0], task->max_i_size_);
-    task->i_data[1] = (char*)realloc(task->i_data[1], task->max_i_size_);
+    task->i_data = (char*)realloc(task->i_data, task->max_i_size_);
   }
 
   free(ref);
@@ -447,45 +438,20 @@ void ChainsToRegionsFPGA::compute(int wid) {
       int chunk_id = 0;
       int task_num = 0;
       int kernel_buffer_idx = 0;
-      bool reach_half = false;
-      bool reach_end = false;
       task_queue.front()->start_seq = 0;
 
-      int i = 0;
-      while (i < batch_num) {
-        if (task_num < chunk_size/2) {
-          SWTask* task = task_queue.front();
-          packReadData(aux, seqs+i, chains+i, alnreg+i, 
-              task->i_data[0], 
-              kernel_buffer_idx, task_num,
-              task);
-          i++;
-        }
-        else if (task_num >= chunk_size/2 && reach_half == false) {
-          SWTask* task = task_queue.front();
+      for (int i = 0; i < batch_num; i++) {
+        SWTask* task = task_queue.front();
+        packReadData(aux, seqs+i, chains+i, alnreg+i,
+                     task->i_data,
+                     kernel_buffer_idx, task_num,
+                     task);
 
-          task->i_size[0] = kernel_buffer_idx/sizeof(int);
-          task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
-
-          kernel_buffer_idx = 0;
-          reach_half = true;
-        }
-        else if (task_num < chunk_size) {
-          SWTask* task = task_queue.front();
-          packReadData(aux, seqs+i, chains+i, alnreg+i, 
-              task->i_data[1], 
-              kernel_buffer_idx, task_num,
-              task);
-          i++;
-        }
-        else if (task_num >= chunk_size) {
-          SWTask* task = task_queue.front();
-          task->i_size[1] = kernel_buffer_idx/sizeof(int);
-          task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
-          if (task->o_size[0] == 0) task->i_size[0] = 0;
-          if (task->o_size[1] == 0) task->i_size[1] = 0;
+        if (task_num >= chunk_size/2) {
+          task->i_size = kernel_buffer_idx/sizeof(int);
+          task->o_size = FPGA_RET_PARAM_NUM*task_num;
+          if (task->o_size == 0) task->i_size = 0;
           task->end_seq = i;
-
           prep_ts += getUs() - pre_start_ts;
           DLOG_IF(INFO, VLOG_IS_ON(4)) << "Prepare data for " << task_num << " tasks takes "
                                        << getUs() - pre_start_ts << " us";
@@ -493,7 +459,6 @@ void ChainsToRegionsFPGA::compute(int wid) {
           // start sending task to FPGA
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
           DLOG_IF(INFO, VLOG_IS_ON(4)) << "Seqs in chunk: [" << task->start_seq << ", " << task->end_seq << ").";
-
           uint64_t enq_start_ts = getUs();
           task->start(task_queue[1]);
           enq_ts += getUs() - enq_start_ts;
@@ -501,10 +466,10 @@ void ChainsToRegionsFPGA::compute(int wid) {
           // circulate the task
           task_queue.push_back(task);
           task_queue.pop_front();
-
           task = task_queue.front();
+
           // if task is available
-          if (task->o_size[0] > 0 || task->o_size[1] > 0) { 
+          if (task->o_size > 0) { 
             DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
             uint64_t deq_start_ts = getUs();
             task->finish();
@@ -516,40 +481,23 @@ void ChainsToRegionsFPGA::compute(int wid) {
           // reset 
           task_num = 0;
           kernel_buffer_idx = 0;
-          reach_half = false;
           task->start_seq = i;
           task->end_seq = 0;
 
           pre_start_ts = getUs();
-
-        }
-
-        if (i == batch_num - 1) {
-          reach_end = true;
-        }
-        else {
-          reach_end = false;
         }
       }
+
+
       DLOG_IF(INFO, VLOG_IS_ON(4)) << "Starting the remaining tasks";
 
       // finish the remain reads even with small task number 
-      if (!reach_end && task_num != 0) {
+      if (task_num != 0) {
         SWTask* task = task_queue.front();
-        if (task_num < chunk_size/2 || reach_half == false) {
-          task->i_size[0] = kernel_buffer_idx/sizeof(int);
-          task->i_size[1] = 0;
-          task->o_size[0] = FPGA_RET_PARAM_NUM*task_num;
-          task->o_size[1] = 0;
-        }
-        else {
-          task->i_size[1] = kernel_buffer_idx/sizeof(int);
-          task->o_size[1] = FPGA_RET_PARAM_NUM*task_num - task->o_size[0];
-        }
-        if (task->o_size[0] == 0) task->i_size[0] = 0;
-        if (task->o_size[1] == 0) task->i_size[1] = 0;
-        task->end_seq = i;
-
+        task->i_size = kernel_buffer_idx/sizeof(int);
+        task->o_size = FPGA_RET_PARAM_NUM*task_num;
+        if (task->o_size == 0) task->i_size = 0;
+        task->end_seq = batch_num;
         prep_ts += getUs() - pre_start_ts;
 
         DLOG_IF(INFO, VLOG_IS_ON(3)) << "Start chunk " << chunk_id;
@@ -565,7 +513,7 @@ void ChainsToRegionsFPGA::compute(int wid) {
         task_queue.pop_front();
 
         task = task_queue.front();
-        if (task->o_size[0] > 0 || task->o_size[1] > 0) { 
+        if (task->o_size > 0) { 
           DLOG_IF(INFO, VLOG_IS_ON(3)) << "Wait chunk " << chunk_id-1;
           uint64_t deq_start_ts = getUs();
           task->finish();
@@ -577,13 +525,13 @@ void ChainsToRegionsFPGA::compute(int wid) {
     }
     catch (fpgaHangError &e) {
       LOG_IF(WARNING, VLOG_IS_ON(1)) << "FPGA hangs, restart execution on CPU";
-      DVLOG(1) << "batch start idx: " << start_idx
-               << "batch num: " << batch_num
-               << "tag: " << record.tag
-               << "task start seq: " << task_queue.front()->start_seq
-               << "task end seq: " << task_queue.front()->end_seq
-               << task_queue.front()->i_size[0] << "," << task_queue.front()->i_size[1]
-               << task_queue.front()->o_size[0] << "," << task_queue.front()->o_size[1];
+      DVLOG(1) << "batch start idx: " << start_idx << "\n"
+               << "batch num: " << batch_num << "\n"
+               << "tag: " << record.tag << "\n"
+               << "task start seq: " << task_queue.front()->start_seq << "\n"
+               << "task end seq: " << task_queue.front()->end_seq << "\n"
+               << task_queue.front()->i_size << "\n"
+               << task_queue.front()->o_size << "\n";
 
       n_active_--;
       if (n_active_ == 0 && cpu_stage_ != NULL) cpu_stage_->setUseAccx(false);

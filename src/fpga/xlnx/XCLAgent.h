@@ -22,10 +22,8 @@ class XCLAgent : public FPGAAgent {
   cl_kernel     kernel_;
 
   cl_event      kernel_event_;
-  cl_event      write_events_[2];
-  cl_event      read_events_[2];
-
-  bool          valid_2nd_event_;
+  cl_event      write_events_;
+  cl_event      read_events_;
 
   uint64_t      kernel_time_;
   uint64_t      kernel_invks_;
