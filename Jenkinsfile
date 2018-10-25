@@ -10,8 +10,8 @@ agent {label 'merlin'}
                         sh "rm -rf release"
                         sh "mkdir release"
                         dir("release"){
-                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/local/ /curr/limark/falcon2/"
-                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/common/ /curr/limark/falcon2/"
+//                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/local/ /curr/limark/falcon2/"
+//                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/common/ /curr/limark/falcon2/"
                         sh "source /curr/software/util/modules-tcl/init/bash"
                         sh "module load sdx/17.4; cmake -DCMAKE_BUILD_TYPE=Internal on aws -DRELEASE_VERSION=aws -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
  //                       sh "cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=aws -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
