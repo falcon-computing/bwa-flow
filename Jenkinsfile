@@ -6,7 +6,7 @@ agent {label 'merlin'}
             steps {
                  dir("ws-bwa-flow") {
                  script {
-                    git branch: 'release', url: 'git@github.com:falcon-computing/bwa-flow.git'
+//                    git branch: 'release', url: 'git@github.com:falcon-computing/bwa-flow.git'
                         sh "rm -rf release"
                         sh "mkdir release"
                         dir("release"){
