@@ -10,8 +10,8 @@ agent {label 'merlin'}
                         sh "rm -rf release"
                         sh "mkdir release"
                         dir("release"){
-//                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/local/ /curr/limark/falcon-local/"
-//                        sh "rsync -av --exclude=.* /curr/limark/genome-release/build/common/ /curr/limark/falcon-local/"
+//                        sh "rsync -av --exclude=.* /curr/limark/test/genome-release/build/local/ /curr/limark/falcon-local/"
+//                        sh "rsync -av --exclude=.* /curr/limark/test/genome-release/build/common/ /curr/limark/falcon-local/"
                         sh "source /curr/software/util/modules-tcl/init/bash"
                         sh "module load xrt; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=Internal -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon-local/tools/bin .."
                         sh "make -j 8"
