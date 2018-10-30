@@ -1,5 +1,6 @@
 ### Jenkins Build-Status
-[![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=Falcon-Build-BWA-FLOW)](http://us-1.falcon-computing.com:8080/job/Falcon-Build-BWA-FLOW/)
+AWS [![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=Falcon-Build-BWA-FLOW)](http://us-1.falcon-computing.com:8080/job/Falcon-Build-BWA-FLOW/)
+Local [![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=Falcon-Build-BWA-FLOW-Internal)](http://us-1.falcon-computing.com:8080/job/Falcon-Build-BWA-FLOW-Internal/)
 
 ### Compilation
 1. Use cmake to ompile. This will compile bwa, kflow and bwa-flow automatically
