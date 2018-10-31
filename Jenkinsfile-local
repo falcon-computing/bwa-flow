@@ -16,6 +16,10 @@ agent {label 'merlin'}
                         sh "module load xrt; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=Internal -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon-local/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
+			link = sh(returnStdout: true, script: 'cd /curr/limark/falcon-local/tools/bin; link=s3://fcs-cicd-test/release/bwa-flow/bwa-flow; echo $link; echo $link > latest')
+                        sh "cd /curr/limark/falcon-local/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/bwa-flow/bwa-flow"
+                        sh "cd /curr/limark/falcon-local/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/bwa-flow/latest"
+                        sh "cd /curr/limark/falcon-local/bin; rm -f latest"
                         }
                     }
                 }
