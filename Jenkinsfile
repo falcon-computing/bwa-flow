@@ -17,6 +17,10 @@ agent {label 'merlin'}
  //                       sh "cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=aws -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
+			link = sh(returnStdout: true, script: 'cd /curr/limark/falcon2/tools/bin; link=s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow; echo $link; echo $link > latest')
+                        sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp fcs-genome s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow"
+                        sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/aws/bwa-flow/latest"
+                        sh "cd /curr/limark/falcon2/bin; rm -f latest"
                         }
                     }
                 }
