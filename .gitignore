@@ -21,3 +21,6 @@ config.mk
 *.fq.gz
 *.bam
 *.sam
+
+build/*
+run.sh
