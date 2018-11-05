@@ -16,12 +16,12 @@ class SWTask : public Task {
   void finish();
   void redo();
 
-  int     i_size[2];
-  int     o_size[2];
-  cl_mem  i_buf[2];
-  cl_mem  o_buf[2];
-  char*   i_data[2];
-  short*  o_data[2];
+  int     i_size;
+  int     o_size;
+  cl_mem  i_buf;
+  cl_mem  o_buf;
+  char*   i_data;
+  short*  o_data;
 
   cl_event*       events;
   mem_alnreg_t**  region_batch;

@@ -40,13 +40,13 @@ inline void *sw_malloc(size_t size, int data_width) {
 SWTask::SWTask(BWAOCLEnv* env, int chunk_size) {
   max_i_size_ = 32*1024*1024;
   max_o_size_ = 2*2*chunk_size*FPGA_RET_PARAM_NUM;
-  for (int k = 0; k < 2; k++) {
-    i_size[k] = 0;
-    o_size[k] = 0;
 
-    i_data[k] = (char*) sw_malloc(max_i_size_, sizeof(char));
-    o_data[k] = (short*)sw_malloc(max_o_size_, sizeof(short));
-  }
+  i_size = 0;
+  o_size = 0;
+
+  i_data = (char*) sw_malloc(max_i_size_, sizeof(char));
+  o_data = (short*)sw_malloc(max_o_size_, sizeof(short));
+
   region_batch = new mem_alnreg_t*[2*chunk_size];
   if (NULL == region_batch) {
     std::string err_string = "Memory allocation failed";
@@ -94,22 +94,17 @@ SWTask::~SWTask() {
 
   delete region_batch;
   delete chain_batch;
-  for (int k = 0; k < 2; k++) {
-    clReleaseMemObject(i_buf[k]);
-    clReleaseMemObject(o_buf[k]);
-    free(i_data[k]);
-    free(o_data[k]);
-  }
+
+  clReleaseMemObject(i_buf);
+  clReleaseMemObject(o_buf);
+  free(i_data);
+  free(o_data);
+
   delete agent_;
 }
 
 void SWTask::start(SWTask* prev_task) {
-  if (o_size[0] == 0 && o_size[1] > 0) {
-    char* tmp = i_data[0];
-    i_data[0] = i_data[1];
-    i_data[1] = tmp;
-  }
-  else if (o_size[0] == 0 && o_size[1] == 0) {
+  if (o_size == 0) {
     return;
   }
 
@@ -131,37 +126,33 @@ void SWTask::start(SWTask* prev_task) {
 }
 
 void SWTask::start_func(SWTask* prev_task) {
-  if (i_size[0]*sizeof(int) >= max_i_size_ || 
-      i_size[1]*sizeof(int) >= max_i_size_ ||
-      o_size[0] + o_size[1] >= max_o_size_) 
+  if (i_size*sizeof(int) >= max_i_size_ || 
+      o_size >= max_o_size_) 
   {
     DLOG(ERROR) << "exceeding max memory size";
     throw std::runtime_error("exceeding max memory size");
   }
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Task info: " 
-    << "i_size[0] = " << i_size[0] << ", "
-    << "i_size[1] = " << i_size[1];
+    << "i_size = " << i_size;
 
   uint64_t start_ts = getUs();
-  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
-  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+  agent_->writeInput(i_buf, i_data, i_size*sizeof(int), 0);
 
-  if (prev_task->i_size[0] == 0 && prev_task->i_size[1] == 0) {
+  if (prev_task->i_size == 0) {
     agent_->start(this, NULL);
   }
   else {
     agent_->start(this, prev_task->agent_);
   }
 
-  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
-  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+  agent_->readOutput(o_buf, o_data, o_size*sizeof(int), 0);
 
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueue write, kernel & read takes " <<
     getUs() - start_ts << " us";
 }
 
 void SWTask::finish() {
-  if (o_size[0] == 0 && o_size[1] == 0) {
+  if (o_size == 0) {
     return;
   }
 
@@ -189,7 +180,7 @@ void SWTask::finish_func() {
 }
 
 void SWTask::redo() {
-  if (o_size[0] == 0 && o_size[1] == 0) {
+  if (o_size == 0) {
     return;
   }
 
@@ -211,11 +202,9 @@ void SWTask::redo() {
 
 void SWTask::redo_func() {
   ((XCLAgent *)agent_)->fence();
-  agent_->writeInput(i_buf[0], i_data[0], i_size[0]*sizeof(int), 0);
-  agent_->writeInput(i_buf[1], i_data[1], i_size[1]*sizeof(int), 1);
+  agent_->writeInput(i_buf, i_data, i_size*sizeof(int), 0);
   agent_->start(this, NULL);
-  agent_->readOutput(o_buf[0], o_data[0], o_size[0]*sizeof(int), 0);
-  agent_->readOutput(o_buf[1], o_data[1], o_size[1]*sizeof(int), 1);
+  agent_->readOutput(o_buf, o_data, o_size*sizeof(int), 0);
   agent_->finish();
 }
 
