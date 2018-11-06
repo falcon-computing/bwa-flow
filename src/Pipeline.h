@@ -16,9 +16,9 @@
 
 #include "bwa_wrapper.h"
 
-#define INPUT_DEPTH   64
-#define OUTPUT_DEPTH  64
-#define COMPUTE_DEPTH 64
+#define INPUT_DEPTH   64 
+#define OUTPUT_DEPTH  64 
+#define COMPUTE_DEPTH 64 
 
 // Common data structures
 struct kseq_buf_t {

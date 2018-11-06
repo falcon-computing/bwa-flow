@@ -1,0 +1,18 @@
+#include "Pipeline.h"
+#include "samblaster.h"
+
+class MarkDup: public kestrelFlow::MapPartitionStage<
+  BamsRecord, BamsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
+public:
+  MarkDup(ktp_aux_t* auxx = NULL):kestrelFlow::MapPartitionStage<
+    BamsRecord, BamsRecord, INPUT_DEPTH, OUTPUT_DEPTH>(1, false){
+      InitializeState(auxx);
+      aux = auxx;
+    }
+
+  void compute(int wid);
+private:
+  void InitializeState(ktp_aux_t* auxx); 
+  state_t* state;
+  ktp_aux_t* aux;
+};

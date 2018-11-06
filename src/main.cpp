@@ -43,7 +43,7 @@
 #include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "mdPipeline.h"
+#include "mdStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -278,7 +278,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for markduplicates
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
-  Markdup           md_stage(1, aux);
+  MarkDup           md_stage(aux);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
@@ -329,8 +329,8 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    compute_flow.addStage(6, &md_stage);
-    compute_flow.addStage(7, &reorder_stage);
+    compute_flow.addStage(6, &reorder_stage);
+    compute_flow.addStage(7, &md_stage);
     compute_flow.addStage(8, &sort_stage);
     compute_flow.addStage(9, &write_stage);
 

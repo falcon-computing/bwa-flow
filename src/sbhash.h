@@ -21,6 +21,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <boost/atomic.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lockable_adapter.hpp>
+#include <boost/thread.hpp>
 
 // Rename common integer types.
 // I like having these shorter name.
@@ -47,7 +51,25 @@ void disposeHashNode(hashNode_t * node);
 ///////////////////////////////////////////////////////////////////////////////
 // Hash Table
 ///////////////////////////////////////////////////////////////////////////////
+class hashTable
+:public boost::basic_lockable_adapter<boost::mutex>
+{
+  public:
+    hashTable(int size = 0);
+    void hashTableInit(int size);
+    void deleteHashTable();
+    void resizeHashTable();
+    bool hashTableInsert(UINT64 value);
+    ~hashTable();
+  private:
+    UINT64* table;
+    UINT32  size;
+    UINT32  entries;
+};
 
+typedef hashTable hashTable_t;
+
+#if 0
 typedef struct hashTable hashTable_t;
 struct hashTable
 {
@@ -62,3 +84,4 @@ void deleteHashTable(hashTable_t * ht);
 bool hashTableInsert(hashTable_t * ht, UINT64 value);
 void hashTableInit(hashTable_t * ht, int size=0);
 void freeHashTableNodes();
+#endif

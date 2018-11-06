@@ -365,7 +365,7 @@ void deleteState(state_t * s)
     if (s->sigs != NULL)
     {
         // delete[] s->sigs;
-        for (UINT32 i=0; i<s->sigArraySize; i++) deleteHashTable(&(s->sigs[i]));
+        for (UINT32 i=0; i<s->sigArraySize; i++) s->sigs[i].deleteHashTable();
         free (s->sigs);
     }
     for (seqMap_t::iterator iter = s->seqs.begin(); iter != s->seqs.end(); ++iter)
@@ -598,7 +598,7 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         UINT32 off = calcSigArrOff(first, second, state->binCount);
         // Attempt insert into the sigs structure.
         // The return value will tell us if it was already there.
-        bool insert = hashTableInsert(&(state->sigs[off]), sig);
+        bool insert = state->sigs[off].hashTableInsert(sig);
         // Check if the insertion actually happened.
         if (!insert)
         {

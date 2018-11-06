@@ -185,25 +185,22 @@ inline UINT32 hash(UINT64 value)
     return (UINT32)value;
 }
 
-void hashTableInit(hashTable_t * ht, int size)
-{
-    ht->entries = 0;
-    ht->size = size;
-    if (size == 0)
-    {
-        ht->table = (UINT64 *)NULL;
-        return;
-    }
-    ht->table = (UINT64 *)calloc(ht->size, sizeof(UINT64));
-    if (ht->table == NULL) fatalError("samblaster: unable to allocate hash table.\n");
+hashTable::hashTable(int size) {
+  this->hashTableInit(size);
 }
 
-hashTable_t * makeHashTable()
+void hashTableInit(hashTable_t * ht, int size)
 {
-    hashTable_t * ht = (hashTable_t *)malloc(sizeof(hashTable_t));
-    if (ht == NULL) fatalError("samblaster: unable to allocate hash table.\n");
-    hashTableInit(ht, hashTableSizes[0]);
-    return ht;
+    entries = 0;
+    size = size;
+    if (size == 0)
+    {
+        table = (UINT64 *)NULL;
+    }
+    else {
+      table = (UINT64 *)calloc(size, sizeof(UINT64));
+      if (table == NULL) fatalError("samblaster: unable to allocate hash table.\n");
+    }
 }
 
 // Use a C++ style destructor so that arrays of hash tables will be cleaned up automagically.
@@ -213,18 +210,18 @@ hashTable::~hashTable()
 }
 
 // C style delete.
-void deleteHashTable(hashTable_t * ht)
+void hashTable::deleteHashTable()
 {
-    if (ht->table != NULL) free(ht->table);
+    if (table != NULL) free(table);
 }
 
-void resizeHashTable(hashTable_t * ht)
+void hashTable::resizeHashTable()
 {
     // Find out what size table is next.
     int newsize = 0;
     for (int i=0; i<numOfSizes; i++)
     {
-        if (hashTableSizes[i] == ht->size)
+        if (hashTableSizes[i] == size)
         {
             newsize = hashTableSizes[i+1];
             break;
@@ -232,16 +229,16 @@ void resizeHashTable(hashTable_t * ht)
     }
 
     // Remember the current values array.
-    UINT64 * oldtable = ht->table;
-    int size = ht->size;
+    UINT64 * oldtable = table;
+    int size = size;
     // Now reinit the hash table with a new table, etc.
-    hashTableInit(ht, newsize);
+    this->hashTableInit(newsize);
     // Now iterate over all values and rehash them into the new table.
     for (int i=0; i<size; i++)
     {
         UINT64 value = oldtable[i];
         if (isEmpty(value)) continue;
-        if (isValue(value)) {hashTableInsert(ht, unmakeValue(value)); continue;}
+        if (isValue(value)) {this->hashTableInsert(unmakeValue(value)); continue;}
         // We need to iterate through the nodes.
         hashNode_t * node = makePtr(value);
         while (true)
@@ -250,7 +247,7 @@ void resizeHashTable(hashTable_t * ht)
             {
                 value = node->values[j];
                 if (isEmpty(value)) break;
-                hashTableInsert(ht, unmakeValue(value));
+                this->hashTableInsert(unmakeValue(value));
             }
             if (node->next == NULL) break;
             node = node->next;
@@ -265,19 +262,20 @@ void resizeHashTable(hashTable_t * ht)
     if (oldtable != NULL) free(oldtable);
 }
 
-bool hashTableInsert(hashTable_t * ht, UINT64 value)
+bool hashTable::hashTableInsert(UINT64 value)
 {
+    boost::lock_guard<hashTable> guard(*this);
     // See if we have reached our size limit.
-    if (ht->entries == ht->size) resizeHashTable(ht);
-    int bucket = hash(value) % ht->size;
+    if (entries == size) resizeHashTable();
+    int bucket = hash(value) % size;
     // We need to empty the low order bit so that we can tell the difference between values and ptrs.
     value = makeValue(value);
-    UINT64 curvalue = ht->table[bucket];
+    UINT64 curvalue = table[bucket];
     // The empty case should be most common.
     if (isEmpty(curvalue))
     {
-        ht->table[bucket] = value;
-        ht->entries += 1;
+        table[bucket] = value;
+        entries += 1;
         return true;
     }
     // The value case should be next most common.
@@ -287,7 +285,7 @@ bool hashTableInsert(hashTable_t * ht, UINT64 value)
         if (curvalue == value) return false;
         // We have a collision and need to add an overflow node.
         hashNode_t * node = getHashNode();
-        ht->table[bucket] = (UINT64)node;
+        table[bucket] = (UINT64)node;
         node->values[0] = curvalue;
         // Note that this test doesn't cost us anything as it happens at compile time.
         if (HASHNODE_PAYLOAD_SIZE >= 2)
@@ -301,7 +299,7 @@ bool hashTableInsert(hashTable_t * ht, UINT64 value)
             node->next = secondNode;
             secondNode->values[0] = value;
         }
-        ht->entries += 1;
+        entries += 1;
         return true;
     }
     // The overflow node case.
@@ -314,7 +312,7 @@ bool hashTableInsert(hashTable_t * ht, UINT64 value)
             if (curNode->values[i] == 0)
             {
                 curNode->values[i] = value;
-                ht->entries += 1;
+                entries += 1;
                 return true;
             }
             // Check if the value matches the current value.
@@ -327,6 +325,6 @@ bool hashTableInsert(hashTable_t * ht, UINT64 value)
     hashNode_t * node = getHashNode();
     curNode->next = node;
     node->values[0] = value;
-    ht->entries += 1;
+    entries += 1;
     return true;
 }
