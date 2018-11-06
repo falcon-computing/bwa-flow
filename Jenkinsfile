@@ -5,6 +5,7 @@ agent {label 'merlin'}
         stage ("build-local-bwa-flow") {
             steps {
                  dir("ws-bwa-flow") {
+		 checkout scm
                  script {
 //                    git branch: 'release', url: 'git@github.com:falcon-computing/bwa-flow.git'
                         sh "rm -rf release"
