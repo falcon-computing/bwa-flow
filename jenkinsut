@@ -22,10 +22,8 @@ agent {label 'merlin'}
                         sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow"
                         sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/aws/bwa-flow/latest"
                         sh "cd /curr/limark/falcon2/bin; rm -f latest"
+			sh "make test"
                         }
-                    }
-                  dir("test") {
-                    sh "run-test.sh"
                     }
                 }
             }
