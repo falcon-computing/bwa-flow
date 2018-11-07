@@ -189,10 +189,11 @@ hashTable::hashTable(int size) {
   this->hashTableInit(size);
 }
 
-void hashTable::hashTableInit(int size)
+void hashTable::hashTableInit(int s)
 {
+    DLOG(INFO)<<"hashTable init with: "<< s;
     entries = 0;
-    size = size;
+    size = s;
     if (size == 0)
     {
         table = (UINT64 *)NULL;
@@ -222,7 +223,7 @@ void hashTable::resizeHashTable()
     for (int i=0; i<numOfSizes; i++)
     {
         if (hashTableSizes[i] == size)
-        {
+        {   DLOG(INFO)<< "size should be added";
             newsize = hashTableSizes[i+1];
             break;
         }
@@ -230,11 +231,12 @@ void hashTable::resizeHashTable()
 
     // Remember the current values array.
     UINT64 * oldtable = table;
-    int size = size;
+    int s = size;
     // Now reinit the hash table with a new table, etc.
+    DLOG(INFO)<< "resize hashTable";
     this->hashTableInit(newsize);
     // Now iterate over all values and rehash them into the new table.
-    for (int i=0; i<size; i++)
+    for (int i=0; i<s; i++)
     {
         UINT64 value = oldtable[i];
         if (isEmpty(value)) continue;
@@ -262,11 +264,18 @@ void hashTable::resizeHashTable()
     if (oldtable != NULL) free(oldtable);
 }
 
+bool hashTable::hashTableInsertLocked(UINT64 value){
+  //boost::lock_guard<boost::mutex> guard(mtx_);
+  mtx_.lock();
+  int ret = hashTableInsert(value);
+  mtx_.unlock();
+  return ret;
+}
+
 bool hashTable::hashTableInsert(UINT64 value)
 {
-    boost::lock_guard<hashTable> guard(*this);
     // See if we have reached our size limit.
-    if (entries == size) resizeHashTable();
+    if (entries == size) this->resizeHashTable();
     int bucket = hash(value) % size;
     // We need to empty the low order bit so that we can tell the difference between values and ptrs.
     value = makeValue(value);

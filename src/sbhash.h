@@ -26,6 +26,11 @@
 #include <boost/thread/lockable_adapter.hpp>
 #include <boost/thread.hpp>
 
+#ifdef NDEBUG
+#define LOG_HEADER "falcon-bwa"
+#endif
+#include <glog/logging.h>
+
 // Rename common integer types.
 // I like having these shorter name.
 typedef uint64_t UINT64;
@@ -52,7 +57,6 @@ void disposeHashNode(hashNode_t * node);
 // Hash Table
 ///////////////////////////////////////////////////////////////////////////////
 class hashTable
-:public boost::basic_lockable_adapter<boost::mutex>
 {
   public:
     hashTable(int size = 0);
@@ -60,8 +64,10 @@ class hashTable
     void deleteHashTable();
     void resizeHashTable();
     bool hashTableInsert(UINT64 value);
+    bool hashTableInsertLocked(UINT64 value);
     ~hashTable();
   private:
+    boost::mutex mtx_;
     UINT64* table;
     UINT32  size;
     UINT32  entries;

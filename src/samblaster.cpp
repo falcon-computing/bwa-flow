@@ -598,7 +598,7 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         UINT32 off = calcSigArrOff(first, second, state->binCount);
         // Attempt insert into the sigs structure.
         // The return value will tell us if it was already there.
-        bool insert = state->sigs[off].hashTableInsert(sig);
+        bool insert = state->sigs[off].hashTableInsertLocked(sig);
         // Check if the insertion actually happened.
         if (!insert)
         {

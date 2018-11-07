@@ -74,9 +74,10 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
   }
   state->binCount = binCount;
   state->sigArraySize = (binCount * 2 + 1) * (binCount * 2 + 1) + 1;
-  state->sigs = (sigSet_t *) malloc(state->sigArraySize * sizeof(sigSet_t));
+  //state->sigs = (sigSet_t *) malloc(state->sigArraySize * sizeof(sigSet_t));
+  state->sigs = (sigSet_t *) new sigSet_t[state->sigArraySize];
   if (state->sigs == NULL) fatalError("samblaster: Unable to allocate signature set array.");
-  for (UINT32 i=0; i<state->sigArraySize; i++) state->sigs[i].hashTableInit(); 
+  //for (UINT32 i=0; i<state->sigArraySize; i++) state->sigs[i].hashTableInit(); 
 #else
 #endif
 }
@@ -85,7 +86,7 @@ void MarkDup::compute(int wid) {
 uint64_t read_seq_time = 0;
 uint64_t mark_dup_time = 0;
   while (true) {
-    BamsRecord input;
+    SeqsRecord input;
     bool ready = this->getInput(input);
     while (!this->isFinal() && !ready) {
       boost::this_thread::sleep_for(boost::chrono::microseconds(10));
@@ -102,7 +103,7 @@ uint64_t mark_dup_time = 0;
 #endif
     //for SeqsReord input
     std::vector<SeqsRecord> tmp;
-    tmp.pushback(input);
+    tmp.push_back(input);
     std::vector<SeqsRecord> * seqsRecord = &tmp;
     uint64_t read_seq_e = getUs();
     read_seq_time += (read_seq_e - read_seq_s);

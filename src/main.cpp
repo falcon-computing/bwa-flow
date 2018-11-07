@@ -329,8 +329,8 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    compute_flow.addStage(6, &reorder_stage);
-    compute_flow.addStage(7, &md_stage);
+    compute_flow.addStage(6, &md_stage);
+    compute_flow.addStage(7, &reorder_stage);
     compute_flow.addStage(8, &sort_stage);
     compute_flow.addStage(9, &write_stage);
 

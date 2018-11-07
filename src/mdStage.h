@@ -9,7 +9,9 @@ public:
       InitializeState(auxx);
       aux = auxx;
     }
-
+  ~MarkDup(){
+    // deleteState(state);
+  } 
   void compute(int wid);
 private:
   void InitializeState(ktp_aux_t* auxx); 
