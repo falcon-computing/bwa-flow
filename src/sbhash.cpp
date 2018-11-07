@@ -189,7 +189,7 @@ hashTable::hashTable(int size) {
   this->hashTableInit(size);
 }
 
-void hashTableInit(hashTable_t * ht, int size)
+void hashTable::hashTableInit(int size)
 {
     entries = 0;
     size = size;

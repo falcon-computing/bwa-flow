@@ -76,7 +76,7 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
   state->sigArraySize = (binCount * 2 + 1) * (binCount * 2 + 1) + 1;
   state->sigs = (sigSet_t *) malloc(state->sigArraySize * sizeof(sigSet_t));
   if (state->sigs == NULL) fatalError("samblaster: Unable to allocate signature set array.");
-  for (UINT32 i=0; i<state->sigArraySize; i++) hashTableInit(&(state->sigs[i])); 
+  for (UINT32 i=0; i<state->sigArraySize; i++) state->sigs[i].hashTableInit(); 
 #else
 #endif
 }

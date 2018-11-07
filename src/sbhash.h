@@ -56,7 +56,7 @@ class hashTable
 {
   public:
     hashTable(int size = 0);
-    void hashTableInit(int size);
+    void hashTableInit(int size = 0);
     void deleteHashTable();
     void resizeHashTable();
     bool hashTableInsert(UINT64 value);
