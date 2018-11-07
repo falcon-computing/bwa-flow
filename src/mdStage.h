@@ -2,10 +2,10 @@
 #include "samblaster.h"
 
 class MarkDup: public kestrelFlow::MapPartitionStage<
-  BamsRecord, BamsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
+  SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
 public:
   MarkDup(ktp_aux_t* auxx = NULL):kestrelFlow::MapPartitionStage<
-    BamsRecord, BamsRecord, INPUT_DEPTH, OUTPUT_DEPTH>(1, false){
+    SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH>(1, false){
       InitializeState(auxx);
       aux = auxx;
     }
