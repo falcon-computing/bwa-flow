@@ -18,7 +18,10 @@ agent {label 'merlin'}
  //                       sh "cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=aws -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
-			sh "make test"
+               		when { branch "devops-*" }     
+            			steps {
+                			sh "make test"
+				}
                         }
                     }
                 }
