@@ -2,6 +2,7 @@
 #include "samblaster.h"
 #include <boost/thread/mutex.hpp>
 
+// mapStage version
 class MarkDup: public kestrelFlow::MapStage<
   SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
 public:
