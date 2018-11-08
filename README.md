@@ -1,5 +1,6 @@
 ### Jenkins Build-Status
 AWS [![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=Falcon-Build-BWA-FLOW)](http://us-1.falcon-computing.com:8080/job/Falcon-Build-BWA-FLOW/)
+HWC [![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=HWC-BWA-FLOW)](http://us-1.falcon-computing.com:8080/view/HWC/job/HWC-BWA-FLOW/)
 Local [![Build Status](http://us-1.falcon-computing.com:8080/buildStatus/icon?job=Falcon-Build-BWA-FLOW-Internal)](http://us-1.falcon-computing.com:8080/job/Falcon-Build-BWA-FLOW-Internal/)
 
 ### Compilation
