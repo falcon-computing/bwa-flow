@@ -11,7 +11,8 @@ splitLine_t * bamToSplitLine(ktp_aux_t* aux, bam1_t* bam_record) {
   kstring_t ks = { 0, 0, NULL };
   sam_format1(aux->h, bam_record, &ks);
   sline->bufLen = ks.l;
-  sline->buffer = ks.s;
+  strcpy(sline->buffer, ks.s);
+  free(ks.s);
   splitSplitLine(sline, 12);
   return sline;
 }
@@ -82,9 +83,10 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
 #endif
 }
 
-void MarkDup::compute(int wid) {
+SeqsRecord MarkDup::compute(SeqsRecord const & input) {
 uint64_t read_seq_time = 0;
 uint64_t mark_dup_time = 0;
+#if 0
   while (true) {
     SeqsRecord input;
     bool ready = this->getInput(input);
@@ -95,6 +97,7 @@ uint64_t mark_dup_time = 0;
     if (!ready) {
       break;
     }
+#endif
     uint64_t all_start = getUs();
     DLOG(INFO) << "Started MarkDup()";
     uint64_t read_seq_s = getUs();
@@ -126,7 +129,9 @@ uint64_t mark_dup_time = 0;
         }
         if (strcmp(line->fields[QNAME], nextLine->fields[QNAME]) != 0) {
           //DLOG(INFO) << "before md " << line->fields[QNAME] << " " << nextLine->fields[QNAME];
+          mtx_.lock();
           markDupsDiscordants(line, state);
+          mtx_.unlock();
           splitLine_t* tmp = line;
           for (int j = 0; j < count; j++) {
             if (checkSplitLineDup(tmp)) {
@@ -149,7 +154,9 @@ uint64_t mark_dup_time = 0;
         }
       } 
 
+      mtx_.lock();
       markDupsDiscordants(line, state);
+      mtx_.unlock();
       splitLine_t* tmp = line;
       for(int j = 0; j < count; j++){
         if (checkSplitLineDup(tmp)) {
@@ -163,14 +170,15 @@ uint64_t mark_dup_time = 0;
         deleteSplitLine(release);
       }
     }
-    pushOutput(input);
+    //pushOutput(input); // for mapPartitionStage
     DLOG(INFO) << "Finished MarkDup()";
     uint64_t all_end = getUs();
     uint64_t all_diff = all_end - all_start;
     DLOG(INFO) << "MdStage AllTime = " << all_diff;
     DLOG(INFO) << "ReadSeq Time = " << read_seq_time;
     DLOG(INFO) << "MarkDup Time = " << mark_dup_time;
-  }
+    return input;
+  // } // for MapPartitionStage
 #if 0
   tmp = head;
   while(tmp->next != NULL){

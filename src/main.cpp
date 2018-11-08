@@ -278,7 +278,7 @@ int main(int argc, char *argv[]) {
 
   // Stages for markduplicates
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
-  MarkDup           md_stage(aux);
+  MarkDup           md_stage(1, aux);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1

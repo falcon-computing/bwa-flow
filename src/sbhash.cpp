@@ -191,7 +191,7 @@ hashTable::hashTable(int size) {
 
 void hashTable::hashTableInit(int s)
 {
-    DLOG(INFO)<<"hashTable init with: "<< s;
+    //DLOG(INFO)<<"hashTable init with: "<< s;
     entries = 0;
     size = s;
     if (size == 0)
@@ -223,7 +223,7 @@ void hashTable::resizeHashTable()
     for (int i=0; i<numOfSizes; i++)
     {
         if (hashTableSizes[i] == size)
-        {   DLOG(INFO)<< "size should be added";
+        {   //DLOG(INFO)<< "size should be added";
             newsize = hashTableSizes[i+1];
             break;
         }
@@ -233,7 +233,7 @@ void hashTable::resizeHashTable()
     UINT64 * oldtable = table;
     int s = size;
     // Now reinit the hash table with a new table, etc.
-    DLOG(INFO)<< "resize hashTable";
+    //DLOG(INFO)<< "resize hashTable";
     this->hashTableInit(newsize);
     // Now iterate over all values and rehash them into the new table.
     for (int i=0; i<s; i++)
@@ -266,9 +266,7 @@ void hashTable::resizeHashTable()
 
 bool hashTable::hashTableInsertLocked(UINT64 value){
   //boost::lock_guard<boost::mutex> guard(mtx_);
-  mtx_.lock();
   int ret = hashTableInsert(value);
-  mtx_.unlock();
   return ret;
 }
 

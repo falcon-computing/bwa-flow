@@ -60,14 +60,14 @@ class hashTable
 {
   public:
     hashTable(int size = 0);
-    void hashTableInit(int size = 0);
-    void deleteHashTable();
-    void resizeHashTable();
-    bool hashTableInsert(UINT64 value);
     bool hashTableInsertLocked(UINT64 value);
+    void deleteHashTable();
     ~hashTable();
   private:
-    boost::mutex mtx_;
+    void hashTableInit(int size = 0);
+    void resizeHashTable();
+    bool hashTableInsert(UINT64 value);
+    // boost::mutex mtx_;
     UINT64* table;
     UINT32  size;
     UINT32  entries;
