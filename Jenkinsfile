@@ -1,10 +1,11 @@
-//update 1.0.5
+//update 1.0.7
 pipeline {
 agent {label 'merlin'}
     stages {
         stage ("build-local-bwa-flow") {
             steps {
                  dir("ws-bwa-flow") {
+		 checkout scm
                  script {
 //                    git branch: 'release', url: 'git@github.com:falcon-computing/bwa-flow.git'
                         sh "rm -rf release"
@@ -17,6 +18,10 @@ agent {label 'merlin'}
  //                       sh "cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=aws -DDEPLOYMENT_DST= -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
+			link = sh(returnStdout: true, script: 'cd /curr/limark/falcon2/tools/bin; link=s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow; echo $link; echo $link > latest')
+                        sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow"
+                        sh "cd /curr/limark/falcon2/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/aws/bwa-flow/latest"
+                        sh "cd /curr/limark/falcon2/bin; rm -f latest"
                         }
                     }
                 }
@@ -34,4 +39,3 @@ agent {label 'merlin'}
         }
     }
 }
-	
