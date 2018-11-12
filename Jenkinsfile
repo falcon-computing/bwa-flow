@@ -2,7 +2,7 @@
 pipeline {
 agent {label 'merlin'}
     stages {
-        stage ("build-local-bwa-flow") {
+        stage ("build-aws-bwa-flow") {
             steps {
                  dir("ws-bwa-flow") {
 		 checkout scm
