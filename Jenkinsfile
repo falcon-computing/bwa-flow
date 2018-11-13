@@ -16,8 +16,8 @@ agent {label 'merlin'}
                         sh "module load sdx/17.4; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=$version -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
-                        sh "cd ~/falcon2/tools/bin; echo s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version- > latest"
-                        sh "cd ~/falcon2/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version"
+                        sh "cd ~/falcon2/tools/bin; echo s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version-aws > latest"
+                        sh "cd ~/falcon2/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version-aws"
                         sh "cd ~/falcon2/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/aws/bwa-flow/latest"
                         sh "cd ~/falcon2/bin; rm -f latest"
                         }
