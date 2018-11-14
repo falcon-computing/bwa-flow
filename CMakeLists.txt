@@ -58,8 +58,8 @@ add_subdirectory(bwa bwa_c)
 
 # set up for compilation
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC -DUSE_HTSLIB")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -rdynamic -O0")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g3 -rdynamic -Wall -DUSELICENSE")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -rdynamic -Og")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -rdynamic -Wall -DUSELICENSE")
 if ( USE_MPI )
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_LINK_FLAGS}")
 endif()
@@ -142,7 +142,7 @@ add_dependencies(bwa-flow Google FalconLM HTS)
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa-flow
   bwa-c
-  kflow
+  kflow 
   ${Boost_LIBRARIES} 
   ${FalconLM_LIBRARIES}
   ${Google_LIBRARIES}
@@ -159,7 +159,7 @@ if ( USE_MPI )
   set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
   target_link_libraries(bwa-mpi
     bwa-c
-    kflow
+    kflow 
     ${MPI_CXX_LIBRARIES}
     ${Boost_LIBRARIES} 
     ${FalconLM_LIBRARIES}
