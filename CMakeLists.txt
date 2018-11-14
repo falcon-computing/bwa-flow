@@ -142,7 +142,7 @@ add_dependencies(bwa-flow Google FalconLM HTS)
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa-flow
   bwa-c
-  kflow 
+  kflow
   ${Boost_LIBRARIES} 
   ${FalconLM_LIBRARIES}
   ${Google_LIBRARIES}
@@ -159,7 +159,7 @@ if ( USE_MPI )
   set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
   target_link_libraries(bwa-mpi
     bwa-c
-    kflow 
+    kflow
     ${MPI_CXX_LIBRARIES}
     ${Boost_LIBRARIES} 
     ${FalconLM_LIBRARIES}

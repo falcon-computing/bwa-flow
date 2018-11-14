@@ -14,14 +14,12 @@ typedef int32_t   INT32;
 
 // mempcpy is a GNU extension and not available everywhere.
 #ifndef _GNU_SOURCE
-inline void *mempcpy(void *dest, const void *src, size_t n)
-{
+inline void *mempcpy(void *dest, const void *src, size_t n) {
     return (char*) memcpy(dest, src, n) + n; 
 }
 #endif
 inline bool streq(char * s1, const char * s2) __attribute__((always_inline));
-inline bool streq(char * s1, const char * s2)
-{
+inline bool streq(char * s1, const char * s2) {
     return (strcmp(s1, s2) ==0);
 }
 
@@ -36,8 +34,7 @@ void fsError(const char * filename);
 void fprintTimeSeconds (FILE * out, double seconds, int precision);
 void fprintTimeMicroSeconds (FILE * out, UINT64 microSeconds, int precision);
 
-inline UINT64 diffTVs (struct timeval * startTV, struct timeval * endTV)
-{
+inline UINT64 diffTVs (struct timeval * startTV, struct timeval * endTV) {
     return (((endTV->tv_sec - startTV->tv_sec) * 1000000) + (endTV->tv_usec - startTV->tv_usec));
 }
 
@@ -48,20 +45,17 @@ inline UINT64 diffTVs (struct timeval * startTV, struct timeval * endTV)
 
 typedef INT32 pos_t;
 #define MAX_SEQUENCE_LENGTH 250 // Current illumina paired-end reads are at most 150 + 150
-inline int padLength(int length)
-{
+inline int padLength(int length) {
     return length + (2 * MAX_SEQUENCE_LENGTH);
 }
-inline int padPos(int pos)
-{
+inline int padPos(int pos) {
     return pos + MAX_SEQUENCE_LENGTH;
 }
 
 typedef UINT64 sgn_t; // Type for signatures for offsets and lengths.
 typedef struct splitLine splitLine_t;
 extern splitLine_t * splitLineFreeList;
-struct splitLine
-{
+struct splitLine {
     // General fields for any split line.
     splitLine_t * next;
     char * buffer;
@@ -105,14 +99,12 @@ splitLine_t * readLine(FILE * input);
 
 inline void outputString(char * str, FILE * output){
   // Do the error checking here so we don't have to do it elsewhere.
-  if (fputs(str, output) < 0)
-    {
+  if (fputs(str, output) < 0) {
         fatalError("samblaster: Unable to write to output file.\n");
     }
 }
 
-inline void writeLine(splitLine_t * line, FILE * output)
-{
+inline void writeLine(splitLine_t * line, FILE * output) {
     unsplitSplitLine(line);
     outputString(line->buffer, output);
 }
@@ -165,18 +157,21 @@ inline bool isSecondRead(splitLine_t * line) { return checkFlag(line, SECOND_SEG
 
 // These determine alignment type.
 // // Things may get more complicated than this once we have alternate contigs such as in build 38 of human genome.
-inline bool isPrimaryAlignment(splitLine_t * line)
-{ return !(checkFlag(line, 0x100) || checkFlag(line, 0x800)); }
+inline bool isPrimaryAlignment(splitLine_t * line) { 
+  return !(checkFlag(line, 0x100) || checkFlag(line, 0x800)); 
+}
 
 // We have to hande secondard and complementary alignments differently depending on compatMode.
 // // So, we store which bits are being included in each.
 extern int complementaryBits;
-inline bool isComplementaryAlignment(splitLine_t * line)
-{ return checkFlag(line, complementaryBits); }
+inline bool isComplementaryAlignment(splitLine_t * line) { 
+  return checkFlag(line, complementaryBits);
+}
 
 extern int secondaryBits;
-inline bool isSecondaryAlignment(splitLine_t * line)
-{ return checkFlag(line, secondaryBits); }
+inline bool isSecondaryAlignment(splitLine_t * line)  {
+  return checkFlag(line, secondaryBits); 
+}
 
 inline bool isDuplicate(splitLine_t * line) { return checkFlag(line, 0x400); }
 
@@ -184,19 +179,16 @@ inline void setDuplicate(splitLine_t * line) { setFlag(line, 0x400); }
 
 typedef hashTable_t sigSet_t;
 
-inline int str2int (char * str)
-{
+inline int str2int (char * str) {
     return strtol(str, NULL, 0);
 }
 // Need to change this if pos is unsigned.
-inline pos_t str2pos (char * str)
-{
+inline pos_t str2pos (char * str) {
     return strtol(str, NULL, 0);
 }
 // Temp buffer to use to form new flag field when marking dups.
 extern char tempBuf[10];
-inline void markDup(splitLine_t * line)
-{
+inline void markDup(splitLine_t * line) {
     setDuplicate(line);
     sprintf(tempBuf, "%d", line->flag);
     changeFieldSplitLine(line, FLAG, tempBuf);
@@ -216,8 +208,7 @@ void writeSAMlineWithIdNum(splitLine_t * line, FILE * output);
 //// Not worth it for a structure holding so few members.
 //
 //// Function needed to get char * map to work.
-struct less_str
-{
+struct less_str {
    bool operator()(char const *a, char const *b) const
    {
       return strcmp(a, b) < 0;
@@ -226,16 +217,14 @@ struct less_str
 // This stores the map between sequence names and sequence numbers.
 typedef std::map<const char *, int, less_str> seqMap_t;
 
-inline void addSeq(seqMap_t * seqs, char * item, int val)
-{
+inline void addSeq(seqMap_t * seqs, char * item, int val) {
     (*seqs)[item] = val;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //// Struct for processing state
 /////////////////////////////////////////////////////////////////////////////////
-struct state_struct
-{
+struct state_struct {
     char *         inputFileName;
     FILE *         inputFile;
     char *         outputFileName;
@@ -281,8 +270,7 @@ void deleteState(state_t * s);
 ////  without performance degradation on more standard genomes.
 //// Thanks to https://github.com/carsonhh for the suggestion.
 ///////////////////////////////////////////////////////////////////////////////
-inline sgn_t calcSig(splitLine_t * first, splitLine_t * second)
-{
+inline sgn_t calcSig(splitLine_t * first, splitLine_t * second) {
     // Total nonsense to get the compiler to actually work.
     UINT64 t1 = first->binPos;
     UINT64 t2 = t1 << 32;
@@ -290,8 +278,7 @@ inline sgn_t calcSig(splitLine_t * first, splitLine_t * second)
     return (sgn_t)final;
 }
 
-inline UINT32 calcSigArrOff(splitLine_t * first, splitLine_t * second, int binCount)
-{
+inline UINT32 calcSigArrOff(splitLine_t * first, splitLine_t * second, int binCount) {
     UINT32 s1 = (first->binNum * 2) + (isReverseStrand(first) ? 1 : 0);
     UINT32 s2 = (second->binNum * 2) + (isReverseStrand(second) ? 1 : 0);
     UINT32 retval = (s1 * binCount * 2) + s2;
@@ -306,12 +293,10 @@ inline UINT32 calcSigArrOff(splitLine_t * first, splitLine_t * second, int binCo
 //// Sequences
 /////////////////////////////////////////////////////////////////////////////////
 inline int getSeqNum(splitLine_t * line, int field, state_t * state) __attribute__((always_inline));
-inline int getSeqNum(splitLine_t * line, int field, state_t * state)
-{
+inline int getSeqNum(splitLine_t * line, int field, state_t * state) {
 #ifdef DEBUG
     seqMap_t::iterator findret = state->seqs.find(line->fields[field]);
-    if (findret == state->seqs.end())
-    {
+    if (findret == state->seqs.end()) {
         char * temp;
         asprintf(&temp, "Unable to find seq %s for readid %s in sequence map.\n", line->fields[field], line->fields[QNAME]);
         fatalError(temp);
@@ -327,11 +312,9 @@ inline int getSeqNum(splitLine_t * line, int field, state_t * state)
 /////////////////////////////////////////////////////////////////////////////////
 
 // This will parse a base 10 int, and change ptr to one char beyond the end of the number.
-inline int parseNextInt(char **ptr)
-{
+inline int parseNextInt(char **ptr) {
     int num = 0;
-    for (char curChar = (*ptr)[0]; curChar != 0; curChar = (++(*ptr))[0])
-    {
+    for (char curChar = (*ptr)[0]; curChar != 0; curChar = (++(*ptr))[0]) {
         int digit = curChar - '0';
         if (digit >= 0 && digit <= 9) num = num*10 + digit;
         else break;
@@ -339,27 +322,23 @@ inline int parseNextInt(char **ptr)
     return num;
 }
 // This will the current char, and move the ptr ahead by one.
-inline char parseNextOpCode(char **ptr)
-{
+inline char parseNextOpCode(char **ptr) {
     return ((*ptr)++)[0];
 }
 // This just test for end of string.
-inline bool moreCigarOps(char *ptr)
-{
+inline bool moreCigarOps(char *ptr) {
     return (ptr[0] != 0);
 }
 void calcOffsets(splitLine_t * line);
 
-inline int getStartDiag(splitLine_t * line)
-{
+inline int getStartDiag(splitLine_t * line) {
   // SRO - SQO (not strand normalized)
   // Simplify the following.
   // return (str2pos(line->fields[POS])) - line->sclip;
   return line->rapos - line->sclip;
 }
 
-inline int getEndDiag(splitLine_t * line)
-{
+inline int getEndDiag(splitLine_t * line) {
     // ERO - EQO (not strand normalized)
     // Simplify the following
     // return (line->rapos + line->raLen - 1) - (line->sclip + line->qaLen - 1)
@@ -374,8 +353,7 @@ inline int getEndDiag(splitLine_t * line)
 
 void outputSAMBlock(splitLine_t * block, FILE * output);
 
-inline bool needSwap(splitLine_t * first, splitLine_t * second)
-{
+inline bool needSwap(splitLine_t * first, splitLine_t * second) {
     // Sort first by ref offset.
     if (first->pos > second->pos) return true;
     if (first->pos < second->pos) return false;
@@ -389,8 +367,7 @@ inline bool needSwap(splitLine_t * first, splitLine_t * second)
     return false;
 }
 
-inline void swapPtrs(splitLine_t ** first, splitLine_t ** second)
-{
+inline void swapPtrs(splitLine_t ** first, splitLine_t ** second) {
     splitLine_t * temp = *first;
     *first = *second;
     *second = temp;

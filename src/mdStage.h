@@ -11,7 +11,7 @@ public:
       InitializeState(auxx);
       aux = auxx;
     }
-  ~MarkDup(){
+  ~MarkDup() {
     // deleteState(state);
   } 
   SeqsRecord compute(SeqsRecord const & input);

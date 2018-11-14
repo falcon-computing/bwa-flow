@@ -34,10 +34,8 @@
 //////////////////////////////////////////////////////////////////////////////
 
 void fatalError(const char * errorStr);
-void checkFSerrWithFilename (ssize_t returnCode)
-{
-    if (returnCode == -1)
-    {
+void checkFSerrWithFilename (ssize_t returnCode) {
+    if (returnCode == -1) {
         char * temp;
         if (errno == ENOMEM)
             temp = (char *)"samblaster: Insufficient memory available to satisfy allocation request.\n";
@@ -48,30 +46,26 @@ void checkFSerrWithFilename (ssize_t returnCode)
 }
 
 // Allocate big blocks of memory.
-char * blockMalloc(ssize_t size)
-{
+char * blockMalloc(ssize_t size) {
     char * retval = (char *)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     checkFSerrWithFilename((ssize_t)retval);
     return retval;
 }
 
 // Free big blocks of memory.  Not the size is needed.
-void blockFree(char * ptr, ssize_t size)
-{
+void blockFree(char * ptr, ssize_t size) {
     int err = munmap(ptr, size);
     checkFSerrWithFilename(err);
 }
 
 typedef struct LBMallocBlock LBMallocBlock_t;
-struct LBMallocBlock
-{
+struct LBMallocBlock {
     char *            block;     // Pointer to the payload block
     LBMallocBlock_t * next;      // Pointer to the next allocation block
     size_t            size;      // Size of the allocated block
 };
 
-char * pushNewLBMallocBlock(int blockSize, LBMallocBlock_t **blockArrayPtr)
-{
+char * pushNewLBMallocBlock(int blockSize, LBMallocBlock_t **blockArrayPtr) {
     char * newBlock = blockMalloc(blockSize);
     LBMallocBlock_t * newMallocBlock = (LBMallocBlock_t *)malloc(sizeof(LBMallocBlock_t));
     if (newMallocBlock == NULL) fatalError("samblaster: Insufficeint memory available to allocate (more) objects.");
@@ -82,10 +76,8 @@ char * pushNewLBMallocBlock(int blockSize, LBMallocBlock_t **blockArrayPtr)
     return newBlock;
 }
 
-void freeLBMallocBlocks(LBMallocBlock_t * block)
-{
-    while (block != NULL)
-    {
+void freeLBMallocBlocks(LBMallocBlock_t * block) {
+    while (block != NULL) {
         LBMallocBlock_t * nextBlock = block->next;
         blockFree(block->block, block->size);
         free(block);
@@ -104,19 +96,16 @@ LBMallocBlock_t * nodeBlockList = NULL;
 // Ptr to head of linked list of free node objects.
 hashNode_t * hashNodeFreeList = NULL;
 
-void makeMoreHashNodes()
-{
+void makeMoreHashNodes() {
     hashNode_t * nodeArray = (hashNode_t *)pushNewLBMallocBlock(sizeof(hashNode_t) * newNodeCount, &nodeBlockList);
-    for (int i=1; i<newNodeCount; i++)
-    {
+    for (int i=1; i<newNodeCount; i++) {
         (nodeArray + (i - 1))->next = (nodeArray + i);
     }
     (nodeArray + (newNodeCount - 1))->next = NULL;
     hashNodeFreeList = nodeArray;
 }
 
-hashNode_t * getHashNode()
-{
+hashNode_t * getHashNode() {
     if (hashNodeFreeList == NULL) makeMoreHashNodes();
     hashNode_t * node = hashNodeFreeList;
     hashNodeFreeList = hashNodeFreeList->next;
@@ -126,14 +115,12 @@ hashNode_t * getHashNode()
 }
 
 // I don't think this is currently being called, as we always put the entire string of nodes on the freelist.
-void disposeHashNode(hashNode_t * node)
-{
+void disposeHashNode(hashNode_t * node) {
     node->next = hashNodeFreeList;
     hashNodeFreeList = node;
 }
 
-void freeHashTableNodes()
-{
+void freeHashTableNodes() {
     freeLBMallocBlocks(nodeBlockList);
 }
 
@@ -151,28 +138,23 @@ void freeHashTableNodes()
 //  low bit 0 -> ptr to overflow nodes.
 ///////////////////////////////////////////////////////////////////////////////
 
-inline UINT64 makeValue(UINT64 value)
-{
+inline UINT64 makeValue(UINT64 value) {
     return (value << 1) | 1;
 }
 
-inline UINT64 unmakeValue(UINT64 value)
-{
+inline UINT64 unmakeValue(UINT64 value) {
     return (value >> 1);
 }
 
-inline hashNode_t * makePtr(UINT64 value)
-{
+inline hashNode_t * makePtr(UINT64 value) {
     return (hashNode_t *)value;
 }
 
-inline bool isEmpty(UINT64 value)
-{
+inline bool isEmpty(UINT64 value) {
     return (value == 0);
 }
 
-inline bool isValue(UINT64 value)
-{
+inline bool isValue(UINT64 value) {
     return ((value & 1) != 0);
 }
 
@@ -180,8 +162,7 @@ inline bool isValue(UINT64 value)
 static UINT32 hashTableSizes [] = {0, 23, 47, 97, 199, 409, 823, 1741, 3739, 7517, 15173, 30727, 62233, 126271, 256279, 520241, 1056323,
                                    2144977, 4355707, 8844859, 17961079, 36473443, 74066549, 150406843, 305431229, 620239453, 1259520799};
 
-inline UINT32 hash(UINT64 value)
-{
+inline UINT32 hash(UINT64 value) {
     return (UINT32)value;
 }
 
@@ -189,13 +170,11 @@ hashTable::hashTable(int size) {
   this->hashTableInit(size);
 }
 
-void hashTable::hashTableInit(int s)
-{
+void hashTable::hashTableInit(int s) {
     //DLOG(INFO)<<"hashTable init with: "<< s;
     entries = 0;
     size = s;
-    if (size == 0)
-    {
+    if (size == 0) {
         table = (UINT64 *)NULL;
     }
     else {
@@ -205,25 +184,20 @@ void hashTable::hashTableInit(int s)
 }
 
 // Use a C++ style destructor so that arrays of hash tables will be cleaned up automagically.
-hashTable::~hashTable()
-{
+hashTable::~hashTable() {
     if (table != NULL) free(table);
 }
 
 // C style delete.
-void hashTable::deleteHashTable()
-{
+void hashTable::deleteHashTable() {
     if (table != NULL) free(table);
 }
 
-void hashTable::resizeHashTable()
-{
+void hashTable::resizeHashTable() {
     // Find out what size table is next.
     int newsize = 0;
-    for (int i=0; i<numOfSizes; i++)
-    {
-        if (hashTableSizes[i] == size)
-        {   //DLOG(INFO)<< "size should be added";
+    for (int i=0; i<numOfSizes; i++) {
+        if (hashTableSizes[i] == size) {   //DLOG(INFO)<< "size should be added";
             newsize = hashTableSizes[i+1];
             break;
         }
@@ -236,17 +210,14 @@ void hashTable::resizeHashTable()
     //DLOG(INFO)<< "resize hashTable";
     this->hashTableInit(newsize);
     // Now iterate over all values and rehash them into the new table.
-    for (int i=0; i<s; i++)
-    {
+    for (int i=0; i<s; i++) {
         UINT64 value = oldtable[i];
         if (isEmpty(value)) continue;
         if (isValue(value)) {this->hashTableInsert(unmakeValue(value)); continue;}
         // We need to iterate through the nodes.
         hashNode_t * node = makePtr(value);
-        while (true)
-        {
-            for (int j=0; j<HASHNODE_PAYLOAD_SIZE; j++)
-            {
+        while (true) {
+            for (int j=0; j<HASHNODE_PAYLOAD_SIZE; j++) {
                 value = node->values[j];
                 if (isEmpty(value)) break;
                 this->hashTableInsert(unmakeValue(value));
@@ -270,8 +241,7 @@ bool hashTable::hashTableInsertLocked(UINT64 value){
   return ret;
 }
 
-bool hashTable::hashTableInsert(UINT64 value)
-{
+bool hashTable::hashTableInsert(UINT64 value) {
     // See if we have reached our size limit.
     if (entries == size) this->resizeHashTable();
     int bucket = hash(value) % size;
@@ -279,15 +249,13 @@ bool hashTable::hashTableInsert(UINT64 value)
     value = makeValue(value);
     UINT64 curvalue = table[bucket];
     // The empty case should be most common.
-    if (isEmpty(curvalue))
-    {
+    if (isEmpty(curvalue)) {
         table[bucket] = value;
         entries += 1;
         return true;
     }
     // The value case should be next most common.
-    if (isValue(curvalue))
-    {
+    if (isValue(curvalue)) {
         // The value is already here.
         if (curvalue == value) return false;
         // We have a collision and need to add an overflow node.
@@ -295,12 +263,10 @@ bool hashTable::hashTableInsert(UINT64 value)
         table[bucket] = (UINT64)node;
         node->values[0] = curvalue;
         // Note that this test doesn't cost us anything as it happens at compile time.
-        if (HASHNODE_PAYLOAD_SIZE >= 2)
-        {
+        if (HASHNODE_PAYLOAD_SIZE >= 2) {
             node->values[1] = value;
         }
-        else
-        {
+        else {
             // We need to add a second new node.
             hashNode_t * secondNode = getHashNode();
             node->next = secondNode;
@@ -311,13 +277,10 @@ bool hashTable::hashTableInsert(UINT64 value)
     }
     // The overflow node case.
     hashNode_t * curNode = makePtr(curvalue);
-    while (true)
-    {
-        for (int i=0; i<HASHNODE_PAYLOAD_SIZE; i++)
-        {
+    while (true) {
+        for (int i=0; i<HASHNODE_PAYLOAD_SIZE; i++) {
             // Check if we have an empty slot.
-            if (curNode->values[i] == 0)
-            {
+            if (curNode->values[i] == 0) {
                 curNode->values[i] = value;
                 entries += 1;
                 return true;

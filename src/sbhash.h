@@ -44,8 +44,7 @@ typedef uint32_t UINT32;
 #define HASHNODE_PAYLOAD_SIZE 3
 
 typedef struct hashNode hashNode_t;
-struct hashNode
-{
+struct hashNode {
     hashNode_t * next;
     UINT64 values[HASHNODE_PAYLOAD_SIZE];
 };
@@ -56,8 +55,7 @@ void disposeHashNode(hashNode_t * node);
 ///////////////////////////////////////////////////////////////////////////////
 // Hash Table
 ///////////////////////////////////////////////////////////////////////////////
-class hashTable
-{
+class hashTable {
   public:
     hashTable(int size = 0);
     bool hashTableInsertLocked(UINT64 value);

@@ -35,12 +35,12 @@ bool checkSplitLineDup(splitLine_t * sline) {
   return (bool)(sline->flag & DUP_FLAG);
 }
 
-void markDupSeq(bseq1_t* seq){
+void markDupSeq(bseq1_t* seq) {
   for(int i = 0; i < seq->bams->l; i++) {
     if (i >= 2) {
       DLOG(INFO)<<"more than 1 alignments marked: "<<i;
     }
-    if(seq->bams->bams[i] != NULL){
+    if(seq->bams->bams[i] != NULL) {
       seq->bams->bams[i]->core.flag = (seq->bams->bams[i]->core.flag | DUP_FLAG);
     }
   }
@@ -56,12 +56,12 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
   state->seqOffs[0] = 0;
 #ifdef USE_HTSLIB
   UINT64 totalLen = 0;
-  for(int i = 0; i < aux->h->n_targets; i++){
+  for(int i = 0; i < aux->h->n_targets; i++) {
     char * seqID = aux->h->target_name[i];;
     UINT32 seqLen = (UINT32)aux->h->target_len[i];
     UINT64 seqOff = totalLen;
     totalLen += (UINT64)(seqLen + 1);
-    if(i % 32768 == 1){
+    if(i % 32768 == 1) {
       state->seqLens = (UINT32*)realloc(state->seqLens, (i + 32768)*sizeof(UINT32));
       state->seqOffs = (UINT64*)realloc(state->seqOffs, (i + 32768)*sizeof(UINT64));
     }
@@ -70,7 +70,7 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
     state->seqOffs[i] = seqOff;
   }
   int binCount = (totalLen >> BIN_SHIFT);
-  if (binCount >= (1 << 15)){
+  if (binCount >= (1 << 15)) {
     //Error Too many sequences in header of input sam file.
   }
   state->binCount = binCount;
@@ -158,7 +158,7 @@ uint64_t mark_dup_time = 0;
       markDupsDiscordants(line, state);
       mtx_.unlock();
       splitLine_t* tmp = line;
-      for(int j = 0; j < count; j++){
+      for(int j = 0; j < count; j++) {
         if (checkSplitLineDup(tmp)) {
           uint64_t mark_dup_s = getUs();
           markDupSeq(&((*seqsRecord)[k].seqs[batch_num - count + j]));
@@ -181,7 +181,7 @@ uint64_t mark_dup_time = 0;
   // } // for MapPartitionStage
 #if 0
   tmp = head;
-  while(tmp->next != NULL){
+  while(tmp->next != NULL) {
     splitLine_t* release = tmp;
     tmp = tmp->next;
     deleteSplitLine(release);

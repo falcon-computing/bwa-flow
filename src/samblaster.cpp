@@ -13,14 +13,12 @@ int secondaryBits = 0x100;
 int complementaryBits = 0x800;
 splitLine_t* splitLineFreeList = NULL;
 
-void fatalError(const char * errorStr)
-{
+void fatalError(const char * errorStr) {
     fprintf(stderr, "%s\n", errorStr);
     exit(1);
 }
 
-void fsError(const char * filename)
-{
+void fsError(const char * filename) {
     char * temp;
     if (errno == ENOENT)
         asprintf(&temp, "samblaster: File '%s' does not exist.\n", filename);
@@ -34,31 +32,26 @@ void fsError(const char * filename)
 ///////////////////////////////////////////////////////////////////////////////
 
 // A convenience function for outputing time is seconds in a more useful metric.
-void fprintTimeSeconds (FILE * out, double seconds, int precision)
-{
+void fprintTimeSeconds (FILE * out, double seconds, int precision) {
     double totalseconds = seconds;
     int hours = seconds/3600.;
-    if (hours > 0)
-    {
+    if (hours > 0) {
         seconds -= hours * 3600;
         fprintf(out, "%dH", hours);
     }
     int minutes = seconds/60.;
-    if (minutes > 0)
-    {
+    if (minutes > 0) {
         seconds -= minutes * 60;
         fprintf(out, "%dM", minutes);
     }
-    if (hours + minutes > 0)
-    {
+    if (hours + minutes > 0) {
         fprintf(out, "%.0fS", seconds);
         fprintf(out, "(%.*fS)", precision, totalseconds);
     }
     else fprintf(out, "%.*fS", precision, totalseconds);
 }
 
-void fprintTimeMicroSeconds (FILE * out, UINT64 microSeconds, int precision)
-{
+void fprintTimeMicroSeconds (FILE * out, UINT64 microSeconds, int precision) {
     fprintTimeSeconds(out, ((double)microSeconds/1000000.0), precision);
 }
 
@@ -78,8 +71,7 @@ void fprintTimeMicroSeconds (FILE * out, UINT64 microSeconds, int precision)
 // This will eliminate negative offsets and "center" offsets within the offset range for the contig.
 
 // Creator for splitLine
-splitLine_t * makeSplitLine()
-{
+splitLine_t * makeSplitLine() {
     splitLine_t * line = (splitLine_t *)malloc(sizeof(splitLine_t));
     line->bufLen = 0;
     line->maxBufLen = 1000;
@@ -91,16 +83,14 @@ splitLine_t * makeSplitLine()
 }
 
 // Destructor for split line.
-void deleteSplitLine(splitLine_t * line)
-{
+void deleteSplitLine(splitLine_t * line) {
     free(line->buffer);
     free(line->fields);
     free(line);
 }
 
 // Descructor for a list of splitLines
-void cleanUpSplitLines()
-{
+void cleanUpSplitLines() {
     splitLine_t * l = splitLineFreeList;
     while (l != NULL)
     {
@@ -112,8 +102,7 @@ void cleanUpSplitLines()
 
 // Like descructor for splitLine except don't free memory.
 // Instead, put the linked list of objects back on the free list.
-void disposeSplitLines(splitLine_t * line)
-{
+void disposeSplitLines(splitLine_t * line) {
     // First find the last line in the list.
     // Then get rid of them all.
     splitLine_t * last = line;
@@ -123,15 +112,12 @@ void disposeSplitLines(splitLine_t * line)
 }
 
 // Like constuctor, except take struct off free list if there is one.
-splitLine_t * getSplitLine()
-{
+splitLine_t * getSplitLine() {
     splitLine_t * line;
-    if (splitLineFreeList ==  NULL)
-    {
+    if (splitLineFreeList ==  NULL) {
         line = makeSplitLine();
     }
-    else
-    {
+    else {
         line = splitLineFreeList;
         splitLineFreeList = splitLineFreeList->next;
     }
@@ -145,16 +131,13 @@ splitLine_t * getSplitLine()
 }
 
 // Split the line into fields.
-void splitSplitLine(splitLine_t * line, int maxSplits)
-{
+void splitSplitLine(splitLine_t * line, int maxSplits) {
     line->numFields = 0;
     int fieldStart = 0;
     // replace the newline with a tab so that it works like the rest of the fields.
     line->buffer[line->bufLen-1] = '\t';
-    for (int i=0; i<line->bufLen; ++i)
-    {
-        if (line->buffer[i] == '\t')
-        {
+    for (int i=0; i<line->bufLen; ++i) {
+        if (line->buffer[i] == '\t') {
             line->fields[line->numFields] = line->buffer + fieldStart;
             line->numFields += 1;
             if (line->numFields == maxSplits) break;
@@ -170,14 +153,12 @@ void splitSplitLine(splitLine_t * line, int maxSplits)
 
 // Unsplit the fields back into a single string.
 // This will mung the strings, so only call this when all processing on the line is done.
-void unsplitSplitLine(splitLine_t * line)
-{
+void unsplitSplitLine(splitLine_t * line) {
     // First make sure we are still split.
     if (!line->split) return;
     // First undo the splits.
     // We will undo the splits backwards from the next field to avoid having to calculate strlen each time.
-    for (int i=1; i<line->numFields; ++i)
-    {
+    for (int i=1; i<line->numFields; ++i) {
         line->fields[i][-1] = '\t';
     }
     // Now put the newline back in.
@@ -188,15 +169,13 @@ void unsplitSplitLine(splitLine_t * line)
 
 // Resize the buffer of a splitLine.
 // Since the new buffer may not be in the same place, we need to first unsplit, resize, then resplit.
-void resizeSplitLine(splitLine_t * line, int newsize)
-{
+void resizeSplitLine(splitLine_t * line, int newsize) {
     // First unsplit it.
     unsplitSplitLine(line);
     // Resize the buffer, giving a little extra room.
     line->maxBufLen = newsize + 50;
     line->buffer = (char *)realloc(line->buffer, line->maxBufLen);
-    if (line->buffer == NULL)
-    {
+    if (line->buffer == NULL) {
         fatalError("samblaster: Failed to reallocate to a larger read buffer size.\n");
     }
     // Now resplit the line.
@@ -208,8 +187,7 @@ void resizeSplitLine(splitLine_t * line, int newsize)
 // This will be tough given how we output lines.
 // So, we might have to try a few things.
 // Start with simply expanding/contracting the string to put in the new value.
-void changeFieldSplitLine(splitLine_t * line, int fnum, char * newValue)
-{
+void changeFieldSplitLine(splitLine_t * line, int fnum, char * newValue) {
     // What we do will depend on the lengths of the two strings.
     // So, start by calculaing these only once.
     char * fp = line->fields[fnum];
@@ -217,13 +195,11 @@ void changeFieldSplitLine(splitLine_t * line, int fnum, char * newValue)
     int newLen = strlen(newValue);
     // Now see if we need to first change the length of the whole line.
     int move = newLen - oldLen;
-    if (move != 0)
-    {
+    if (move != 0) {
         // This should never happen, but to be robust we need to check.
         // It is messy to fix it, as all the field ptrs will now be wrong.
         // For now, punt.
-        if ((size_t)(line->bufLen + move) >= line->maxBufLen)
-        {
+        if ((size_t)(line->bufLen + move) >= line->maxBufLen) {
             resizeSplitLine(line, line->bufLen + move);
             fp = line->fields[fnum];
         }
@@ -240,14 +216,12 @@ void changeFieldSplitLine(splitLine_t * line, int fnum, char * newValue)
     memcpy(fp, newValue, newLen);
 }
 
-void addTag(splitLine_t * line, const char * header, const char * val)
-{
+void addTag(splitLine_t * line, const char * header, const char * val) {
     int hl = strlen(header);
     int vl = strlen(val);
     // Make sure everything will fit.
     int newlen = line->bufLen + hl + vl;
-    if ((size_t)newlen >= line->maxBufLen)
-    {
+    if ((size_t)newlen >= line->maxBufLen) {
         resizeSplitLine(line, newlen);
     }
     // Copy over the header and the value.
@@ -263,12 +237,10 @@ void addTag(splitLine_t * line, const char * header, const char * val)
 
 
 // Read a line from the file and split it.
-splitLine_t * readLine(FILE * input)
-{
+splitLine_t * readLine(FILE * input) {
     splitLine_t * sline = getSplitLine();
     sline->bufLen = getline(&sline->buffer, &sline->maxBufLen, input);
-    if (sline->bufLen < 1)
-    {
+    if (sline->bufLen < 1) {
         disposeSplitLines(sline);
         return NULL;
     }
@@ -277,8 +249,7 @@ splitLine_t * readLine(FILE * input)
 }
 
 // Check the first line of a file (e.g. input) for bam signature.
-void checkBAMfile(splitLine_t * line)
-{
+void checkBAMfile(splitLine_t * line) {
     // If the file is a bam file, we can't rely on fields.
     // So, look at the underlying buffer for the line.
 
@@ -295,8 +266,7 @@ void checkBAMfile(splitLine_t * line)
     // If a SAM file has no header, an alignment row should easily be long enough.
     if (line->bufLen <= offsets[count-1]) fatalError("samblaster: Input file is empty. Exiting.\n");
     // Check for the BAM signature.
-    for (int i=0; i<count; i++)
-    {
+    for (int i=0; i<count; i++) {
         if ((int)line->buffer[offsets[i]] != values[i]) return;
     }
 
@@ -309,8 +279,7 @@ void checkBAMfile(splitLine_t * line)
 ///////////////////////////////////////////////////////////////////////////////
 char tempBuf[10];
 
-void writeSAMlineWithIdNum(splitLine_t * line, FILE * output)
-{
+void writeSAMlineWithIdNum(splitLine_t * line, FILE * output) {
     // Unsplit the line.
     unsplitSplitLine(line);
     // Split it two ways to isolate the id field.
@@ -324,8 +293,7 @@ void writeSAMlineWithIdNum(splitLine_t * line, FILE * output)
 
 //// Struct for processing state
 
-state_t * makeState ()
-{
+state_t * makeState () {
     state_t * s = new state_t();
     s->inputFile = stdin;
     s->inputFileName = (char *)"stdin";
@@ -359,17 +327,14 @@ state_t * makeState ()
     return s;
 }
 
-void deleteState(state_t * s)
-{
+void deleteState(state_t * s) {
     free(s->splitterArray);
-    if (s->sigs != NULL)
-    {
+    if (s->sigs != NULL) {
         // delete[] s->sigs;
         for (UINT32 i=0; i<s->sigArraySize; i++) s->sigs[i].deleteHashTable();
         free (s->sigs);
     }
-    for (seqMap_t::iterator iter = s->seqs.begin(); iter != s->seqs.end(); ++iter)
-    {
+    for (seqMap_t::iterator iter = s->seqs.begin(); iter != s->seqs.end(); ++iter) {
         free((char *)(iter->first));
     }
     if (s->seqLens != NULL) free(s->seqLens);
@@ -381,8 +346,7 @@ void deleteState(state_t * s)
 // Helpers to process CIGAR strings
 ///////////////////////////////////////////////////////////////////////////////
 
-void calcOffsets(splitLine_t * line)
-{
+void calcOffsets(splitLine_t * line) {
     if (line->CIGARprocessed) return;
     char * cigar = line->fields[CIGAR];
     line->raLen = 0;
@@ -390,43 +354,35 @@ void calcOffsets(splitLine_t * line)
     line->sclip = 0;
     line->eclip = 0;
     bool first = true;
-    while (moreCigarOps(cigar))
-    {
+    while (moreCigarOps(cigar)) {
         int opLen = parseNextInt(&cigar);
         char opCode = parseNextOpCode(&cigar);
-        if      (opCode == 'M' || opCode == '=' || opCode == 'X')
-        {
+        if      (opCode == 'M' || opCode == '=' || opCode == 'X') {
             line->raLen += opLen;
             line->qaLen += opLen;
             first = false;
         }
-        else if (opCode == 'S' || opCode == 'H')
-        {
+        else if (opCode == 'S' || opCode == 'H') {
             if (first) line->sclip += opLen;
             else       line->eclip += opLen;
         }
-        else if (opCode == 'D' || opCode == 'N')
-        {
+        else if (opCode == 'D' || opCode == 'N') {
             line->raLen += opLen;
         }
-        else if (opCode == 'I')
-        {
+        else if (opCode == 'I') {
             line->qaLen += opLen;
         }
-        else
-        {
+        else {
             fprintf(stderr, "Unknown opcode '%c' in CIGAR string: '%s'\n", opCode, line->fields[CIGAR]);
         }
     }
     line->rapos = str2pos(line->fields[POS]);
-    if (isForwardStrand(line))
-    {
+    if (isForwardStrand(line)) {
         line->pos = line->rapos - line->sclip;
         line->SQO = line->sclip;
         line->EQO = line->sclip + line->qaLen - 1;
     }
-    else
-    {
+    else {
         line->pos = line->rapos + line->raLen + line->eclip - 1;
         line->SQO = line->eclip;
         line->EQO = line->eclip + line->qaLen - 1;
@@ -442,17 +398,14 @@ void calcOffsets(splitLine_t * line)
 ///////////////////////////////////////////////////////////////////////////////
 
 // This is apparently no longer called.
-void outputSAMBlock(splitLine_t * block, FILE * output)
-{
-    for (splitLine_t * line = block; line != NULL; line = line->next)
-    {
+void outputSAMBlock(splitLine_t * block, FILE * output) {
+    for (splitLine_t * line = block; line != NULL; line = line->next) {
         writeLine(line, output);
     }
     disposeSplitLines(block);
 }
 
-void brokenBlock(splitLine_t *block, int count)
-{
+void brokenBlock(splitLine_t *block, int count) {
     char * temp;
     asprintf(&temp, "samblaster: Can't find first and/or second of pair in sam block of length %d for id: %s\n%s%s:%s\n%s",
              count, block->fields[QNAME], "samblaster:    At location: ", block->fields[RNAME], block->fields[POS],
@@ -469,13 +422,11 @@ UINT64 unmapClipCount = 0;
 UINT64 unmatedCount = 0;
 
 // This is the main workhorse that determines if lines are dups or not.
-void markDupsDiscordants(splitLine_t * block, state_t * state)
-{
+void markDupsDiscordants(splitLine_t * block, state_t * state) {
     splitLine_t * first = NULL;
     splitLine_t * second = NULL;
     int count = 0;
-    for (splitLine_t * line = block; line != NULL; line = line->next)
-    {
+    for (splitLine_t * line = block; line != NULL; line = line->next) {
         count += 1;
         // Do this conversion once and store the result.
         line->flag = str2int(line->fields[FLAG]);
@@ -495,8 +446,7 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
     // First get rid of the useless case of having no first AND no second.
     if (first == NULL && second == NULL) goto outOfHere;
     // Now see if we have orphan with the unmapped read missing.
-    if (first == NULL || second == NULL)
-    {
+    if (first == NULL || second == NULL) {
         // Get the NULL one in the first slot.
         if (second == NULL) swapPtrs(&first, &second);
         // If the only read says its paired, and it is unmapped or its mate is mapped, something is wrong.
@@ -513,19 +463,15 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         orphan = true;
         dummyFirst = true;
     }
-    else
-    {
+    else {
         // Handle the addition of MC and MQ tags if requested.
-        if (state->addMateTags)
-        {
+        if (state->addMateTags) {
             int mask = (FIRST_SEG | SECOND_SEG);
             // Process the first of the pair.
             // Get the list of reads that match the second of the pair.
-            if (isMapped(first))
-            {
+            if (isMapped(first)) {
                 int count = fillSplitterArray<false>(block, state, second->flag & mask, true);
-                for (int i=0; i<count; ++i)
-                {
+                for (int i=0; i<count; ++i) {
                     splitLine_t * line = state->splitterArray[i];
                     addTag(line, "	MC:Z:", first->fields[CIGAR]);
                     addTag(line, "	MQ:i:", first->fields[MAPQ]);
@@ -533,11 +479,9 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
             }
             // Process the second of the pair.
             // Get the list of reads that match the first of the pair.
-            if (isMapped(second))
-            {
+            if (isMapped(second)) {
                 count = fillSplitterArray<false>(block, state, first->flag & mask, true);
-                for (int i=0; i<count; ++i)
-                {
+                for (int i=0; i<count; ++i) {
                     splitLine_t * line = state->splitterArray[i];
                     addTag(line, "	MC:Z:", second->fields[CIGAR]);
                     addTag(line, "	MQ:i:", second->fields[MAPQ]);
@@ -552,15 +496,13 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         orphan = (isUnmapped(first) || isUnmapped(second));
         // Orphan that needs to be swapped.
         // We need the unmapped one in the first slot so that they won't all collide in the hash table.
-        if (isMapped(first) && isUnmapped(second))
-        {
+        if (isMapped(first) && isUnmapped(second)) {
             swapPtrs(&first, &second);
         }
     }
 
     // Now look for duplicates.
-    if (!state->acceptDups)
-    {
+    if (!state->acceptDups) {
         // Calculate and store the second position and sequence name.
         calcOffsets(second);
         second->seqNum = getSeqNum(second, RNAME, state);
@@ -568,16 +510,14 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         second->binNum = (seqOff + second->pos) >> BIN_SHIFT;
         second->binPos = (seqOff + second->pos) &  BIN_MASK;
 
-        if (orphan)
-        {
+        if (orphan) {
             // We have an orphan, so we just zero out the pos and seqnum
             first->pos = 0;
             first->seqNum = 0;
             first->binNum = 0;
             first->binPos = 0;
         }
-        else
-        {
+        else {
             // Not an orphan, so handle first on its own.
             calcOffsets(first);
             first->seqNum = getSeqNum(first, RNAME, state);
@@ -600,61 +540,52 @@ void markDupsDiscordants(splitLine_t * block, state_t * state)
         // The return value will tell us if it was already there.
         bool insert = state->sigs[off].hashTableInsertLocked(sig);
         // Check if the insertion actually happened.
-        if (!insert)
-        {
+        if (!insert) {
             dupCount += 1;
             // We always mark all or none of a block as dup.
-            for (splitLine_t * line = block; line != NULL; line = line->next)
-            {
+            for (splitLine_t * line = block; line != NULL; line = line->next) {
                 markDup(line);
             }
         }
     }
 
     // If we have a dummy first, we can't have a discordant pair.
-    if (dummyFirst)
-    {
+    if (dummyFirst) {
         disposeSplitLines(first);
         return;
     }
 
     // The first and second help us mark the discordants.
     // Both sides mapped, but pair not properly aligned.
-    if (!orphan && isDiscordant(first))
-    {
+    if (!orphan && isDiscordant(first)) {
         first->discordant = true;
         second->discordant = true;
     }
     return;
 
 outOfHere:
-    if (state->ignoreUnmated) {unmatedCount += 1; return;}
+    if (state->ignoreUnmated) { unmatedCount += 1; return; }
     else                       brokenBlock(block, count);
 }
 
 // Sort ascending in SQO.
-int compQOs(const void * p1, const void * p2)
-{
+int compQOs(const void * p1, const void * p2) {
     splitLine_t * l1 = (*(splitLine_t **)p1);
     splitLine_t * l2 = (*(splitLine_t **)p2);
     return (l1->SQO - l2->SQO);
 }
 
 template <bool excludeSecondaries>
-int fillSplitterArray(splitLine_t * block, state_t * state, int mask, bool flagValue)
-{
+int fillSplitterArray(splitLine_t * block, state_t * state, int mask, bool flagValue) {
     // Count the secondaries we have for this read (if any), and store their ptrs into an array.
     int count = 0;
-    for (splitLine_t * line = block; line != NULL; line = line->next)
-    {
+    for (splitLine_t * line = block; line != NULL; line = line->next) {
         // For all the ones that are the current read of interest....
         // Check if they are a primary or complementary alignment.
-        if (checkFlag(line, mask) == flagValue && !(excludeSecondaries && isSecondaryAlignment(line)))
-        {
+        if (checkFlag(line, mask) == flagValue && !(excludeSecondaries && isSecondaryAlignment(line))) {
             // Add the ptr to this line to the sort array.
             // If it won't fit, double the array size.
-            if (count >= state->splitterArrayMaxSize)
-            {
+            if (count >= state->splitterArrayMaxSize) {
                 state->splitterArrayMaxSize *= 2;
                 state->splitterArray = (splitLine_t **)(realloc(state->splitterArray,
                                                                 state->splitterArrayMaxSize * sizeof(splitLine_t *)));
@@ -666,32 +597,27 @@ int fillSplitterArray(splitLine_t * block, state_t * state, int mask, bool flagV
     return count;
 }
 
-void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask, bool flagValue)
-{
+void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask, bool flagValue) {
     // Count the secondaries we have for this read (if any), and store their ptrs into an array.
     int count = fillSplitterArray<true>(block, state, mask, flagValue);
 
     // We have the lines of interest in an array.
     // Decide what to do next based on the number of reads.
     if (count == 0) return;
-    if (count == 1)
-    {
+    if (count == 1) {
         if (state->unmappedClippedFile == NULL) return;
         // Process unmapped or clipped.
         splitLine_t * line = state->splitterArray[0];
         // Unmapped or clipped alignments should be primary.
         if (!isPrimaryAlignment(line)) return;
-        if (isUnmapped(line))
-        {
+        if (isUnmapped(line)) {
             line->unmappedClipped = true;
         }
-        else
-        {
+        else {
             // Process the CIGAR string.
             // As this is expensive, we delay as long as possible.
             calcOffsets(line);
-            if (line->sclip >= state->minClip || line->eclip >= state->minClip)
-            {
+            if (line->sclip >= state->minClip || line->eclip >= state->minClip) {
                 line->unmappedClipped = true;
             }
         }
@@ -702,8 +628,7 @@ void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask,
     if (state->splitterFile == NULL || count > state->maxSplitCount) return;
 
     // Calculate the query positions (for sorting) and do other preprocessing.
-    for (int i=0; i<count; i++)
-    {
+    for (int i=0; i<count; i++) {
         splitLine_t * line = state->splitterArray[i];
         // Make sure the primary is mapped!
         if (isPrimaryAlignment(line) && isUnmapped(line)) return;
@@ -716,8 +641,7 @@ void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask,
     // Now check for pairs that match the desired parameters.
     splitLine_t * left = state->splitterArray[0];
     splitLine_t * right;
-    for (int i=1; i<count; i++)
-    {
+    for (int i=1; i<count; i++) {
         right = state->splitterArray[i];
 
         // First check for minNonOverlap.
@@ -732,20 +656,17 @@ void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask,
         // If they are on different chroms or strands, they pass without the other checks.
         // Since we only care if the sequences are the same, we don't need seqNums.
         // Instead just compare the strings!
-        if (streq(left->fields[RNAME], right->fields[RNAME]) && (isReverseStrand(left) == isReverseStrand(right)))
-        {
+        if (streq(left->fields[RNAME], right->fields[RNAME]) && (isReverseStrand(left) == isReverseStrand(right))) {
             // The start and end diags might be different if there is an indel in the alignments.
             // So, we use the end on the left, and the start on the right.
             // This will give us the net diag difference between them.
             int leftDiag, rightDiag, insSize;
-            if (isReverseStrand(left))
-            {
+            if (isReverseStrand(left)) {
                 leftDiag = getStartDiag(left);
                 rightDiag = getEndDiag(right);
                 insSize = rightDiag - leftDiag;
             }
-            else
-            {
+            else {
                 leftDiag = getEndDiag(left);
                 rightDiag = getStartDiag(right);
                 insSize = leftDiag - rightDiag;
@@ -769,8 +690,7 @@ void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask,
     }
 }
 
-void writeUnmappedClipped(splitLine_t * line, state_t * state)
-{
+void writeUnmappedClipped(splitLine_t * line, state_t * state) {
     // Check if we are outputting fasta or fastq.
     if (state->unmappedFastq == -1)
         state->unmappedFastq = (streq(line->fields[QUAL], "*") ? 0 : 1);
@@ -784,16 +704,14 @@ void writeUnmappedClipped(splitLine_t * line, state_t * state)
     else                       fprintf(state->unmappedClippedFile, "%s\n", line->fields[SEQ]);
 }
 
-void processSAMBlock(splitLine_t * block, state_t * state)
-{
+void processSAMBlock(splitLine_t * block, state_t * state) {
     idCount += 1;
     // First mark dups and find the discordants.
     // These share a lot of looking at flag bits, so make sense to put together.
     markDupsDiscordants(block, state);
     // Look for splitters.
     // Since this is expensive, don't do it unless the user asked for them.
-    if (state->splitterFile != NULL || state->unmappedClippedFile != NULL)
-    {
+    if (state->splitterFile != NULL || state->unmappedClippedFile != NULL) {
         // Check the first read for splitter.
         markSplitterUnmappedClipped(block, state, FIRST_SEG, true);
         // Check the second read for splitter.
@@ -803,30 +721,25 @@ void processSAMBlock(splitLine_t * block, state_t * state)
     }
 
     // Now do the output.
-    for (splitLine_t * line = block; line != NULL; line = line->next)
-    {
+    for (splitLine_t * line = block; line != NULL; line = line->next) {
         // Do the unmapped file first, as it is not sam, and doesn't sew the line back together.
-        if (state->unmappedClippedFile != NULL && line->unmappedClipped && !(state->excludeDups && isDuplicate(line)))
-        {
+        if (state->unmappedClippedFile != NULL && line->unmappedClipped && !(state->excludeDups && isDuplicate(line))) {
             writeUnmappedClipped(line, state);
             unmapClipCount += 1;
         }
 
         // Write to the output file.
-        if (!(state->removeDups && isDuplicate(line)))
-        {
+        if (!(state->removeDups && isDuplicate(line))) {
             writeLine(line, state->outputFile);
         }
 
         // Write to discordant file if appropriate.
-        if (state->discordantFile != NULL && line->discordant && !(state->excludeDups && isDuplicate(line)))
-        {
+        if (state->discordantFile != NULL && line->discordant && !(state->excludeDups && isDuplicate(line))) {
             writeLine(line, state->discordantFile);
             discCount += 1;
         }
         // Write to splitter file if appropriate.
-        if (state->splitterFile != NULL && line->splitter && !(state->excludeDups && isDuplicate(line)))
-        {
+        if (state->splitterFile != NULL && line->splitter && !(state->excludeDups && isDuplicate(line))) {
             writeSAMlineWithIdNum(line, state->splitterFile);
             splitCount += 1;
         }
