@@ -74,7 +74,7 @@ void fprintTimeMicroSeconds (FILE * out, UINT64 microSeconds, int precision) {
 splitLine_t * makeSplitLine() {
     splitLine_t * line = (splitLine_t *)malloc(sizeof(splitLine_t));
     line->bufLen = 0;
-    line->maxBufLen = 1000;
+    line->maxBufLen = 1500;
     line->buffer = (char *)malloc(line->maxBufLen);
     line->numFields = 0;
     line->maxFields = 100;

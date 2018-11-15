@@ -105,9 +105,9 @@ uint64_t mark_dup_time = 0;
     std::vector<SeqsRecord> * seqsRecord = input.records_list;
 #endif
     //for SeqsReord input
-    std::vector<SeqsRecord> tmp;
-    tmp.push_back(input);
-    std::vector<SeqsRecord> * seqsRecord = &tmp;
+    std::vector<SeqsRecord> tmp_vec;
+    tmp_vec.push_back(input);
+    std::vector<SeqsRecord> * seqsRecord = &tmp_vec;
     uint64_t read_seq_e = getUs();
     read_seq_time += (read_seq_e - read_seq_s);
     for (int k =0; k < (*seqsRecord).size(); k++) {
