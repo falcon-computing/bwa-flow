@@ -43,7 +43,8 @@
 #include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "mdStage.h"
+#include "MarkDupStage.h"
+#include "MarkDupPartStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
