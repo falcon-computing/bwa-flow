@@ -1,3 +1,5 @@
+#ifndef SAMBLASTER
+#define SAMBLASTER
 #define __STDC_FORMAT_MACROS
 
 #include <stdlib.h>
@@ -387,4 +389,5 @@ void markSplitterUnmappedClipped(splitLine_t * block, state_t * state, int mask,
 
 void writeUnmappedClipped(splitLine_t * line, state_t * state);
 void processSAMBlock(splitLine_t * block, state_t * state);
-
+#else
+#endif

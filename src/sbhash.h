@@ -17,7 +17,8 @@
     You may obtain a copy of the License at http://opensource.org/licenses/MIT
 
 */
-
+#ifndef SBHASH
+#define SBHASH
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -88,4 +89,6 @@ void deleteHashTable(hashTable_t * ht);
 bool hashTableInsert(hashTable_t * ht, UINT64 value);
 void hashTableInit(hashTable_t * ht, int size=0);
 void freeHashTableNodes();
+#endif
+#else
 #endif
