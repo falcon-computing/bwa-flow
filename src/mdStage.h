@@ -3,15 +3,15 @@
 #include <boost/thread/mutex.hpp>
 
 // mapStage version
-class MarkDup: public kestrelFlow::MapStage<
+class MarkDupStage: public kestrelFlow::MapStage<
   SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH> {
 public:
-  MarkDup(int n = 1, ktp_aux_t* auxx = NULL):kestrelFlow::MapStage<
+  MarkDupStage(int n = 1, ktp_aux_t* auxx = NULL):kestrelFlow::MapStage<
     SeqsRecord, SeqsRecord, INPUT_DEPTH, OUTPUT_DEPTH>(n){
       InitializeState(auxx);
       aux = auxx;
     }
-  ~MarkDup() {
+  ~MarkDupStage() {
     // deleteState(state);
   } 
   SeqsRecord compute(SeqsRecord const & input);

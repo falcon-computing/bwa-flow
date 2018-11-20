@@ -47,7 +47,7 @@ void markDupSeq(bseq1_t* seq) {
   return;
 }
 
-void MarkDup::InitializeState(ktp_aux_t* aux) {
+void MarkDupStage::InitializeState(ktp_aux_t* aux) {
   state = makeState();
   state->seqLens = (UINT32*)calloc(1, sizeof(UINT32));
   state->seqOffs = (UINT64*)calloc(1, sizeof(UINT64));
@@ -83,7 +83,7 @@ void MarkDup::InitializeState(ktp_aux_t* aux) {
 #endif
 }
 
-SeqsRecord MarkDup::compute(SeqsRecord const & input) {
+SeqsRecord MarkDupStage::compute(SeqsRecord const & input) {
 uint64_t read_seq_time = 0;
 uint64_t mark_dup_time = 0;
 #if 0
