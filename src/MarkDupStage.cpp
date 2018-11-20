@@ -84,8 +84,8 @@ void MarkDupStage::InitializeState(ktp_aux_t* aux) {
 }
 
 SeqsRecord MarkDupStage::compute(SeqsRecord const & input) {
-uint64_t read_seq_time = 0;
-uint64_t mark_dup_time = 0;
+//uint64_t read_seq_time = 0;
+//uint64_t mark_dup_time = 0;
 #if 0
   while (true) {
     SeqsRecord input;
@@ -98,9 +98,9 @@ uint64_t mark_dup_time = 0;
       break;
     }
 #endif
-    uint64_t all_start = getUs();
+    //uint64_t all_start = getUs();
     DLOG(INFO) << "Started MarkDup()";
-    uint64_t read_seq_s = getUs();
+    //uint64_t read_seq_s = getUs();
 #if 0 //for bamsRecord input
     std::vector<SeqsRecord> * seqsRecord = input.records_list;
 #endif
@@ -108,8 +108,8 @@ uint64_t mark_dup_time = 0;
     std::vector<SeqsRecord> tmp_vec;
     tmp_vec.push_back(input);
     std::vector<SeqsRecord> * seqsRecord = &tmp_vec;
-    uint64_t read_seq_e = getUs();
-    read_seq_time += (read_seq_e - read_seq_s);
+    //uint64_t read_seq_e = getUs();
+    //read_seq_time += (read_seq_e - read_seq_s);
     for (int k =0; k < (*seqsRecord).size(); k++) {
       int batch_num = (*seqsRecord)[k].batch_num;
       splitLine_t* line = readSeq(aux, (*seqsRecord)[k].seqs[0]);
@@ -120,10 +120,10 @@ uint64_t mark_dup_time = 0;
       int count = 1;
       splitLine_t* last = line;
       for (int i = 1; i < batch_num; i++) {
-        read_seq_s = getUs();
+        //read_seq_s = getUs();
         splitLine_t* nextLine =  readSeq(aux, (*seqsRecord)[k].seqs[i]);
-        read_seq_e = getUs();
-        read_seq_time += (read_seq_e - read_seq_s);
+        //read_seq_e = getUs();
+        //read_seq_time += (read_seq_e - read_seq_s);
         if (nextLine == NULL) {
           break;
         }
@@ -135,10 +135,10 @@ uint64_t mark_dup_time = 0;
           splitLine_t* tmp = line;
           for (int j = 0; j < count; j++) {
             if (checkSplitLineDup(tmp)) {
-              uint64_t mark_dup_s = getUs();
+              //uint64_t mark_dup_s = getUs();
               markDupSeq(&((*seqsRecord)[k].seqs[i- count +j]));
-              uint64_t mark_dup_e = getUs();
-              mark_dup_time += (mark_dup_e - mark_dup_s);
+              //uint64_t mark_dup_e = getUs();
+              //mark_dup_time += (mark_dup_e - mark_dup_s);
             }
             splitLine* release = tmp;
             tmp = tmp->next;
@@ -160,10 +160,10 @@ uint64_t mark_dup_time = 0;
       splitLine_t* tmp = line;
       for(int j = 0; j < count; j++) {
         if (checkSplitLineDup(tmp)) {
-          uint64_t mark_dup_s = getUs();
+          //uint64_t mark_dup_s = getUs();
           markDupSeq(&((*seqsRecord)[k].seqs[batch_num - count + j]));
-          uint64_t mark_dup_e = getUs();
-          mark_dup_time += (mark_dup_e - mark_dup_s);
+          //uint64_t mark_dup_e = getUs();
+          //mark_dup_time += (mark_dup_e - mark_dup_s);
         }
         splitLine* release = tmp;
         tmp = tmp->next;
@@ -172,11 +172,11 @@ uint64_t mark_dup_time = 0;
     }
     //pushOutput(input); // for mapPartitionStage
     DLOG(INFO) << "Finished MarkDup()";
-    uint64_t all_end = getUs();
-    uint64_t all_diff = all_end - all_start;
-    DLOG(INFO) << "MdStage AllTime = " << all_diff;
-    DLOG(INFO) << "ReadSeq Time = " << read_seq_time;
-    DLOG(INFO) << "MarkDup Time = " << mark_dup_time;
+    //uint64_t all_end = getUs();
+    //uint64_t all_diff = all_end - all_start;
+    //DLOG(INFO) << "MdStage AllTime = " << all_diff;
+    //DLOG(INFO) << "ReadSeq Time = " << read_seq_time;
+    //DLOG(INFO) << "MarkDup Time = " << mark_dup_time;
     return input;
   // } // for MapPartitionStage
 #if 0
