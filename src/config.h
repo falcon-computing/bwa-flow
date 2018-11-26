@@ -82,6 +82,9 @@ DECLARE_string(L);
 DECLARE_string(H);
 DECLARE_string(I);
 
+//mark_dup
+DECLARE_bool(enable_markdup);
+
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;

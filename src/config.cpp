@@ -195,4 +195,5 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
-
+DEFINE_bool(enable_markdup, true,
+    "--enable-markdup argument to enable markdup, default true");
