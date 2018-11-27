@@ -43,6 +43,7 @@
 #include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "BucketWriteStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -247,7 +248,7 @@ int main(int argc, char *argv[]) {
 
   double t_real = realtime();
 
-  int num_compute_stages = 9;
+  int num_compute_stages = 7;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
 #ifdef BUILD_FPGA
@@ -280,6 +281,8 @@ int main(int argc, char *argv[]) {
   // Stages for FPGA acceleration of stage_2
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
+
+  BucketWriteStage  bucketWrite_stage(aux, FLAGS_stage_3_nt);
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
@@ -323,9 +326,10 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    compute_flow.addStage(6, &reorder_stage);
-    compute_flow.addStage(7, &sort_stage);
-    compute_flow.addStage(8, &write_stage);
+    compute_flow.addStage(6, &bucketWrite_stage);
+    //compute_flow.addStage(6, &reorder_stage);
+    //compute_flow.addStage(7, &sort_stage);
+    //compute_flow.addStage(8, &write_stage);
 
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
