@@ -810,32 +810,35 @@ uint8_t *bns_fetch_seq_fpga(const bntseq_t *bns, const uint8_t *pac, int64_t *be
 
 void freeChains(mem_chain_v* chains, int batch_num) {
   // Free the chains
-  for (int i = 0; i < batch_num; i++) {
-    for (int j = 0; j < chains[i].n; j++) {
-      free(chains[i].a[j].seeds);
+  for (int seq_id = 0; seq_id < batch_num; seq_id++) {
+    for (int chain_id = 0; chain_id < chains[seq_id].n; chain_id++) {
+      if (chains[seq_id].a[chain_id].seeds && chains[seq_id].a[chain_id].n > 0)
+        free(chains[seq_id].a[chain_id].seeds);
     }
-    free(chains[i].a);
+    if (chains[seq_id].a && chains[seq_id].n > 0)
+      free(chains[seq_id].a);
   }
   free(chains);
 }
 
 void freeAligns(mem_alnreg_v* alnreg, int batch_num) {
-  for (int i = 0; i < batch_num; i++) {
-    free(alnreg[i].a); 
+  for (int seq_id = 0; seq_id < batch_num; seq_id++) {
+    if (alnreg[seq_id].a && alnreg[seq_id].n > 0)
+      free(alnreg[seq_id].a); 
   }
   free(alnreg);
 }
 
 void freeSeqs(bseq1_t* seqs, int batch_num) {
-  for (int i = 0; i < batch_num; i++) {
-    free(seqs[i].name); 
-    if (seqs[i].comment) free(seqs[i].comment);
-    free(seqs[i].seq); 
-    free(seqs[i].qual); 
+  for (int seq_id = 0; seq_id < batch_num; seq_id++) {
+    free(seqs[seq_id].name); 
+    if (seqs[seq_id].comment) free(seqs[seq_id].comment);
+    free(seqs[seq_id].seq); 
+    free(seqs[seq_id].qual); 
 #ifdef USE_HTSLIB
-    if (seqs[i].bams) free(seqs[i].bams);
+    if (seqs[seq_id].bams) free(seqs[seq_id].bams);
 #else
-    if (seqs[i].sam) free(seqs[i].sam);
+    if (seqs[seq_id].sam) free(seqs[seq_id].sam);
 #endif
   }
   free(seqs);

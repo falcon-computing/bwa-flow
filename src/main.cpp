@@ -44,6 +44,8 @@
 #include "Pipeline.h"
 #include "util.h"
 #include "BucketWriteStage.h"
+#include "MarkDupStage.h"
+#include "MarkDupPartStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -248,7 +250,12 @@ int main(int argc, char *argv[]) {
 
   double t_real = realtime();
 
-  int num_compute_stages = 7;
+  int if_markdup = 0;
+  if (FLAGS_enable_markdup) {
+    if_markdup = 1;
+  }
+  
+  int num_compute_stages = 7 + if_markdup;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
 #ifdef BUILD_FPGA
@@ -275,6 +282,12 @@ int main(int argc, char *argv[]) {
   ChainsPipe        chainpipe_stage(FLAGS_stage_1_nt);
   ChainsToRegions   chain2reg_stage(FLAGS_stage_2_nt);
   RegionsToSam      reg2sam_stage(FLAGS_stage_3_nt);
+
+  // Stages for markduplicates
+  //Markdup           md_stage(FLAGS_stage_3_nt, aux);
+  MarkDupStage      md_stage(FLAGS_stage_3_nt, aux);
+  MarkDupPartStage  md_part_stage(aux);
+
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
   SeqsToChainsFPGA      seq2chain_fpga_stage(smem_fpga_thread, &seq2chain_stage);
@@ -282,7 +295,7 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
 
-  BucketWriteStage  bucketWrite_stage(aux, FLAGS_stage_3_nt);
+  BucketWriteStage  bucketWrite_stage(aux, sam_dir, FLAGS_stage_3_nt);
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
@@ -326,10 +339,27 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    compute_flow.addStage(6, &bucketWrite_stage);
+    compute_flow.addStage(6, &md_stage);
+    compute_flow.addStage(7, &bucketWrite_stage);
     //compute_flow.addStage(6, &reorder_stage);
     //compute_flow.addStage(7, &sort_stage);
     //compute_flow.addStage(8, &write_stage);
+
+//    if (FLAGS_enable_markdup) {
+//      if (FLAGS_inorder_output) {
+//        compute_flow.addStage(6, &reorder_stage);
+//        compute_flow.addStage(7, &md_part_stage);
+//      }
+//      else {
+//        compute_flow.addStage(6, &md_stage);
+//        compute_flow.addStage(7, &reorder_stage);
+//      }
+//    }
+//    else {
+//      compute_flow.addStage(6, &reorder_stage); 
+//    }
+//    compute_flow.addStage(7 + if_markdup, &sort_stage);
+//    compute_flow.addStage(8 + if_markdup, &write_stage);
 
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
