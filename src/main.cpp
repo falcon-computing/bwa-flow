@@ -255,7 +255,7 @@ int main(int argc, char *argv[]) {
     if_markdup = 1;
   }
   
-  int num_compute_stages = 7 + if_markdup;
+  int num_compute_stages = 8 + if_markdup;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
 #ifdef BUILD_FPGA
@@ -340,7 +340,8 @@ int main(int argc, char *argv[]) {
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
     compute_flow.addStage(6, &md_stage);
-    compute_flow.addStage(7, &bucketWrite_stage);
+    compute_flow.addStage(7, &reorder_stage);
+    compute_flow.addStage(8, &bucketWrite_stage);
     //compute_flow.addStage(6, &reorder_stage);
     //compute_flow.addStage(7, &sort_stage);
     //compute_flow.addStage(8, &write_stage);

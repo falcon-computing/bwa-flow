@@ -3,6 +3,7 @@
 
 #include "Pipeline.h"
 #include <cstring>
+#include <string.h>
 #include <unordered_map>
 #include "config.h"
 
@@ -18,6 +19,8 @@ class bucketFile :
     samFile * _fout;
     ktp_aux_t * _aux;
     int32_t _id;
+    char* _file_path;
+    char* _mode;
     void writeFileHeader();
   public:
     int32_t get_id() {
@@ -25,20 +28,24 @@ class bucketFile :
     }
     bucketFile(ktp_aux_t* aux, int32_t id, const char* file_path,
               const char* mode): _aux(aux), _id(id) {
-      _fout = sam_open(file_path, mode);
+      _file_path = strdup(file_path);
+      _mode = strdup(mode);
+      _fout = sam_open(_file_path, _mode);
       writeFileHeader();
-    } 
-    ~bucketFile() {
       sam_close(_fout);
+    }
+    ~bucketFile() {
+      free(_file_path);
+      free(_mode);
     }
     void writeFile(std::vector<bam1_t*> vec);
 };
 
 class BucketWriteStage :
-  public kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0> {
+  public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
     BucketWriteStage(ktp_aux_t* aux, std::string out_dir, int n = 1):
-      kestrelFlow::MapStage<SeqsRecord, int, COMPUTE_DEPTH, 0>(n, false), _aux(aux) {
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n), _aux(aux) {
         // initialize buckets
 //DLOG(INFO) << "constructor BW";
         for (int i = 0; i < _aux->h->n_targets; i++) {
@@ -58,7 +65,7 @@ class BucketWriteStage :
           delete it->second;
         }
     }
-    int compute(SeqsRecord const & input);
+    int compute(BamsRecord const & input);
   private:
     ktp_aux_t* _aux;
     std::unordered_map<int32_t, bucketFile*> _buckets;
