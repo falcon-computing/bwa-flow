@@ -32,9 +32,9 @@ class bucketFile :
       _mode = strdup(mode);
       _fout = sam_open(_file_path, _mode);
       writeFileHeader();
-      sam_close(_fout);
     }
     ~bucketFile() {
+      sam_close(_fout);
       free(_file_path);
       free(_mode);
     }
@@ -44,19 +44,29 @@ class bucketFile :
 class BucketWriteStage :
   public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
-    BucketWriteStage(ktp_aux_t* aux, std::string out_dir, int n = 1):
+    BucketWriteStage(ktp_aux_t* aux, std::string out_dir, int num_buckets = 1, int n = 1):
       kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n), _aux(aux) {
-        // initialize buckets
-//DLOG(INFO) << "constructor BW";
+        _accumulate_length.push_back(0);
+        int64_t acc_len = 0;
         for (int i = 0; i < _aux->h->n_targets; i++) {
-//DLOG(INFO) << "constructing " << i << "  buckets";
+          acc_len += _aux->h->target_len[i];
+          _accumulate_length.push_back(acc_len);
+        }
+        for (int i = 0; i < num_buckets; i++) {
           //boost::any var = this->getConst("sam_dir");
           //std::string out_dir = boost::any_cast<std::string>(var);
-          std::stringstream ss;    
-          ss << out_dir << "/contig-" << std::setw(3) << std::setfill('0') << i << ".bam";
+          std::stringstream ss; 
+          ss << out_dir << "/contig-" << std::setw(6) << std::setfill('0') << i << ".bam";
           const char *modes[] = {"wb", "wb0", "w"};
           bucketFile* tmp_bucket = new bucketFile(_aux, i, ss.str().c_str(), modes[FLAGS_output_flag]);
           _buckets[i] = tmp_bucket;
+        }
+        _bucket_size = _accumulate_length[_aux->h->n_targets]/num_buckets;
+        if (_bucket_size == 0) {
+          throw "_bucket_size is 0";
+        }
+        if (_accumulate_length[_aux->h->n_targets]%num_buckets != 0) {
+          _bucket_size += 1;
         }
 //DLOG(INFO) << "id of bucket 2 " << _buckets[2]->get_id();
       }
@@ -69,6 +79,9 @@ class BucketWriteStage :
   private:
     ktp_aux_t* _aux;
     std::unordered_map<int32_t, bucketFile*> _buckets;
+    int64_t _bucket_size;
+    std::vector<int64_t> _accumulate_length;
+    int get_bucket_id(bam1_t* read);
 };
 
 #endif

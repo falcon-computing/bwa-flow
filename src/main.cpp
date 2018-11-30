@@ -295,7 +295,8 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
 
-  BucketWriteStage  bucketWrite_stage(aux, sam_dir, FLAGS_stage_3_nt);
+  int num_write_buckets = 32;
+  BucketWriteStage  bucketWrite_stage(aux, sam_dir, num_write_buckets, FLAGS_stage_3_nt);
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
