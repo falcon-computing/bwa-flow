@@ -340,28 +340,29 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    compute_flow.addStage(6, &md_stage);
-    compute_flow.addStage(7, &reorder_stage);
-    compute_flow.addStage(8, &bucketWrite_stage);
+    //compute_flow.addStage(6, &md_stage);
+    //compute_flow.addStage(7, &reorder_stage);
+    //compute_flow.addStage(8, &bucketWrite_stage);
     //compute_flow.addStage(6, &reorder_stage);
     //compute_flow.addStage(7, &sort_stage);
     //compute_flow.addStage(8, &write_stage);
 
-//    if (FLAGS_enable_markdup) {
-//      if (FLAGS_inorder_output) {
-//        compute_flow.addStage(6, &reorder_stage);
-//        compute_flow.addStage(7, &md_part_stage);
-//      }
-//      else {
-//        compute_flow.addStage(6, &md_stage);
-//        compute_flow.addStage(7, &reorder_stage);
-//      }
-//    }
-//    else {
-//      compute_flow.addStage(6, &reorder_stage); 
-//    }
-//    compute_flow.addStage(7 + if_markdup, &sort_stage);
-//    compute_flow.addStage(8 + if_markdup, &write_stage);
+    if (FLAGS_enable_markdup) {
+      if (FLAGS_inorder_output) {
+        compute_flow.addStage(6, &reorder_stage);
+        compute_flow.addStage(7, &md_part_stage);
+      }
+      else {
+        compute_flow.addStage(6, &md_stage);
+        compute_flow.addStage(7, &reorder_stage);
+      }
+    }
+    else {
+      compute_flow.addStage(6, &reorder_stage); 
+    }
+    compute_flow.addStage(7 + if_markdup, &bucketWrite_stage);
+    //compute_flow.addStage(7 + if_markdup, &sort_stage);
+    //compute_flow.addStage(8 + if_markdup, &write_stage);
 
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
