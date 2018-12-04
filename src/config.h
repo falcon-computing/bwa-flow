@@ -85,6 +85,9 @@ DECLARE_string(I);
 //mark_dup
 DECLARE_bool(enable_markdup);
 
+//bucket_sort
+DECLARE_int32(num_buckets);
+
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;

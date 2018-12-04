@@ -56,7 +56,7 @@ class BucketWriteStage :
           //boost::any var = this->getConst("sam_dir");
           //std::string out_dir = boost::any_cast<std::string>(var);
           std::stringstream ss; 
-          ss << out_dir << "/contig-" << std::setw(6) << std::setfill('0') << i << ".bam";
+          ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bam";
           const char *modes[] = {"wb", "wb0", "w"};
           bucketFile* tmp_bucket = new bucketFile(_aux, i, ss.str().c_str(), modes[FLAGS_output_flag]);
           _buckets[i] = tmp_bucket;
