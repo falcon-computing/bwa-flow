@@ -1,6 +1,8 @@
 #include "BucketWriteStage.h"
 #include "util.h"
 
+#define UNMAP_FLAG 4
+
 int BucketWriteStage::get_bucket_id(bam1_t* read) {
   int32_t contig_id = read->core.tid;
   int32_t read_pos = read->core.pos;
@@ -64,7 +66,9 @@ void bucketFile::writeFileHeader() {
 void bucketFile::writeFile(std::vector<bam1_t*> vec) {
   boost::lock_guard<bucketFile> guard(*this);
   for (int i = 0; i < vec.size(); i++) {
-    sam_write1(_fout, _aux->h, vec[i]);
+    if (!(vec[i]->core.flag & UNMAP_FLAG)) {
+      sam_write1(_fout, _aux->h, vec[i]);
+    }
   }
   return;
 }
