@@ -2,6 +2,7 @@
 #include "util.h"
 
 #define UNMAP_FLAG 4
+#define DUP_FLAG 1024
 
 int BucketWriteStage::get_bucket_id(bam1_t* read) {
   int32_t contig_id = read->core.tid;
@@ -66,7 +67,7 @@ void bucketFile::writeFileHeader() {
 void bucketFile::writeFile(std::vector<bam1_t*> vec) {
   boost::lock_guard<bucketFile> guard(*this);
   for (int i = 0; i < vec.size(); i++) {
-    if (!(vec[i]->core.flag & UNMAP_FLAG)) {
+    if (!((vec[i]->core.flag & UNMAP_FLAG) || (vec[i]->core.flag & DUP_FLAG))) {
       sam_write1(_fout, _aux->h, vec[i]);
     }
   }
