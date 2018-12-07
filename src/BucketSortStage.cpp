@@ -1,10 +1,10 @@
-#include "BucketWriteStage.h"
+#include "BucketSortStage.h"
 #include "util.h"
 
 #define UNMAP_FLAG 4
 #define DUP_FLAG 1024
 
-int BucketWriteStage::get_bucket_id(bam1_t* read) {
+int BucketSortStage::get_bucket_id(bam1_t* read) {
   int32_t contig_id = read->core.tid;
   int32_t read_pos = read->core.pos;
 //DLOG(INFO) << "read_pos " << contig_id;
@@ -14,7 +14,7 @@ int BucketWriteStage::get_bucket_id(bam1_t* read) {
   return (acc_pos-1)/_bucket_size;
 }
 
-int BucketWriteStage::compute(BamsRecord const & input) {
+int BucketSortStage::compute(BamsRecord const & input) {
   uint64_t start = getUs();
   DLOG(INFO) << "Started BucketWrite()";
   std::unordered_map<int32_t, std::vector<bam1_t*> > buckets;

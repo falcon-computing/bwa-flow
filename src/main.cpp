@@ -43,7 +43,7 @@
 #include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
-#include "BucketWriteStage.h"
+#include "BucketSortStage.h"
 #include "MarkDupStage.h"
 #include "MarkDupPartStage.h"
 
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
 
-  BucketWriteStage  bucketWrite_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
+  BucketSortStage  bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
@@ -359,7 +359,7 @@ int main(int argc, char *argv[]) {
     else {
       compute_flow.addStage(6, &reorder_stage); 
     }
-    compute_flow.addStage(7 + if_markdup, &bucketWrite_stage);
+    compute_flow.addStage(7 + if_markdup, &bucketsort_stage);
     //compute_flow.addStage(7 + if_markdup, &sort_stage);
     //compute_flow.addStage(8 + if_markdup, &write_stage);
 

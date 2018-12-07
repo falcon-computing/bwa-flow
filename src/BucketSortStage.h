@@ -1,5 +1,5 @@
-#ifndef BUCKETWRITE
-#define BUCKETWRITE
+#ifndef BUCKETSORT
+#define BUCKETSORT
 
 #include "Pipeline.h"
 #include <cstring>
@@ -41,10 +41,10 @@ class bucketFile :
     void writeFile(std::vector<bam1_t*> vec);
 };
 
-class BucketWriteStage :
+class BucketSortStage :
   public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
-    BucketWriteStage(ktp_aux_t* aux, std::string out_dir, int num_buckets = 1, int n = 1):
+    BucketSortStage(ktp_aux_t* aux, std::string out_dir, int num_buckets = 1, int n = 1):
       kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n), _aux(aux) {
         _accumulate_length.push_back(0);
         int64_t acc_len = 0;
@@ -70,7 +70,7 @@ class BucketWriteStage :
         }
 //DLOG(INFO) << "id of bucket 2 " << _buckets[2]->get_id();
       }
-    ~BucketWriteStage() {
+    ~BucketSortStage() {
         for (auto it = _buckets.begin(); it != _buckets.end(); ++it) {
           delete it->second;
         }
