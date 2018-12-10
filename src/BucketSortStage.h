@@ -7,6 +7,10 @@
 #include <unordered_map>
 #include "config.h"
 
+#include <iostream>
+#include <fstream>
+#include <sys/stat.h>
+
 #include <boost/atomic.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lockable_adapter.hpp>
@@ -68,7 +72,86 @@ class BucketSortStage :
         if (_accumulate_length[_aux->h->n_targets]%num_buckets != 0) {
           _bucket_size += 1;
         }
-//DLOG(INFO) << "id of bucket 2 " << _buckets[2]->get_id();
+        std::stringstream interval_folder_path;
+        interval_folder_path << out_dir << "/intervals";
+        mkdir(interval_folder_path.str().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+        std::ofstream interval_file;
+        int bucket_per_thread = num_buckets/n;
+        if (num_buckets%n != 0) {
+          bucket_per_thread += 1;
+        }
+        int64_t thread_size = bucket_per_thread * _bucket_size;
+        //int64_t thread_size = _accumulate_length[_aux->h->n_targets]/n;
+        //if (_accumulate_length[_aux->h->n_targets]%n != 0) {
+        //  thread_size +=1;
+        //}
+        int contig_start_pos = 0;
+        int contig_id = 0;
+        for (int i = 0; i < n; i++) {
+          std::stringstream interval_file_path;
+          interval_file_path << interval_folder_path.str().c_str();
+          interval_file_path << "/interval_" << std::to_string(i) << ".bed";
+          interval_file.open(interval_file_path.str().c_str());
+          int64_t end = contig_start_pos + thread_size;
+          int margin_size = 1000;
+          while (end > _aux->h->target_len[contig_id]) {
+            // give some margin area to the interval
+            int front_margin = 0;
+            if (contig_start_pos >= margin_size) {
+              front_margin = margin_size;
+            }
+            else {
+              front_margin = contig_start_pos;
+            }
+            interval_file << _aux->h->target_name[contig_id] << "\t" << contig_start_pos - front_margin
+              << "\t" << _aux->h->target_len[contig_id] << "\t" << i << "\n";
+            end = end - _aux->h->target_len[contig_id];
+            contig_start_pos = 0;
+            contig_id += 1;
+            if (contig_id >= _aux->h->n_targets) {
+              DLOG(INFO) << "unexpected contig id exceeded.";
+              break;
+            }
+          }
+          if (contig_id >= _aux->h->n_targets) {
+            break;
+          }
+          int end_margin = 0;
+          if (end <= _aux->h->target_len[contig_id] - margin_size) {
+            end_margin = margin_size;
+          }
+          else {
+            end_margin = _aux->h->target_len[contig_id] - end;
+          }
+          interval_file << _aux->h->target_name[contig_id] << "\t" << contig_start_pos << "\t"
+            << end + end_margin << "\t" << i << "\n";
+          contig_start_pos = end;
+          interval_file.close();
+        }
+        //interval_file.open(interval_file_path.str().c_str());
+        //int contig_start_pos = 0;
+        //int contig_id = 0;
+        //for (int i = 0; i < num_buckets && contig_id < _aux->h->n_targets; i++) {
+        //  int end = contig_start_pos + _bucket_size;
+        //  while (end > _aux->h->target_len[contig_id]) {
+        //    interval_file << _aux->h->target_name[contig_id] << "\t" << contig_start_pos 
+        //      << "\t" << _aux->h->target_len[contig_id] << "\t" << i << "\n";
+        //    end = end - _aux->h->target_len[contig_id];
+        //    contig_start_pos = 0;
+        //    contig_id += 1;
+        //    if (contig_id >= _aux->h->n_targets) {
+        //      DLOG(INFO) << "unexpected contig id exceeded.";
+        //      break;
+        //    }
+        //  }
+        //  if (contig_id >= _aux->h->n_targets) {
+        //    break;
+        //  }
+        //  interval_file << _aux->h->target_name[contig_id] << "\t" << contig_start_pos << "\t"
+        //    << end << "\t" << i << "\n";
+        //  contig_start_pos = end;
+        //}
+        //interval_file.close();
       }
     ~BucketSortStage() {
         for (auto it = _buckets.begin(); it != _buckets.end(); ++it) {
