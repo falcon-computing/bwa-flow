@@ -9,9 +9,9 @@ int BucketSortStage::get_bucket_id(bam1_t* read) {
   int32_t read_pos = read->core.pos;
 //DLOG(INFO) << "read_pos " << contig_id;
 //DLOG(INFO) << "contig_id " << contig_id;
-  int64_t acc_pos = _accumulate_length[contig_id] + read_pos;
+  int64_t acc_pos = accumulate_length_[contig_id] + read_pos;
 //DLOG(INFO) << "acc_pos " << acc_pos;
-  return (acc_pos-1)/_bucket_size;
+  return (acc_pos-1)/bucket_size_;
 }
 
 int BucketSortStage::compute(BamsRecord const & input) {
@@ -33,9 +33,9 @@ int BucketSortStage::compute(BamsRecord const & input) {
       }
     }
   }
-  for (int i = 0; i < _buckets.size(); i++) {
+  for (int i = 0; i < buckets_.size(); i++) {
     if (buckets.count(i)) {
-      _buckets[i][0].writeFile(buckets[i]);
+      buckets_[i][0].writeFile(buckets[i]);
     }
     for (int j = 0; j < buckets[i].size(); j++) {
       bam_destroy1(buckets[i][j]);
@@ -57,7 +57,7 @@ int BucketSortStage::compute(BamsRecord const & input) {
 }
 
 void bucketFile::writeFileHeader() {
-  int status = sam_hdr_write(_fout, _aux->h);
+  int status = sam_hdr_write(fout_, aux_->h);
   if (status) {
     ;
   }
@@ -68,7 +68,7 @@ void bucketFile::writeFile(std::vector<bam1_t*> vec) {
   boost::lock_guard<bucketFile> guard(*this);
   for (int i = 0; i < vec.size(); i++) {
     if (!((vec[i]->core.flag & UNMAP_FLAG) || (vec[i]->core.flag & DUP_FLAG))) {
-      sam_write1(_fout, _aux->h, vec[i]);
+      sam_write1(fout_, aux_->h, vec[i]);
     }
   }
   return;
