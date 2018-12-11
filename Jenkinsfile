@@ -20,7 +20,7 @@ agent {label 'merlin'}
                         sh "cd ~/falcon2/tools/bin; echo s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version-aws > latest"
                         sh "cd ~/falcon2/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/aws/bwa-flow/bwa-flow-$version-aws"
                         sh "cd ~/falcon2/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/aws/bwa-flow/latest"
-                        sh "cd ~/falcon2/bin; rm -f latest"
+                        sh "cd ~/falcon2/tools/bin; rm -f latest"
                         }
                     }
                 }
