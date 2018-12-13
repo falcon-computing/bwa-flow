@@ -158,7 +158,11 @@ class OpenCLEnv
           OCL_CHECK(err, "failed to create context");
 
           //env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_PROFILING_ENABLE|CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+#ifdef XILINX_FPGA
           env.cmd = clCreateCommandQueue(env.context, env.device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+#else
+          env.cmd = clCreateCommandQueue(env.context, env.device_id, 0, &err);
+#endif
           OCL_CHECK(err, "failed to create cmd_queue");
 
           env.program = clCreateProgramWithBinary(env.context, 1, &env.device_id, &n_t,
