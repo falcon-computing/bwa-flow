@@ -27,7 +27,7 @@ agent {label 'merlin'}
                         sh "mkdir release"
                         dir("release"){
                         sh "source /curr/software/util/modules-tcl/init/bash"
-                        sh "module load sdx/17.4; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=hwc -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
+                        sh "module load sdx/17.4; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=hwc -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon-hwc/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
 			sh "make test"
@@ -44,7 +44,7 @@ agent {label 'merlin'}
                         sh "mkdir release"
                         dir("release"){
                         sh "source /curr/software/util/modules-tcl/init/bash"
-                        sh "module load xrt; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=Internal on AWS -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon2/tools/bin .."
+                        sh "module load xrt; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=Internal on AWS -DDEPLOYMENT_DST=aws -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon-local/tools/bin .."
                         sh "make -j 8"
                         sh "make install"
 			sh "make test"
