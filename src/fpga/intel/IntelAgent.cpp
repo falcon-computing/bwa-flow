@@ -8,14 +8,13 @@
 
 IntelAgent::IntelAgent(BWAOCLEnv* env, SWTask* task) {
 
-#if 1
-  DLOG(ERROR) << "Intel FPGA is not supported in this version";
-#else
-  cl_context context_ = env->getContext();
+  pe_ = env->getPE("sw");
+
+  cl_context context_ = pe_.accx->context;
 
   cl_int        err       = 0;
-  cl_device_id  device_id = env->getDeviceId();
-  cl_program    program   = env->getProgram();
+  cl_device_id  device_id = pe_.accx->device_id;
+  cl_program    program   = pe_.accx->program;
 
   for (int i = 0; i < 4; i++) {
     cmd_[i] = clCreateCommandQueue(context_, device_id, 0, &err);
@@ -33,11 +32,8 @@ IntelAgent::IntelAgent(BWAOCLEnv* env, SWTask* task) {
     kernels_[2*i+0] = clCreateKernel(program, kernel_in_name, &err);
     kernels_[2*i+1] = clCreateKernel(program, kernel_out_name, &err);
   }
-  for (int i = 0; i < 2; i++) {
-    task->i_buf[i]  = clCreateBuffer(context_, CL_MEM_READ_ONLY, sizeof(int)*task->max_i_size_, NULL, NULL);
-    task->o_buf[i]  = clCreateBuffer(context_, CL_MEM_WRITE_ONLY, sizeof(int)*task->max_o_size_, NULL, NULL);
-  }
-#endif
+  task->i_buf = clCreateBuffer(context_, CL_MEM_READ_ONLY, sizeof(int)*task->max_i_size_, NULL, NULL);
+  task->o_buf = clCreateBuffer(context_, CL_MEM_WRITE_ONLY, sizeof(int)*task->max_o_size_, NULL, NULL);
 }
 
 IntelAgent::~IntelAgent() {
@@ -78,8 +74,9 @@ void IntelAgent::readOutput(cl_mem buf, void* host_ptr, int size, int bank) {
   }
 }
 
-void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
+void IntelAgent::start(Task* i_task, FPGAAgent* agent) {
 
+  SWTask *task = (SWTask *)i_task;
   IntelAgent* prev_agent = NULL;
   if (agent) {
     prev_agent = (IntelAgent*)agent;
@@ -89,17 +86,16 @@ void IntelAgent::start(SWTask* task, FPGAAgent* agent) {
   }
 
   // kernel execution
-  for (int k = 0; k < 2; k++) {
-    cl_int err = 0;
-    err  = clSetKernelArg(kernels_[2*k+0], 0, sizeof(cl_mem), &task->i_buf[k]);
-    err |= clSetKernelArg(kernels_[2*k+0], 1, sizeof(int), &task->i_size[k]);
-    err |= clSetKernelArg(kernels_[2*k+1], 0, sizeof(cl_mem), &task->o_buf[k]);
-    err |= clSetKernelArg(kernels_[2*k+1], 1, sizeof(int), &task->o_size[k]);
+  cl_int err = 0;
+  err  = clSetKernelArg(kernels_[0], 0, sizeof(cl_mem), &task->i_buf);
+  err |= clSetKernelArg(kernels_[0], 1, sizeof(int), &task->i_size);
+  err |= clSetKernelArg(kernels_[1], 0, sizeof(cl_mem), &task->o_buf);
+  err |= clSetKernelArg(kernels_[1], 1, sizeof(int), &task->o_size);
 
-    if (err) {
-      LOG(ERROR) << "failed to set kernel args";
-    }
+  if (err) {
+    LOG(ERROR) << "failed to set kernel args";
   }
+
   //cl_event task_event[4];
   for (int k = 0; k < 2; k++) {
     cl_int err = 0;

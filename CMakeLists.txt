@@ -7,12 +7,11 @@ cmake_minimum_required(VERSION 2.8.12)
 
 project(bwa-flow)
 
-
 # set up dependency
-find_package( Boost 1.53.0 REQUIRED
-              COMPONENTS system thread chrono iostreams filesystem regex )
-find_package( ZLIB         REQUIRED )
-find_package( Threads      REQUIRED )
+find_package(Boost 1.53.0 REQUIRED
+             COMPONENTS system thread chrono iostreams filesystem regex )
+find_package(ZLIB         REQUIRED)
+find_package(Threads      REQUIRED)
 
 if ( NOT DEFINED USE_MPI )
   set( USE_MPI Off )
@@ -22,29 +21,35 @@ if ( USE_MPI )
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-find_package( Google       REQUIRED )
-find_package( FalconLM     REQUIRED )
-find_package( HTS        REQUIRED )
 
-if ( DEFINED ENV{XILINX_SDX} )
-  set( USE_FPGA On )
-  set( FPGA_TYPE "xlnx" )
-  find_package( Xilinx REQUIRED )
-  set( FPGA_INCLUDE_DIRS "${Xilinx_INCLUDE_DIRS}" )
-  set( FPGA_LIBRARY_DIRS "${Xilinx_LIBRARY_DIRS}")
-  set( FPGA_LIBRARIES "${Xilinx_LIBRARIES}")
-#elseif ( DEFINED ENV{ALTERAOCLSDKROOT} )
-#  set( USE_FPGA On )
-#  set( FPGA_TYPE "intel" )
-#  find_package( IntelAltera REQUIRED )
-#  set( FPGA_INCLUDE_DIRS "${IntelAltera_INCLUDE_DIRS}" )
-#  set( FPGA_LIBRARY_DIRS "${IntelAltera_LIBRARY_DIRS}")
-#  set( FPGA_LIBRARIES "${IntelAltera_LIBRARIES}")
+find_package(Google REQUIRED)
+find_package(FalconLM REQUIRED)
+find_package(HTS REQUIRED)
+find_package(XilinxOCL)
+find_package(IntelOCL)
+
+if(XilinxOCL_FOUND)
+  set(USE_FPGA On )
+  message(STATUS "Build with Xilinx FPGA")
+  set(FPGA_TYPE "xlnx" )
+  set(FPGA_INCLUDE_DIRS "${XilinxOCL_INCLUDE_DIRS}")
+  set(FPGA_LIBRARY_DIRS "${XilinxOCL_LIBRARY_DIRS}")
+  set(FPGA_LIBRARIES "${XilinxOCL_LIBRARIES}")
+
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DXILINX_FPGA" )
+elseif(IntelOCL_FOUND)
+  set(USE_FPGA On )
+  message(STATUS "Build with Intel FPGA")
+  set(FPGA_TYPE "intel")
+  set(FPGA_INCLUDE_DIRS "${IntelOCL_INCLUDE_DIRS}")
+  set(FPGA_LIBRARY_DIRS "${IntelOCL_LIBRARY_DIRS}")
+  set(FPGA_LIBRARIES "${IntelOCL_LIBRARIES}")
+
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DINTEL_FPGA" )
 else()
-  message( STATUS "No OpenCL module loaded. Build without using FPGA." )
-  set( USE_FPGA Off )
+  message(STATUS "No OpenCL module loaded. Build without using FPGA." )
+  set(USE_FPGA Off)
 endif()
-
 
 # set up debug/release mode
 if (NOT CMAKE_BUILD_TYPE)
@@ -76,11 +81,6 @@ set(BIN_VERSION "${GIT_VERSION}")
 if ( USE_FPGA )
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBUILD_FPGA" )
   set(BIN_VERSION "${BIN_VERSION}-${FPGA_TYPE}")
-  if ( ${FPGA_TYPE} MATCHES "xlnx" )
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DXILINX_FPGA" )
-#  elseif ( ${FPGA_TYPE} MATCHES "intel" )
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DINTEL_FPGA" )
-  endif()
 endif()
 
 if (${CMAKE_BUILD_TYPE} MATCHES "Debug")
@@ -96,11 +96,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVERSION=\\\"${BIN_VERSION}\\\"")
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
-include_directories( ./kflow/include )
-
-include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ./kflow/include
   ${Google_INCLUDE_DIRS}
   ${FalconLM_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
@@ -110,7 +107,8 @@ link_directories(
   ${Google_LIBRARY_DIRS}
   ${FalconLM_LIBRARY_DIRS}
   ${Boost_LIBRARY_DIRS}
-  ${HTS_LIBRARY_DIRS})
+  ${HTS_LIBRARY_DIRS}
+  ${ZLIB_LIBRARY_DIRS})
 
 file(GLOB BWA_SRC_LIST src/*.cpp)
 list(REMOVE_ITEM BWA_SRC_LIST "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
@@ -145,14 +143,14 @@ set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa-flow
   bwa-c
   kflow 
-  ${Boost_LIBRARIES} 
+  ${FPGA_LIBRARIES}
   ${FalconLM_LIBRARIES}
+  ${HTS_LIBRARIES}
   ${Google_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${ZLIB_LIBRARIES}
   ${CMAKE_DL_LIBS}
-  ${HTS_LIBRARIES}
-  ${FPGA_LIBRARIES})
+  ${Boost_LIBRARIES})
 
 if ( USE_MPI )
   add_executable(bwa-mpi ${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp ${BWA_MPI_SRC_LIST} ${BWA_SRC_LIST})
@@ -163,14 +161,14 @@ if ( USE_MPI )
     bwa-c
     kflow 
     ${MPI_CXX_LIBRARIES}
-    ${Boost_LIBRARIES} 
+    ${FPGA_LIBRARIES}
     ${FalconLM_LIBRARIES}
+    ${HTS_LIBRARIES}
     ${Google_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     ${ZLIB_LIBRARIES}
     ${CMAKE_DL_LIBS}
-    ${HTS_LIBRARIES}
-    ${FPGA_LIBRARIES})
+    ${Boost_LIBRARIES})
 endif()
 
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)

@@ -18,14 +18,14 @@ target_link_libraries(test_bwa
   kflow 
   bwa-c
   ${MPI_CXX_LIBRARIES}
-  ${Boost_LIBRARIES} 
+  ${FPGA_LIBRARIES}
   ${FalconLM_LIBRARIES}
+  ${HTS_LIBRARIES}
   ${Google_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${ZLIB_LIBRARIES}
   ${CMAKE_DL_LIBS}
-  ${HTS_LIBRARIES}
-  ${FPGA_LIBRARIES})
+  ${Boost_LIBRARIES})
 
 add_test(NAME    bwa-test
          COMMAND bash test-driver.sh $<TARGET_FILE:test_bwa>

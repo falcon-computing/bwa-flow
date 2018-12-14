@@ -47,11 +47,15 @@ class BWAOCLEnv : public OpenCLEnv{
     FLAGS_no_use_smem_fpga = true;
 #endif
     num_pe_ = 0;
-    if (!FLAGS_no_use_sw_fpga)
+    if (!FLAGS_no_use_sw_fpga) {
       initPAC();
+    }
+
     sw_fpga_thread_ = sw_pe_list_.size();
-    if (!FLAGS_no_use_smem_fpga)
+
+    if (!FLAGS_no_use_smem_fpga) {
       initBWT();
+    }
     smem_fpga_thread_ = smem_pe_list_.size();
   }
 
@@ -64,11 +68,12 @@ class BWAOCLEnv : public OpenCLEnv{
 
   void initPAC() {
     sw_num_pe_ = 0;
+
+#ifdef XILINX_FPGA
     // get full pac array from pac
     char* pac;
     int64_t pac_size = get_full_pac(pac);
 
-#ifdef XILINX_FPGA
     cl_int err = 0;
     cl_mem_ext_ptr_t ext_pac;
     ext_pac.flags = XCL_MEM_DDR_BANK1;
@@ -104,10 +109,10 @@ class BWAOCLEnv : public OpenCLEnv{
       OCL_CHECK(err, "failed to create cmd_queue");
       sw_pe_list_.push_back(pe);
     }
+    free(pac);
 #else
     DLOG(ERROR) << "This feature is currently only supported in Xilinx";
 #endif
-    free(pac);
   }
 
   void releasePAC() {
@@ -123,6 +128,7 @@ class BWAOCLEnv : public OpenCLEnv{
   }
 
   void initBWT() {
+#ifdef XILINX_FPGA
     smem_num_pe_ = 0;
     uint32_t *bwt           = aux->idx->bwt->bwt;
     uint64_t  bwt_param[7]  = {aux->idx->bwt->primary,
@@ -208,9 +214,11 @@ class BWAOCLEnv : public OpenCLEnv{
         smem_pe_list_.push_back(pe);
       }
     }
+#endif
   }
 
   void releaseBWT() {
+#ifdef XILINX_FPGA
     for (int i = 0; i < bwt_list_.size(); i++)
       clReleaseMemObject(bwt_list_[i]);
     for (int i = 0; i < bwt_param_list_.size(); i++)
@@ -220,6 +228,7 @@ class BWAOCLEnv : public OpenCLEnv{
       if (err != CL_SUCCESS)
         DLOG(WARNING) << "Failed to release cmd for " << smem_pe_list_[i].type << "-" << sw_pe_list_[i].bank_id;
     }
+#endif
   }
 
   cl_pe getPE(std::string type) {
