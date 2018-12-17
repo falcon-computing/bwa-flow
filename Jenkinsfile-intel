@@ -1,0 +1,30 @@
+pipeline {
+agent {label 'merlin'}
+    stages {
+        stage ("build-Intel-pac-bwa-flow") {
+            steps {
+                 dir("ws-Intel-pac-bwa-flow") {
+        		     checkout scm
+                 script {
+                        sh "rm -rf release"
+                        sh "mkdir release"
+                        dir("release"){
+                        sh "source /curr/software/util/modules-tcl/init/bash"
+                        version= sh(returnStdout: true, script: 'git describe --tag').trim()
+                        sh "echo $version"
+                        sh "module load aocl/17.1.1-pac; cmake3 -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=$version -DDEPLOYMENT_DST=local -DCMAKE_INSTALL_PREFIX=/curr/limark/intel-build/tools/bin .."
+                        sh "make -j 8"
+//			            sh "make test"
+                        sh "make install"
+                        sh "cd ~/intel-build/tools/bin; echo s3://fcs-cicd-test/release/intel/bwa-flow/bwa-flow-$version-local > latest"
+                        sh "cd ~/intel-build/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/intel/bwa-flow/bwa-flow-$version-local"
+                        sh "cd ~/intel-build/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/intel/bwa-flow/latest"
+                        sh "cd ~/intel-build/tools/bin; rm -f latest"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+     
