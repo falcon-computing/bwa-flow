@@ -15,11 +15,12 @@ agent {label 'merlin'}
                         sh "echo $version"
                         sh "module load sdx/17.4; cmake -DCMAKE_BUILD_TYPE=Release -DRELEASE_VERSION=$version -DDEPLOYMENT_DST=hwc -DCMAKE_INSTALL_PREFIX=/curr/limark/falcon-hwc/tools/bin .."
                         sh "make -j 8"
+			sh "make test"
                         sh "make install"
                         sh "cd ~/falcon-hwc/tools/bin; echo s3://fcs-cicd-test/release/hwc/bwa-flow/bwa-flow-$version-hwc > latest"
                         sh "cd ~/falcon-hwc/tools/bin; aws s3 cp bwa-flow s3://fcs-cicd-test/release/hwc/bwa-flow/bwa-flow-$version-hwc"
                         sh "cd ~/falcon-hwc/tools/bin; aws s3 cp latest s3://fcs-cicd-test/release/hwc/bwa-flow/latest"
-                        sh "cd ~/falcon-hwc/bin; rm -f latest"
+                        sh "cd ~/falcon-hwc/tools/bin; rm -f latest"
                         }
                     }
                 }

@@ -5,9 +5,7 @@
 #include "BWAOCLEnv.h"
 #include "SMemTask.h"
 
-#ifdef INTEL_FPGA
-#include "SMemIntelAgent.h"
-#elif XILINX_FPGA
+#ifdef XILINX_FPGA
 #include "SMemXCLAgent.h"
 #endif
 
@@ -44,31 +42,32 @@ SMemTask::SMemTask(BWAOCLEnv* env) {
   o_num_data = (int *)smem_malloc(max_i_seq_num_, sizeof(int));
   o_num_size = max_i_seq_num_ * sizeof(int);
   
-#ifdef INTEL_FPGA
-  agent_ = new SMemIntelAgent(env, this);
-#elif XILINX_FPGA
+#ifdef XILINX_FPGA
   agent_ = new SMemXCLAgent(env, this);
-#endif
 
   DLOG_IF(INFO, VLOG_IS_ON(3)) << "Creating Buffer";
   ((SMemXCLAgent*)agent_)->createBuffer(this);
+#endif
 
 }
 
 SMemTask::~SMemTask() {
 
+#ifdef XILINX_FPGA
   ((SMemXCLAgent *)agent_)->releaseBuffer(this);
+  delete agent_;
+#endif
 
   free(i_seq_data);
   free(i_seq_len_data);
   free(o_mem_data);
   free(o_num_data);
 
-  delete agent_;
 }
 
 void SMemTask::start(SMemTask* prev_task) {
 
+#ifdef XILINX_FPGA
   uint64_t start_ts = getUs();
   //DLOG_IF(INFO, VLOG_IS_ON(3)) << "Try to write bank " << i;
   agent_->writeInput(i_seq_buf, i_seq_data, i_seq_size, 0);
@@ -83,9 +82,11 @@ void SMemTask::start(SMemTask* prev_task) {
     agent_->start(this, prev_task->agent_);
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueuing tasks takes "
                                << getUs() - start_ts << " us";
+#endif
 }
 
 void SMemTask::start(SMemTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts) {
+#ifdef XILINX_FPGA
 
   uint64_t start_ts = getUs();
   //DLOG_IF(INFO, VLOG_IS_ON(3)) << "Try to write bank " << i;
@@ -103,9 +104,11 @@ void SMemTask::start(SMemTask* prev_task, uint64_t &write_ts, uint64_t &enq_ts) 
   enq_ts += getUs() - start_ts;
   DLOG_IF(INFO, VLOG_IS_ON(4)) << "Enqueuing tasks takes "
                                << getUs() - start_ts << " us";
+#endif
 }
 
 void SMemTask::finish() {
+#ifdef XILINX_FPGA
   uint64_t start_ts = getUs();
   agent_->readOutput(o_mem_buf, o_mem_data, o_mem_size, 0);
   agent_->readOutput(o_num_buf, o_num_data, o_num_size, 0);
@@ -114,9 +117,11 @@ void SMemTask::finish() {
 
   // release events
   agent_->finish();
+#endif
 }
 
 void SMemTask::finish(uint64_t &deq_ts, uint64_t &read_ts) {
+#ifdef XILINX_FPGA
   uint64_t start_ts = getUs();
   ((SMemXCLAgent*)agent_)->wait();
   deq_ts += getUs() - start_ts;
@@ -129,4 +134,5 @@ void SMemTask::finish(uint64_t &deq_ts, uint64_t &read_ts) {
 
   // release events
   agent_->finish();
+#endif
 }

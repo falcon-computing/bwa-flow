@@ -201,11 +201,13 @@ void SWTask::redo() {
 }
 
 void SWTask::redo_func() {
+#ifdef XILINX_FPGA
   ((XCLAgent *)agent_)->fence();
   agent_->writeInput(i_buf, i_data, i_size*sizeof(int), 0);
   agent_->start(this, NULL);
   agent_->readOutput(o_buf, o_data, o_size*sizeof(int), 0);
   agent_->finish();
+#endif
 }
 
 void sig_handler(int sig) {
