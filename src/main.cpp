@@ -254,8 +254,11 @@ int main(int argc, char *argv[]) {
   if (FLAGS_enable_markdup) {
     if_markdup = 1;
   }
-  
-  int num_compute_stages = 8 + if_markdup;
+  int if_bucketsort = 0;
+  if (FLAGS_enable_bucketsort) {
+    if_bucketsort = 1;
+  }
+  int num_compute_stages = 9 + if_markdup - if_bucketsort;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
 #ifdef BUILD_FPGA
@@ -287,6 +290,7 @@ int main(int argc, char *argv[]) {
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
   MarkDupStage      md_stage(FLAGS_stage_3_nt, aux);
   MarkDupPartStage  md_part_stage(aux);
+  BucketSortStage bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
@@ -294,9 +298,7 @@ int main(int argc, char *argv[]) {
   // Stages for FPGA acceleration of stage_2
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
-
-  BucketSortStage  bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
-
+  
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
@@ -339,12 +341,6 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
-    //compute_flow.addStage(6, &md_stage);
-    //compute_flow.addStage(7, &reorder_stage);
-    //compute_flow.addStage(8, &bucketWrite_stage);
-    //compute_flow.addStage(6, &reorder_stage);
-    //compute_flow.addStage(7, &sort_stage);
-    //compute_flow.addStage(8, &write_stage);
 
     if (FLAGS_enable_markdup) {
       if (FLAGS_inorder_output) {
@@ -359,10 +355,14 @@ int main(int argc, char *argv[]) {
     else {
       compute_flow.addStage(6, &reorder_stage); 
     }
-    compute_flow.addStage(7 + if_markdup, &bucketsort_stage);
-    //compute_flow.addStage(7 + if_markdup, &sort_stage);
-    //compute_flow.addStage(8 + if_markdup, &write_stage);
-
+    if (FLAGS_enable_bucketsort) {
+      compute_flow.addStage(7 + if_markdup, &bucketsort_stage);
+    }
+    else {
+      compute_flow.addStage(7 + if_markdup, &sort_stage);
+      compute_flow.addStage(8 + if_markdup, &write_stage);
+    }
+    
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
   
 #ifdef BUILD_FPGA

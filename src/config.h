@@ -88,6 +88,9 @@ DECLARE_bool(enable_markdup);
 //bucket_sort
 DECLARE_int32(num_buckets);
 
+//if use bucket sort
+DECLARE_bool(enable_bucketsort);
+
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;
