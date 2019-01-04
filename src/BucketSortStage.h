@@ -90,7 +90,11 @@ class BucketSortStage :
         for (int i = 0; i < n; i++) {
           std::stringstream interval_file_path;
           interval_file_path << interval_folder_path.str().c_str();
-          interval_file_path << "/interval_" << std::to_string(i) << ".bed";
+          interval_file_path << "/interval_" << std::to_string(i) <<
+            "_" << std::setw(6) << std::setfill('0') << i*bucket_per_thread << 
+            "_" << std::setw(6) << std::setfill('0') << 
+            std::min((i+1)*bucket_per_thread -1, num_buckets - 1) <<
+            ".bed";
           interval_file.open(interval_file_path.str().c_str());
           int64_t end = contig_start_pos + thread_size;
           int margin_size = 1000;
