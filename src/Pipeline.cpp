@@ -28,12 +28,18 @@
 #include "allocation_wrapper.h"
 
 // Comparator function for bam1_t records
-#ifdef USE_HTSLIB
 bool bam1_lt(const bam1_t* a, const bam1_t* b) {
   return ((uint64_t)a->core.tid<<32|(a->core.pos+1)<<1|bam_is_rev(a)) 
        < ((uint64_t)b->core.tid<<32|(b->core.pos+1)<<1|bam_is_rev(b));
 }
-#endif
+
+typedef bam1_t *bam1_p;
+
+KSORT_INIT(sort, bam1_p, bam1_lt)
+
+void sort_bams(int size, bam1_t** buffer) {
+  ks_mergesort(sort, size, buffer, 0);
+}
 
 static inline void trim_readno(kstring_t *s)
 {
@@ -730,12 +736,6 @@ catch (...)
 }
 }
 
-
-#ifdef USE_HTSLIB
-typedef bam1_t *bam1_p;
-KSORT_INIT(sort, bam1_p, bam1_lt)
-#endif
-
 inline int num_seqs_accumulator(std::vector<SeqsRecord> *records_list) {
   int num_seqs = 0;
   for (int id = 0; id < records_list->size(); id++) num_seqs+=(*records_list)[id].batch_num;
@@ -792,7 +792,7 @@ BamsRecord SamsSort::compute(BamsRecord const & input)
   // step: sort
   if(FLAGS_sort) {
     //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
-    ks_mergesort(sort, bam_buffer_idx, (bam1_p *)bam_buffer, 0);
+    sort_bams(bam_buffer_idx, (bam1_p *)bam_buffer);
   }
   output.bam_buffer = bam_buffer;
   output.bam_buffer_idx = bam_buffer_idx;

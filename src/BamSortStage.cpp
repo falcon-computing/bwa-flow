@@ -1,6 +1,8 @@
+#include "htslib/ksort.h"
 #include "BamSortStage.h"
 
-BamRecord BamSortStage::compute(BamRecord input) {
-  ks_mergesort(sort, input.size, input.bams, 0);
-  return input;
+BamRecord BamSortStage::compute(BamRecord const & input) {
+  BamRecord output = input;
+  sort_bams(output.size, output.bams);
+  return output;
 }

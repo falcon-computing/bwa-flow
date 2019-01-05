@@ -8,5 +8,5 @@ class BamSortStage
   BamSortStage(int n=1): kestrelFlow::MapStage<
       BamRecord, BamRecord, COMPUTE_DEPTH, COMPUTE_DEPTH>(n) {;} 
 
-  BamRecord compute(BamRecord input);
+  BamRecord compute(BamRecord const & input);
 };

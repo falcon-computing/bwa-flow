@@ -20,6 +20,8 @@
 #define OUTPUT_DEPTH  64
 #define COMPUTE_DEPTH 64
 
+void sort_bams(int size, bam1_t** buffer);
+
 // Common data structures
 struct kseq_buf_t {
   kseq_new_t* ks;
@@ -77,7 +79,7 @@ struct BamRecord {
   int id;
   int size;
   bam1_t ** bams;
-}
+};
 
 template<typename Record>
 inline void freeRecord(Record &record) {
