@@ -72,6 +72,13 @@ struct BamsRecord {
 };
 #endif
 
+//Data structure for sort-merge pipe
+struct BamRecord {
+  int id;
+  int size;
+  bam1_t ** bams;
+}
+
 template<typename Record>
 inline void freeRecord(Record &record) {
   DLOG(INFO) << "Undefined record type: " << record.name;
