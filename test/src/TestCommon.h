@@ -170,6 +170,10 @@ class PipelineTests : public BaseTests {
   ;
 };
 
+class BamTests : public ::testing::Test {
+  ;
+};
+
 class FPGATests;
 
 #ifdef USE_MPI
