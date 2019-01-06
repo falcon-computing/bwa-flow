@@ -1,6 +1,7 @@
 #include "ReorderAndWriteStage.h"
 
 void ReorderAndWriteStage::compute(int wid){
+  DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started ReorderAndWrite()";
   uint32_t n_processed = 0;
   std::unordered_map<uint32_t, BamRecord> record_buf;
   while (true) {
@@ -20,11 +21,15 @@ void ReorderAndWriteStage::compute(int wid){
          n_processed += 1;
 
          for (int i = 0; i < record.size; i++) {
-           sam_write1(fout_, h_, record.bams[i]);
+//           DLOG(INFO) << "wrote an align";
+           if (sam_write1(fout_, h_, record.bams[i]) < 0) {
+              throw ("write error");
+           } 
            bam_destroy1(record.bams[i]);
          }
 
          free(record.bams);
      }
    }
+   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ReorderAndWrite()";
 }

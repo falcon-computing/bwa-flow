@@ -195,7 +195,7 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
-DEFINE_int32(num_buckets, 4096, 
+DEFINE_int32(num_buckets, 96, 
     "--num_buckets argument to set output bucket number");
 
 DEFINE_bool(enable_markdup, false,

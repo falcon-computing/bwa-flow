@@ -271,7 +271,7 @@ int main(int argc, char *argv[]) {
   if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
 #endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
-  kestrelFlow::Pipeline sort_merge_flow(4, num_threads);
+  kestrelFlow::Pipeline compute_flow2(4, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
 #ifdef BUILD_FPGA
@@ -309,12 +309,13 @@ int main(int argc, char *argv[]) {
   BamSortStage      bamsort_stage(FLAGS_stage_3_nt);
   ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
 
-  sort_merge_flow.addStage(0, &indexgen_stage);
-  sort_merge_flow.addStage(1, &bamread_stage);
-  sort_merge_flow.addStage(2, &bamsort_stage);
-  sort_merge_flow.addStage(3, &reorderwrite_stage);
+  compute_flow2.addStage(0, &indexgen_stage);
+  compute_flow2.addStage(1, &bamread_stage);
+  compute_flow2.addStage(2, &bamsort_stage);
+  compute_flow2.addStage(3, &reorderwrite_stage);
 
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
+  kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
     // Bind global vars to each pipeline
@@ -378,8 +379,8 @@ int main(int argc, char *argv[]) {
       compute_flow.addStage(8 + if_markdup, &write_stage);
     }
     
-    bwa_flow_pipe.addPipeline(&compute_flow, 2);
-    bwa_flow_pipe.addPipeline(&sort_merge_flow, 1); 
+    bwa_flow_pipe.addPipeline(&compute_flow, 1);
+    sort_merge_pipe.addPipeline(&compute_flow2, 1);
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       if (smem_fpga_thread > 0 && !FLAGS_no_use_smem_cpu)
@@ -392,6 +393,11 @@ int main(int argc, char *argv[]) {
     t_real = realtime();
     bwa_flow_pipe.start();
     bwa_flow_pipe.wait();
+
+//std::cin.ignore();
+
+    sort_merge_pipe.start();
+    sort_merge_pipe.wait();
   
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
@@ -438,6 +444,6 @@ int main(int argc, char *argv[]) {
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return 1;
   }
-
+DLOG(INFO) << "check";
   return 0;
 }
