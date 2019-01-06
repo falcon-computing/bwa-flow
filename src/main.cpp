@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   // Get output file folder
-  std::string sam_dir = FLAGS_output_dir;
+  std::string sam_dir = FLAGS_temp_dir;
   if (!sam_dir.empty()) {
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
   MarkDupStage      md_stage(FLAGS_stage_3_nt, aux);
   MarkDupPartStage  md_part_stage(aux);
-  BucketSortStage bucketsort_stage(aux, FLAGS_temp_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
+  BucketSortStage bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
@@ -304,18 +304,7 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
   
-  IndexGenStage     indexgen_stage(FLAGS_num_buckets);
-  BamReadStage      bamread_stage(FLAGS_temp_dir, FLAGS_stage_3_nt);
-  BamSortStage      bamsort_stage(FLAGS_stage_3_nt);
-  ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
-
-  compute_flow2.addStage(0, &indexgen_stage);
-  compute_flow2.addStage(1, &bamread_stage);
-  compute_flow2.addStage(2, &bamsort_stage);
-  compute_flow2.addStage(3, &reorderwrite_stage);
-
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
-  kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
     // Bind global vars to each pipeline
@@ -323,7 +312,7 @@ int main(int argc, char *argv[]) {
   
     compute_flow.addStage(0, &kread_stage);
     compute_flow.addStage(1, &k2b_stage);
-    if (!FLAGS_no_use_smem_cpu)
+    if (!FLAGS_disable_smem_cpu)
       compute_flow.addStage(2, &seq2chain_stage);
     else
 #ifdef BUILD_FPGA
@@ -340,7 +329,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(3, &chainpipe_stage);
-    if (!FLAGS_no_use_sw_cpu)
+    if (!FLAGS_disable_sw_cpu)
       compute_flow.addStage(4, &chain2reg_stage);
     else
 #ifdef BUILD_FPGA
@@ -380,12 +369,11 @@ int main(int argc, char *argv[]) {
     }
     
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
-    sort_merge_pipe.addPipeline(&compute_flow2, 1);
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      if (smem_fpga_thread > 0 && !FLAGS_no_use_smem_cpu)
+      if (smem_fpga_thread > 0 && !FLAGS_disable_smem_cpu)
         compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 2.5);
-      if (sw_fpga_thread > 0 && !FLAGS_no_use_sw_cpu)
+      if (sw_fpga_thread > 0 && !FLAGS_disable_sw_cpu)
         compute_flow.addAccxBckStage(4, &chain2reg_fpga_stage, 10);
     }
 #endif
@@ -394,11 +382,6 @@ int main(int argc, char *argv[]) {
     bwa_flow_pipe.start();
     bwa_flow_pipe.wait();
 
-//std::cin.ignore();
-
-    sort_merge_pipe.start();
-    sort_merge_pipe.wait();
-  
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       // Stop FPGA context
@@ -421,29 +404,55 @@ int main(int argc, char *argv[]) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
-  
-    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-    std::cerr << "Real time: " << realtime() - t_real << " sec, "
-              << "CPU time: " << cputime() << " sec" 
-              << std::endl;
-  
-    //err_fflush(stdout);
-    //err_fclose(stdout);
-  
+
     free(bwa_pg);
+    free(aux->opt);
+    bwa_idx_destroy(aux->idx);
+
+    std::cerr << "bwa stage time: " 
+              << realtime() - t_real 
+              << " s" << std::endl;
+
+    t_real = realtime();
+
+    // start sorting buckets and merge them
+    {
+    IndexGenStage     indexgen_stage(FLAGS_num_buckets);
+    BamReadStage      bamread_stage(sam_dir, aux->h, FLAGS_t);
+    BamSortStage      bamsort_stage(FLAGS_t);
+    ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
+
+    compute_flow2.addStage(0, &indexgen_stage);
+    compute_flow2.addStage(1, &bamread_stage);
+    compute_flow2.addStage(2, &bamsort_stage);
+    compute_flow2.addStage(3, &reorderwrite_stage);
+
+    kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, 0);
+    sort_merge_pipe.addPipeline(&compute_flow2, 1);
+
+    sort_merge_pipe.start();
+    sort_merge_pipe.wait();
+    }
+
+    std::cerr << "sort stage time: " 
+              << realtime() - t_real 
+              << " s" << std::endl;
   
 #ifdef USE_HTSLIB
     bam_hdr_destroy(aux->h);
 #endif
-    free(aux->opt);
-    bwa_idx_destroy(aux->idx);
     delete aux;
+
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
   }
   catch (...) {
     LOG(ERROR) << "Encountered an internal issue.";
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return 1;
   }
-DLOG(INFO) << "check";
+
+  // delete temp_dir
+  boost::filesystem::remove_all(sam_dir);
+  
   return 0;
 }

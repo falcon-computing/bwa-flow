@@ -134,16 +134,16 @@ DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
 DEFINE_bool(use_fpga, true,
     "Enable FPGA accelerator for SMem & SmithWaterman computation");
 
-DEFINE_bool(no_use_smem_fpga, false,
+DEFINE_bool(disable_smem_fpga, false,
     "Disable FPGA accelerator for SMem computation");
 
-DEFINE_bool(no_use_smem_cpu, false,
+DEFINE_bool(disable_smem_cpu, false,
     "Disable CPU for SMem computation");
 
-DEFINE_bool(no_use_sw_fpga, false,
+DEFINE_bool(disable_sw_fpga, false,
     "Disable FPGA accelerator for SmithWaterman computation");
 
-DEFINE_bool(no_use_sw_cpu, false,
+DEFINE_bool(disable_sw_cpu, false,
     "Disable CPU for SmithWaterman computation");
 
 DEFINE_bool(sort, true,
@@ -164,9 +164,6 @@ DEFINE_int32(extra_thread, 1,
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
 
-DEFINE_string(output_dir, "",
-    "If not empty the output will be redirect to --output_dir");
-
 DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 1");
 
@@ -183,10 +180,27 @@ DEFINE_int32(output_flag, 1,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 40, 
-    "Flag to specify how many batch to buffer before sort");
+DEFINE_int32(num_buckets, 64, 
+    "Set output bucket number");
+
+DEFINE_bool(enable_markdup, true,
+    "Enable mark duplicate during alignment, default true");
+
+DEFINE_bool(enable_bucketsort, true,
+    "Enable bucket sort instead of normal sort, default true");
+
+DEFINE_string(temp_dir, "./bwa-flow", 
+    "Temp dir to store intermediate bucket bams");
+
+DEFINE_string(output, "./output.bam", "Path to output file");
 
 // deprecated
+DEFINE_string(output_dir, "",
+    "(deprecated) Please use --output instead");
+
+DEFINE_int32(max_batch_records, 40, 
+    "(deprecated) Flag to specify how many batch to buffer before sort");
+
 DEFINE_bool(offload, true,
     "(deprecated) Use three compute pipeline stages to enable offloading"
     "workload to accelerators. "
@@ -195,14 +209,3 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
-DEFINE_int32(num_buckets, 96, 
-    "--num_buckets argument to set output bucket number");
-
-DEFINE_bool(enable_markdup, false,
-    "--enable_markdup argument to enable markdup, default false");
-
-DEFINE_bool(enable_bucketsort, false,
-    "--enable_bucketsort argument to enable bucket sort instead of normal sort, default false");
-
-DEFINE_string(temp_dir, ".", "temp dir to store bucket bams");
-DEFINE_string(output, "./output.bam", "output file path");
