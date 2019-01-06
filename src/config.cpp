@@ -203,3 +203,6 @@ DEFINE_bool(enable_markdup, false,
 
 DEFINE_bool(enable_bucketsort, false,
     "--enable_bucketsort argument to enable bucket sort instead of normal sort, default false");
+
+DEFINE_string(temp_dir, ".", "temp dir to store bucket bams");
+DEFINE_string(output, "./output.bam", "output file path");

@@ -46,6 +46,10 @@
 #include "BucketSortStage.h"
 #include "MarkDupStage.h"
 #include "MarkDupPartStage.h"
+#include "IndexGenStage.h"
+#include "BamReadStage.h"
+#include "BamSortStage.h"
+#include "ReorderAndWriteStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -267,6 +271,7 @@ int main(int argc, char *argv[]) {
   if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
 #endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
+  kestrelFlow::Pipeline sort_merge_flow(4, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
 #ifdef BUILD_FPGA
@@ -290,7 +295,7 @@ int main(int argc, char *argv[]) {
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
   MarkDupStage      md_stage(FLAGS_stage_3_nt, aux);
   MarkDupPartStage  md_part_stage(aux);
-  BucketSortStage bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
+  BucketSortStage bucketsort_stage(aux, FLAGS_temp_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
@@ -299,6 +304,16 @@ int main(int argc, char *argv[]) {
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
   
+  IndexGenStage     indexgen_stage(FLAGS_num_buckets);
+  BamReadStage      bamread_stage(FLAGS_temp_dir, FLAGS_stage_3_nt);
+  BamSortStage      bamsort_stage(FLAGS_stage_3_nt);
+  ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
+
+  sort_merge_flow.addStage(0, &indexgen_stage);
+  sort_merge_flow.addStage(1, &bamread_stage);
+  sort_merge_flow.addStage(2, &bamsort_stage);
+  sort_merge_flow.addStage(3, &reorderwrite_stage);
+
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
@@ -363,8 +378,8 @@ int main(int argc, char *argv[]) {
       compute_flow.addStage(8 + if_markdup, &write_stage);
     }
     
-    bwa_flow_pipe.addPipeline(&compute_flow, 1);
-  
+    bwa_flow_pipe.addPipeline(&compute_flow, 2);
+    bwa_flow_pipe.addPipeline(&sort_merge_flow, 1); 
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
       if (smem_fpga_thread > 0 && !FLAGS_no_use_smem_cpu)

@@ -91,6 +91,10 @@ DECLARE_int32(num_buckets);
 //if use bucket sort
 DECLARE_bool(enable_bucketsort);
 
+//for sort_merge flow
+DECLARE_string(temp_dir);
+DECLARE_string(output);
+
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;
