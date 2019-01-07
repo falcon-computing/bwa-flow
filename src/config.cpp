@@ -147,7 +147,7 @@ DEFINE_bool(disable_sw_cpu, false,
     "Disable CPU for SmithWaterman computation");
 
 DEFINE_bool(sort, true,
-    "Enable in-memory sorting of output bam file");
+    "(deprecated) Enable in-memory sorting of output bam file");
 
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
@@ -183,10 +183,10 @@ DEFINE_int32(output_flag, 1,
 DEFINE_int32(num_buckets, 64, 
     "Set output bucket number");
 
-DEFINE_bool(enable_markdup, true,
+DEFINE_bool(disable_markdup, false,
     "Enable mark duplicate during alignment, default true");
 
-DEFINE_bool(enable_bucketsort, true,
+DEFINE_bool(disable_bucketsort, false,
     "Enable bucket sort instead of normal sort, default true");
 
 DEFINE_string(temp_dir, "./bwa-flow", 
@@ -209,3 +209,11 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
+DEFINE_bool(disbale_sort, false,
+    "disable sorting for output bams");
+
+DEFINE_bool(remove_duplicates, false,
+    "remove duplicate reads in bam output");
+
+DEFINE_bool(filter_unmap, false,
+    "filter unmapped reads in the output");

@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
         LOG(ERROR) << "Cannot create output dir: " << sam_dir;
         return 1;
       }
-      if (FLAGS_sort) {
+      if (!FLAGS_disable_sort) {
         DLOG_IF(INFO, FLAGS_v >= 1) << "Putting sorted BAM files to " << sam_dir;
       }
       else {
@@ -256,11 +256,11 @@ int main(int argc, char *argv[]) {
   double t_real = realtime();
 
   int if_markdup = 0;
-  if (FLAGS_enable_markdup) {
+  if (!FLAGS_disable_markdup) {
     if_markdup = 1;
   }
   int if_bucketsort = 0;
-  if (FLAGS_enable_bucketsort) {
+  if (!FLAGS_disable_bucketsort) {
     if_bucketsort = 1;
   }
   int num_compute_stages = 9 + if_markdup - if_bucketsort;
@@ -274,7 +274,7 @@ int main(int argc, char *argv[]) {
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
   
   int if_sort = 0;
-  if (FLAGS_sort) {
+  if (!FLAGS_disable_sort) {
     if_sort = 1;
   }
   kestrelFlow::Pipeline compute_flow2(3 + if_sort, num_threads);
@@ -353,7 +353,7 @@ int main(int argc, char *argv[]) {
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
 
-    if (FLAGS_enable_markdup) {
+    if (!FLAGS_disable_markdup) {
       if (FLAGS_inorder_output) {
         compute_flow.addStage(6, &reorder_stage);
         compute_flow.addStage(7, &md_part_stage);
@@ -366,7 +366,7 @@ int main(int argc, char *argv[]) {
     else {
       compute_flow.addStage(6, &reorder_stage); 
     }
-    if (FLAGS_enable_bucketsort) {
+    if (!FLAGS_disable_bucketsort) {
       compute_flow.addStage(7 + if_markdup, &bucketsort_stage);
     }
     else {

@@ -83,18 +83,22 @@ DECLARE_string(H);
 DECLARE_string(I);
 
 //mark_dup
-DECLARE_bool(enable_markdup);
+DECLARE_bool(disable_markdup);
 
 //bucket_sort
 DECLARE_int32(num_buckets);
 
 //if use bucket sort
-DECLARE_bool(enable_bucketsort);
+DECLARE_bool(disable_bucketsort);
 
 //for sort_merge flow
 DECLARE_string(temp_dir);
 DECLARE_string(output);
 
+
+DECLARE_bool(disable_sort);
+DECLARE_bool(remove_duplicates);
+DECLARE_bool(filter_unmap);
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;

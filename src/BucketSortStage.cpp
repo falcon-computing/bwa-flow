@@ -73,7 +73,8 @@ void bucketFile::writeFileHeader() {
 void bucketFile::writeFile(std::vector<bam1_t*> vec) {
   boost::lock_guard<bucketFile> guard(*this);
   for (int i = 0; i < vec.size(); i++) {
-    if (!((vec[i]->core.flag & UNMAP_FLAG) || (vec[i]->core.flag & DUP_FLAG))) {
+    if (!((FLAGS_filter_unmap && (vec[i]->core.flag & UNMAP_FLAG))
+        || (FLAGS_remove_duplicates && (vec[i]->core.flag & DUP_FLAG)))) {
       sam_write1(fout_, aux_->h, vec[i]);
     }
   }
