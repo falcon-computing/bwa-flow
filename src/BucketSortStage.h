@@ -1,12 +1,9 @@
 #ifndef BUCKETSORT
 #define BUCKETSORT
 
-#include "Pipeline.h"
 #include <cstring>
 #include <string.h>
 #include <unordered_map>
-#include "config.h"
-
 #include <iostream>
 #include <fstream>
 #include <sys/stat.h>
@@ -15,6 +12,9 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lockable_adapter.hpp>
 #include <boost/thread.hpp>
+
+#include "Pipeline.h"
+#include "config.h"
 
 //locakable class
 class bucketFile :
