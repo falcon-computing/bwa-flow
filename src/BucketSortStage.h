@@ -158,11 +158,12 @@ class BucketSortStage :
         //interval_file.close();
       }
     ~BucketSortStage() {
-        for (auto it = buckets_.begin(); it != buckets_.end(); ++it) {
-          delete it->second;
-        }
+//        for (auto it = buckets_.begin(); it != buckets_.end(); ++it) {
+//          delete it->second;
+//        }
     }
     int compute(BamsRecord const & input);
+    void closeBuckets();
   private:
     ktp_aux_t* aux_;
     std::unordered_map<int32_t, bucketFile*> buckets_;

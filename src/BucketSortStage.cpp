@@ -14,6 +14,12 @@ int BucketSortStage::get_bucket_id(bam1_t* read) {
   return (acc_pos-1)/bucket_size_;
 }
 
+void BucketSortStage::closeBuckets() {
+  for (auto it = buckets_.begin(); it != buckets_.end(); ++it) {
+    delete it->second;
+  }
+}
+
 int BucketSortStage::compute(BamsRecord const & input) {
   uint64_t start = getUs();
   DLOG(INFO) << "Started BucketWrite()";

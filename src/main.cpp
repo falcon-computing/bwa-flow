@@ -381,6 +381,8 @@ int main(int argc, char *argv[]) {
     t_real = realtime();
     bwa_flow_pipe.start();
     bwa_flow_pipe.wait();
+  
+    bucketsort_stage.closeBuckets();
 
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
