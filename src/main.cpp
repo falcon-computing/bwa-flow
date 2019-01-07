@@ -271,7 +271,12 @@ int main(int argc, char *argv[]) {
   if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
 #endif
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
-  kestrelFlow::Pipeline compute_flow2(4, num_threads);
+  
+  int if_sort = 0;
+  if (FLAGS_sort) {
+    if_sort = 1;
+  }
+  kestrelFlow::Pipeline compute_flow2(3 + if_sort, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
 #ifdef BUILD_FPGA
@@ -426,8 +431,10 @@ int main(int argc, char *argv[]) {
 
     compute_flow2.addStage(0, &indexgen_stage);
     compute_flow2.addStage(1, &bamread_stage);
-    compute_flow2.addStage(2, &bamsort_stage);
-    compute_flow2.addStage(3, &reorderwrite_stage);
+    if (FLAGS_sort) {
+      compute_flow2.addStage(2, &bamsort_stage);
+    }
+    compute_flow2.addStage(2 + if_sort, &reorderwrite_stage);
 
     kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, 0);
     sort_merge_pipe.addPipeline(&compute_flow2, 1);
