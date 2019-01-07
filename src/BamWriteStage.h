@@ -6,17 +6,19 @@ class BamWriteStage
 {
  public:
   BamWriteStage(
+      int num_parts,
       std::string bam_dir, 
+      std::string output_path, 
       bam_hdr_t* h = NULL,
-      int n = 1): 
-    kestrelFlow::MapStage<
-      BamRecord, int, COMPUTE_DEPTH, COMPUTE_DEPTH>(n), 
-      bam_dir_(bam_dir), h_(h)
-    {;} 
+      int n = 1);
+
+  ~BamWriteStage();
 
   int compute(BamRecord const & input);
 
  private:
-  std::string  bam_dir_;
-  bam_hdr_t*   h_; 
+  int         num_parts_;
+  std::string bam_dir_;
+  std::string output_path_;
+  bam_hdr_t*  h_; 
 };

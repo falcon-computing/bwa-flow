@@ -429,15 +429,15 @@ int main(int argc, char *argv[]) {
     BamReadStage      bamread_stage(sam_dir, aux->h, FLAGS_t);
     BamSortStage      bamsort_stage(FLAGS_t);
     //ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
-    BamWriteStage     bamwrite_stage(sam_dir, aux->h);
+    BamWriteStage     bamwrite_stage(
+        FLAGS_num_buckets,
+        sam_dir, FLAGS_output, aux->h, FLAGS_t);
 
     compute_flow2.addStage(0, &indexgen_stage);
     compute_flow2.addStage(1, &bamread_stage);
-    if (FLAGS_sort) {
-      compute_flow2.addStage(2, &bamsort_stage);
-    }
+    compute_flow2.addStage(2, &bamsort_stage);
     //compute_flow2.addStage(2 + if_sort, &reorderwrite_stage);
-    compute_flow2.addStage(2 + if_sort, &bamwrite_stage);
+    compute_flow2.addStage(3, &bamwrite_stage);
   
     kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, 0);
     sort_merge_pipe.addPipeline(&compute_flow2, 1);
@@ -449,7 +449,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "sort stage time: " 
               << realtime() - t_real 
               << " s" << std::endl;
-  
+
 #ifdef USE_HTSLIB
     bam_hdr_destroy(aux->h);
 #endif
@@ -464,7 +464,7 @@ int main(int argc, char *argv[]) {
   }
 
   // delete temp_dir
-  //boost::filesystem::remove_all(sam_dir);
+  boost::filesystem::remove_all(sam_dir);
   
   return 0;
 }

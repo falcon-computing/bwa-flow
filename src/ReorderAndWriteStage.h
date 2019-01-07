@@ -1,3 +1,6 @@
+#ifndef REORDERANDWRITESTAGE_H
+#define REORDERANDWRITESTAGE_H
+
 #include "Pipeline.h"
 
 class ReorderAndWriteStage
@@ -22,3 +25,5 @@ class ReorderAndWriteStage
   samFile * fout_;
   bam_hdr_t * h_;
 };
+
+#endif

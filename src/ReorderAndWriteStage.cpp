@@ -25,16 +25,16 @@ void ReorderAndWriteStage::compute(int wid) {
       n_processed += 1;
 
       uint64_t start_ts = getUs();
-      for (int i = 0; i < record.size; i++) {
-        if (sam_write1(fout_, h_, record.bams[i]) < 0) {
-          throw std::runtime_error("sam_write1() error");
-        } 
-        bam_destroy1(record.bams[i]);
-      }
-      DLOG(INFO) << "Wrtting " << record.size << " records took " 
+
+      bgzf_write(fout_->fp.bgzf, 
+          record.fbuf->get_data(), 
+          record.fbuf->get_size());
+
+      delete record.fbuf;
+      
+      DLOG(INFO) << "Wrtting " << record.fbuf->get_size() / 1024 << " kB took " 
         << getUs() - start_ts << " us";
 
-      free(record.bams);
     }
   }
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Finished ReorderAndWrite()";

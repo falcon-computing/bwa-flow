@@ -1,3 +1,6 @@
+#ifndef BAMREADSTAGE_H
+#define BAMREADSTAGE_H
+
 #include "Pipeline.h"
 
 class BamReadStage
@@ -22,3 +25,5 @@ class BamReadStage
   std::string  bam_dir_;
   bam_hdr_t*   h_;
 };
+
+#endif

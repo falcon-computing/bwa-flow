@@ -1,3 +1,6 @@
+#ifndef INDEXGENSTAGE_H
+#define INDEXGENSTAGE_H
+
 #include "Pipeline.h"
 
 class IndexGenStage : public kestrelFlow::SourceStage<int, INPUT_DEPTH> {
@@ -8,3 +11,5 @@ class IndexGenStage : public kestrelFlow::SourceStage<int, INPUT_DEPTH> {
  private:
   int num_ids_;
 };
+
+#endif

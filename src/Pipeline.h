@@ -6,6 +6,7 @@
 #include <list>
 #include <unordered_map>
 
+#include "BamFileBuffer.h"
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
 #include "kflow/Pipeline.h"
@@ -79,6 +80,8 @@ struct BamRecord {
   int id;
   int size;
   bam1_t ** bams;
+
+  BamFileBuffer* fbuf;
 };
 
 template<typename Record>

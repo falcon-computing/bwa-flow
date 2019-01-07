@@ -1,3 +1,6 @@
+#ifndef BAMSORTSTAGE_H
+#define BAMSORTSTAGE_H
+
 #include "Pipeline.h"
 
 class BamSortStage
@@ -10,3 +13,4 @@ class BamSortStage
 
   BamRecord compute(BamRecord const & input);
 };
+#endif
