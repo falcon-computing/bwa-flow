@@ -464,5 +464,6 @@ int main(int argc, char *argv[]) {
   if (!FLAGS_disable_bucketsort) {
     boost::filesystem::remove_all(sam_dir);
   }
+
   return 0;
 }

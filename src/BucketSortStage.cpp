@@ -57,8 +57,7 @@ int BucketSortStage::compute(BamsRecord const & input) {
   free(input.records_list[0][k].seqs);
   }
 //  free(input.bam_buffer);
-  uint64_t end = getUs();
-  DLOG(INFO) << "Finished BucketWrite() in " << start-end << " us.";
+  DLOG(INFO) << "Finished BucketWrite() in " << getUs() - start << " us.";
   return 0;
 }
 
