@@ -36,9 +36,13 @@ int BamWriteStage::compute(BamRecord const & input) {
 
   int id = input.id;
   std::stringstream ss;
-  ss << bam_dir_ << "/part-" 
-     << std::setw(6) << std::setfill('0') << id;
-
+  if (id == -1) {
+    ss << bam_dir_ << "/unmap";
+  }
+  else {
+    ss << bam_dir_ << "/part-" 
+       << std::setw(6) << std::setfill('0') << id;
+  }
   samFile * fout = hts_open(ss.str().c_str(), "wb");
 
   // don't write headers for each part bam
@@ -59,7 +63,7 @@ int BamWriteStage::compute(BamRecord const & input) {
   // use boost to resize the file to remove EOF marker
   // leave the EOF marker for the last bucket part,
   // since it acts as the EOF for the entire file
-  if (id < num_parts_ - 1) {
+  if (id != -1) {
     bfs::resize_file(ss.str(), 
         bfs::file_size(ss.str()) - 28);
   }
@@ -77,11 +81,14 @@ BamWriteStage::~BamWriteStage() {
        << std::setw(6) << std::setfill('0') << i
        << " ";
   }
+  ss << bam_dir_ << "/unmap.bam ";
   ss << "> " << output_path_;
 
   uint64_t start_ts = getUs();
 
   int ret = system(ss.str().c_str());
+
+  
 
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "concat BAM files took " 
     << getUs() - start_ts << " us";
