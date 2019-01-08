@@ -48,8 +48,15 @@ class bucketFile :
 class BucketSortStage :
   public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
-    BucketSortStage(ktp_aux_t* aux, std::string out_dir, int num_buckets = 1, int n = 1):
-      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n), aux_(aux) {
+    BucketSortStage(
+        ktp_aux_t* aux, 
+        std::string out_dir, 
+        int num_buckets = 1, 
+        int n = 1):
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n), 
+      aux_(aux),
+      num_buckets_(num_buckets)
+    {
         accumulate_length_.push_back(0);
         int64_t acc_len = 0;
         for (int i = 0; i < aux_->h->n_targets; i++) {
@@ -57,24 +64,25 @@ class BucketSortStage :
           accumulate_length_.push_back(acc_len);
         }
         const char *modes[] = {"wb", "wb0", "w"};
-        for (int i = 0; i < num_buckets; i++) {
+
+        // the last bucket is for unmapped reads
+        for (int i = 0; i <= num_buckets; i++) {
           //boost::any var = this->getConst("sam_dir");
           //std::string out_dir = boost::any_cast<std::string>(var);
           std::stringstream ss; 
           ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bam";
-          bucketFile* tmp_bucket = new bucketFile(aux_, i, ss.str().c_str(), modes[FLAGS_output_flag]);
-          buckets_[i] = tmp_bucket;
+          buckets_[i] = new bucketFile(aux_, i, ss.str().c_str(), modes[FLAGS_output_flag]);
         }
-        std::stringstream ss;
-        ss << out_dir << "/unmap.bam";
-        star_read_ = new bucketFile(aux_, -1, ss.str().c_str(), modes[FLAGS_output_flag]);
+
         bucket_size_ = accumulate_length_[aux_->h->n_targets]/num_buckets;
         if (bucket_size_ == 0) {
-          throw "bucket_size_ is 0";
+          throw std::runtime_error("bucket_size_ is 0");
         }
+
         if (accumulate_length_[aux_->h->n_targets]%num_buckets != 0) {
           bucket_size_ += 1;
         }
+
         std::stringstream interval_folder_path;
         interval_folder_path << out_dir << "/intervals";
         mkdir(interval_folder_path.str().c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
@@ -169,11 +177,11 @@ class BucketSortStage :
     void closeBuckets();
   private:
     ktp_aux_t* aux_;
+    int num_buckets_;
     std::unordered_map<int32_t, bucketFile*> buckets_;
     int64_t bucket_size_;
     std::vector<int64_t> accumulate_length_;
     int get_bucket_id(bam1_t* read);
-    bucketFile* star_read_;
 };
 
 #endif

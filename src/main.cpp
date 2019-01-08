@@ -131,20 +131,15 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   // Get output file folder
-  std::string sam_dir = FLAGS_temp_dir;
+  std::string sam_dir = FLAGS_temp_dir + std::string("/tmp");
   if (!sam_dir.empty()) {
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
       if (!boost::filesystem::create_directories(sam_dir)) {
-        LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+        LOG(ERROR) << "Cannot create temp dir: " << sam_dir;
         return 1;
       }
-      if (!FLAGS_disable_sort) {
-        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting sorted BAM files to " << sam_dir;
-      }
-      else {
-        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting output to " << sam_dir;
-      }
+      DLOG_IF(INFO, FLAGS_v >= 1) << "Putting temp output to " << sam_dir;
     }
   }
   else {
@@ -273,7 +268,6 @@ int main(int argc, char *argv[]) {
 #endif
   
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
-  kestrelFlow::Pipeline compute_flow2(4, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
 #ifdef BUILD_FPGA
@@ -420,32 +414,34 @@ int main(int argc, char *argv[]) {
     t_real = realtime();
     
     if (!FLAGS_disable_bucketsort) {
-    // start sorting buckets and merge them
-    {
-    IndexGenStage     indexgen_stage(FLAGS_num_buckets);
-    BamReadStage      bamread_stage(sam_dir, aux->h, FLAGS_t);
-    BamSortStage      bamsort_stage(FLAGS_t);
-    //ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
-    BamWriteStage     bamwrite_stage(
-        FLAGS_num_buckets,
-        sam_dir, FLAGS_output, aux->h, FLAGS_t);
 
-    compute_flow2.addStage(0, &indexgen_stage);
-    compute_flow2.addStage(1, &bamread_stage);
-    compute_flow2.addStage(2, &bamsort_stage);
-    //compute_flow2.addStage(2 + if_sort, &reorderwrite_stage);
-    compute_flow2.addStage(3, &bamwrite_stage);
-  
-    kestrelFlow::MegaPipe  sort_merge_pipe(num_threads, 0);
-    sort_merge_pipe.addPipeline(&compute_flow2, 1);
+      kestrelFlow::Pipeline sort_pipeline(4, num_threads);
 
-    sort_merge_pipe.start();
-    sort_merge_pipe.wait();
-    }
+      // start sorting buckets and merge them
+      IndexGenStage     indexgen_stage(
+          FLAGS_num_buckets + (!FLAGS_filter_unmap));
+      BamReadStage      bamread_stage(sam_dir, aux->h, FLAGS_t);
+      BamSortStage      bamsort_stage(FLAGS_t);
+      //ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
+      BamWriteStage     bamwrite_stage(
+          FLAGS_num_buckets + (!FLAGS_filter_unmap),
+          sam_dir, FLAGS_output, aux->h, FLAGS_t);
 
-    std::cerr << "sort stage time: " 
-              << realtime() - t_real 
-              << " s" << std::endl;
+      sort_pipeline.addStage(0, &indexgen_stage);
+      sort_pipeline.addStage(1, &bamread_stage);
+      sort_pipeline.addStage(2, &bamsort_stage);
+      //sort_pipeline.addStage(2 + if_sort, &reorderwrite_stage);
+      sort_pipeline.addStage(3, &bamwrite_stage);
+
+      kestrelFlow::MegaPipe mp(num_threads, 0);
+      mp.addPipeline(&sort_pipeline, 1);
+
+      mp.start();
+      mp.wait();
+
+      std::cerr << "sort stage time: " 
+        << realtime() - t_real 
+        << " s" << std::endl;
     }
 #ifdef USE_HTSLIB
     bam_hdr_destroy(aux->h);
@@ -462,7 +458,7 @@ int main(int argc, char *argv[]) {
 
   // delete temp_dir
   if (!FLAGS_disable_bucketsort) {
-    //boost::filesystem::remove_all(sam_dir);
+    boost::filesystem::remove_all(sam_dir);
   }
 
   return 0;
