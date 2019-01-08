@@ -81,7 +81,7 @@ BamWriteStage::~BamWriteStage() {
        << std::setw(6) << std::setfill('0') << i
        << " ";
   }
-  ss << bam_dir_ << "/unmap.bam ";
+  ss << bam_dir_ << "/unmap ";
   ss << "> " << output_path_;
 
   uint64_t start_ts = getUs();
