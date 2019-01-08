@@ -56,15 +56,18 @@ class BucketSortStage :
           acc_len += aux_->h->target_len[i];
           accumulate_length_.push_back(acc_len);
         }
+        const char *modes[] = {"wb", "wb0", "w"};
         for (int i = 0; i < num_buckets; i++) {
           //boost::any var = this->getConst("sam_dir");
           //std::string out_dir = boost::any_cast<std::string>(var);
           std::stringstream ss; 
           ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bam";
-          const char *modes[] = {"wb", "wb0", "w"};
           bucketFile* tmp_bucket = new bucketFile(aux_, i, ss.str().c_str(), modes[FLAGS_output_flag]);
           buckets_[i] = tmp_bucket;
         }
+        std::stringstream ss;
+        ss << out_dir << "/unmap.bam";
+        star_read_ = new bucketFile(aux_, -1, ss.str().c_str(), modes[FLAGS_output_flag]);
         bucket_size_ = accumulate_length_[aux_->h->n_targets]/num_buckets;
         if (bucket_size_ == 0) {
           throw "bucket_size_ is 0";
@@ -170,6 +173,7 @@ class BucketSortStage :
     int64_t bucket_size_;
     std::vector<int64_t> accumulate_length_;
     int get_bucket_id(bam1_t* read);
+    bucketFile* star_read_;
 };
 
 #endif

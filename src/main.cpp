@@ -462,7 +462,7 @@ int main(int argc, char *argv[]) {
 
   // delete temp_dir
   if (!FLAGS_disable_bucketsort) {
-    boost::filesystem::remove_all(sam_dir);
+    //boost::filesystem::remove_all(sam_dir);
   }
 
   return 0;

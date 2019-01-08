@@ -9,9 +9,13 @@ BamRecord BamReadStage::compute(int const & id) {
   DLOG_IF(INFO, VLOG_IS_ON(1)) << "Started BamRead()";
 
   std::stringstream ss;
-  ss << bam_dir_ << "/part-" << std::setw(6) 
-     << std::setfill('0') << id << ".bam";
-
+  if (id == -1) {
+    ss << bam_dir_ << "/unmap.bam";
+  }
+  else {
+    ss << bam_dir_ << "/part-" << std::setw(6) 
+       << std::setfill('0') << id << ".bam";
+  }
   samFile * fp = hts_open(ss.str().c_str(), "r");
 
   if (!fp) {
