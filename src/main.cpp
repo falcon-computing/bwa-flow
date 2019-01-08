@@ -271,13 +271,9 @@ int main(int argc, char *argv[]) {
   int sw_fpga_thread = (opencl_env)?opencl_env->sw_fpga_thread_:0;
   if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
 #endif
-  kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
   
-  int if_sort = 0;
-  if (!FLAGS_disable_sort) {
-    if_sort = 1;
-  }
-  kestrelFlow::Pipeline compute_flow2(3 + if_sort, num_threads);
+  kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
+  kestrelFlow::Pipeline compute_flow2(4, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
 #ifdef BUILD_FPGA
@@ -422,7 +418,8 @@ int main(int argc, char *argv[]) {
               << " s" << std::endl;
 
     t_real = realtime();
-
+    
+    if (!FLAGS_disable_bucketsort) {
     // start sorting buckets and merge them
     {
     IndexGenStage     indexgen_stage(FLAGS_num_buckets);
@@ -449,7 +446,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "sort stage time: " 
               << realtime() - t_real 
               << " s" << std::endl;
-
+    }
 #ifdef USE_HTSLIB
     bam_hdr_destroy(aux->h);
 #endif
@@ -464,7 +461,8 @@ int main(int argc, char *argv[]) {
   }
 
   // delete temp_dir
-  boost::filesystem::remove_all(sam_dir);
-  
+  if (!FLAGS_disable_bucketsort) {
+    boost::filesystem::remove_all(sam_dir);
+  }
   return 0;
 }
