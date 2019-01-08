@@ -209,7 +209,7 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
-DEFINE_bool(disbale_sort, false,
+DEFINE_bool(disable_sort, false,
     "disable sorting for output bams");
 
 DEFINE_bool(remove_duplicates, false,
