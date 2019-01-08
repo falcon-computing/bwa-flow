@@ -43,8 +43,14 @@
 #include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
+#include "BucketSortStage.h"
 #include "MarkDupStage.h"
 #include "MarkDupPartStage.h"
+#include "IndexGenStage.h"
+#include "BamReadStage.h"
+#include "BamSortStage.h"
+#include "BamWriteStage.h"
+#include "ReorderAndWriteStage.h"
 
 #ifdef BUILD_FPGA
 #include "FPGAAgent.h"
@@ -125,20 +131,15 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   // Get output file folder
-  std::string sam_dir = FLAGS_output_dir;
+  std::string sam_dir = FLAGS_temp_dir + std::string("/tmp");
   if (!sam_dir.empty()) {
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
       if (!boost::filesystem::create_directories(sam_dir)) {
-        LOG(ERROR) << "Cannot create output dir: " << sam_dir;
+        LOG(ERROR) << "Cannot create temp dir: " << sam_dir;
         return 1;
       }
-      if (FLAGS_sort) {
-        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting sorted BAM files to " << sam_dir;
-      }
-      else {
-        DLOG_IF(INFO, FLAGS_v >= 1) << "Putting output to " << sam_dir;
-      }
+      DLOG_IF(INFO, FLAGS_v >= 1) << "Putting temp output to " << sam_dir;
     }
   }
   else {
@@ -250,11 +251,14 @@ int main(int argc, char *argv[]) {
   double t_real = realtime();
 
   int if_markdup = 0;
-  if (FLAGS_enable_markdup) {
+  if (!FLAGS_disable_markdup) {
     if_markdup = 1;
   }
-  
-  int num_compute_stages = 9 + if_markdup;
+  int if_bucketsort = 0;
+  if (!FLAGS_disable_bucketsort) {
+    if_bucketsort = 1;
+  }
+  int num_compute_stages = 9 + if_markdup - if_bucketsort;
 
   int num_threads = FLAGS_t - FLAGS_extra_thread;
 #ifdef BUILD_FPGA
@@ -262,6 +266,7 @@ int main(int argc, char *argv[]) {
   int sw_fpga_thread = (opencl_env)?opencl_env->sw_fpga_thread_:0;
   if (FLAGS_use_fpga) num_threads -= (smem_fpga_thread + sw_fpga_thread );
 #endif
+  
   kestrelFlow::Pipeline compute_flow(num_compute_stages, num_threads);
 
   DLOG(INFO) << "Using " << num_threads << " threads for cpu";
@@ -286,6 +291,7 @@ int main(int argc, char *argv[]) {
   //Markdup           md_stage(FLAGS_stage_3_nt, aux);
   MarkDupStage      md_stage(FLAGS_stage_3_nt, aux);
   MarkDupPartStage  md_part_stage(aux);
+  BucketSortStage bucketsort_stage(aux, sam_dir, FLAGS_num_buckets, FLAGS_stage_3_nt);
 
 #ifdef BUILD_FPGA
   // Stages for FPGA acceleration of stage_1
@@ -293,7 +299,7 @@ int main(int argc, char *argv[]) {
   // Stages for FPGA acceleration of stage_2
   ChainsToRegionsFPGA   chain2reg_fpga_stage(sw_fpga_thread, &chain2reg_stage);
 #endif
-
+  
   kestrelFlow::MegaPipe  bwa_flow_pipe(num_threads, FLAGS_max_fpga_thread);
 
   try {
@@ -302,7 +308,7 @@ int main(int argc, char *argv[]) {
   
     compute_flow.addStage(0, &kread_stage);
     compute_flow.addStage(1, &k2b_stage);
-    if (!FLAGS_no_use_smem_cpu)
+    if (!FLAGS_disable_smem_cpu)
       compute_flow.addStage(2, &seq2chain_stage);
     else
 #ifdef BUILD_FPGA
@@ -319,7 +325,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
     compute_flow.addStage(3, &chainpipe_stage);
-    if (!FLAGS_no_use_sw_cpu)
+    if (!FLAGS_disable_sw_cpu)
       compute_flow.addStage(4, &chain2reg_stage);
     else
 #ifdef BUILD_FPGA
@@ -337,7 +343,7 @@ int main(int argc, char *argv[]) {
 #endif
     compute_flow.addStage(5, &reg2sam_stage);
 
-    if (FLAGS_enable_markdup) {
+    if (!FLAGS_disable_markdup) {
       if (FLAGS_inorder_output) {
         compute_flow.addStage(6, &reorder_stage);
         compute_flow.addStage(7, &md_part_stage);
@@ -350,16 +356,20 @@ int main(int argc, char *argv[]) {
     else {
       compute_flow.addStage(6, &reorder_stage); 
     }
-    compute_flow.addStage(7 + if_markdup, &sort_stage);
-    compute_flow.addStage(8 + if_markdup, &write_stage);
-
+    if (!FLAGS_disable_bucketsort) {
+      compute_flow.addStage(7 + if_markdup, &bucketsort_stage);
+    }
+    else {
+      compute_flow.addStage(7 + if_markdup, &sort_stage);
+      compute_flow.addStage(8 + if_markdup, &write_stage);
+    }
+    
     bwa_flow_pipe.addPipeline(&compute_flow, 1);
-  
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga && FLAGS_max_fpga_thread) {
-      if (smem_fpga_thread > 0 && !FLAGS_no_use_smem_cpu)
+      if (smem_fpga_thread > 0 && !FLAGS_disable_smem_cpu)
         compute_flow.addAccxBckStage(2, &seq2chain_fpga_stage, 2.5);
-      if (sw_fpga_thread > 0 && !FLAGS_no_use_sw_cpu)
+      if (sw_fpga_thread > 0 && !FLAGS_disable_sw_cpu)
         compute_flow.addAccxBckStage(4, &chain2reg_fpga_stage, 10);
     }
 #endif
@@ -368,6 +378,8 @@ int main(int argc, char *argv[]) {
     bwa_flow_pipe.start();
     bwa_flow_pipe.wait();
   
+    bucketsort_stage.closeBuckets();
+
 #ifdef BUILD_FPGA
     if (FLAGS_use_fpga) {
       // Stop FPGA context
@@ -390,28 +402,63 @@ int main(int argc, char *argv[]) {
       kseq_destroy(aux->ks2);
       err_gzclose(fp2_read2); kclose(ko_read2);
     }
-  
-    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
-    std::cerr << "Real time: " << realtime() - t_real << " sec, "
-              << "CPU time: " << cputime() << " sec" 
-              << std::endl;
-  
-    //err_fflush(stdout);
-    //err_fclose(stdout);
-  
+
     free(bwa_pg);
-  
+    free(aux->opt);
+    bwa_idx_destroy(aux->idx);
+
+    std::cerr << "bwa stage time: " 
+              << realtime() - t_real 
+              << " s" << std::endl;
+
+    t_real = realtime();
+    
+    if (!FLAGS_disable_bucketsort) {
+
+      kestrelFlow::Pipeline sort_pipeline(4, num_threads);
+
+      // start sorting buckets and merge them
+      IndexGenStage     indexgen_stage(
+          FLAGS_num_buckets + (!FLAGS_filter_unmap));
+      BamReadStage      bamread_stage(sam_dir, aux->h, FLAGS_t);
+      BamSortStage      bamsort_stage(FLAGS_t);
+      //ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
+      BamWriteStage     bamwrite_stage(
+          FLAGS_num_buckets + (!FLAGS_filter_unmap),
+          sam_dir, FLAGS_output, aux->h, FLAGS_t);
+
+      sort_pipeline.addStage(0, &indexgen_stage);
+      sort_pipeline.addStage(1, &bamread_stage);
+      sort_pipeline.addStage(2, &bamsort_stage);
+      //sort_pipeline.addStage(2 + if_sort, &reorderwrite_stage);
+      sort_pipeline.addStage(3, &bamwrite_stage);
+
+      kestrelFlow::MegaPipe mp(num_threads, 0);
+      mp.addPipeline(&sort_pipeline, 1);
+
+      mp.start();
+      mp.wait();
+
+      std::cerr << "sort stage time: " 
+        << realtime() - t_real 
+        << " s" << std::endl;
+    }
 #ifdef USE_HTSLIB
     bam_hdr_destroy(aux->h);
 #endif
-    free(aux->opt);
-    bwa_idx_destroy(aux->idx);
     delete aux;
+
+    std::cerr << "Version: falcon-bwa " << VERSION << std::endl;
   }
   catch (...) {
     LOG(ERROR) << "Encountered an internal issue.";
     LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
     return 1;
+  }
+
+  // delete temp_dir
+  if (!FLAGS_disable_bucketsort) {
+    boost::filesystem::remove_all(sam_dir);
   }
 
   return 0;

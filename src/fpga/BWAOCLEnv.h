@@ -44,26 +44,24 @@ class BWAOCLEnv : public OpenCLEnv{
     : OpenCLEnv(get_group_sizes(), get_bin_paths())
   {
 #ifdef DEPLOY_aws
-    FLAGS_no_use_smem_fpga = true;
+    FLAGS_disable_smem_fpga = true;
 #endif
     num_pe_ = 0;
-    if (!FLAGS_no_use_sw_fpga) {
+    if (!FLAGS_disable_sw_fpga) {
       initPAC();
     }
 
     sw_fpga_thread_ = sw_pe_list_.size();
 
-    if (!FLAGS_no_use_smem_fpga) {
+    if (!FLAGS_disable_smem_fpga) {
       initBWT();
     }
     smem_fpga_thread_ = smem_pe_list_.size();
   }
 
   ~BWAOCLEnv() {
-    if (!FLAGS_no_use_sw_fpga)
-      releasePAC();
-    if (!FLAGS_no_use_smem_fpga)
-      releaseBWT();
+    if (!FLAGS_disable_sw_fpga) releasePAC();
+    if (!FLAGS_disable_smem_fpga) releaseBWT();
   }
 
   void initPAC() {

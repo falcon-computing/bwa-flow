@@ -134,20 +134,20 @@ DEFINE_int32(filter, 0, "Filtering out records with INT bit set"
 DEFINE_bool(use_fpga, true,
     "Enable FPGA accelerator for SMem & SmithWaterman computation");
 
-DEFINE_bool(no_use_smem_fpga, false,
+DEFINE_bool(disable_smem_fpga, false,
     "Disable FPGA accelerator for SMem computation");
 
-DEFINE_bool(no_use_smem_cpu, false,
+DEFINE_bool(disable_smem_cpu, false,
     "Disable CPU for SMem computation");
 
-DEFINE_bool(no_use_sw_fpga, false,
+DEFINE_bool(disable_sw_fpga, false,
     "Disable FPGA accelerator for SmithWaterman computation");
 
-DEFINE_bool(no_use_sw_cpu, false,
+DEFINE_bool(disable_sw_cpu, false,
     "Disable CPU for SmithWaterman computation");
 
 DEFINE_bool(sort, true,
-    "Enable in-memory sorting of output bam file");
+    "(deprecated) Enable in-memory sorting of output bam file");
 
 DEFINE_string(fpga_path, "",
     "File path of the SmithWaterman FPGA bitstream");
@@ -163,9 +163,6 @@ DEFINE_int32(extra_thread, 1,
 
 DEFINE_bool(inorder_output, false, 
     "Whether keep the sequential ordering of the sam file");
-
-DEFINE_string(output_dir, "",
-    "If not empty the output will be redirect to --output_dir");
 
 DEFINE_int32(stage_1_nt, boost::thread::hardware_concurrency(),
     "Total number of parallel threads to use for stage 1");
@@ -183,10 +180,27 @@ DEFINE_int32(output_flag, 1,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(max_batch_records, 40, 
-    "Flag to specify how many batch to buffer before sort");
+DEFINE_int32(num_buckets, 64, 
+    "Set output bucket number");
+
+DEFINE_bool(disable_markdup, false,
+    "Enable mark duplicate during alignment, default true");
+
+DEFINE_bool(disable_bucketsort, false,
+    "Enable bucket sort instead of normal sort, default true");
+
+DEFINE_string(temp_dir, "./bwa-flow", 
+    "Temp dir to store intermediate bucket bams");
+
+DEFINE_string(output, "./output.bam", "Path to output file");
 
 // deprecated
+DEFINE_string(output_dir, "",
+    "(deprecated) Please use --output instead");
+
+DEFINE_int32(max_batch_records, 40, 
+    "(deprecated) Flag to specify how many batch to buffer before sort");
+
 DEFINE_bool(offload, true,
     "(deprecated) Use three compute pipeline stages to enable offloading"
     "workload to accelerators. "
@@ -195,5 +209,11 @@ DEFINE_bool(offload, true,
 DEFINE_string(pac_path, "",
     "(deprecated) File path of the modified reference pac file");
 
-DEFINE_bool(enable_markdup, false,
-    "--enable-markdup argument to enable markdup, default");
+DEFINE_bool(disable_sort, false,
+    "disable sorting for output bams");
+
+DEFINE_bool(remove_duplicates, false,
+    "remove duplicate reads in bam output");
+
+DEFINE_bool(filter_unmap, false,
+    "filter unmapped reads in the output");

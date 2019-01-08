@@ -14,10 +14,10 @@ DECLARE_bool(offload);
 DECLARE_bool(M);
 DECLARE_bool(sort);
 DECLARE_bool(use_fpga);
-DECLARE_bool(no_use_smem_fpga);
-DECLARE_bool(no_use_smem_cpu);
-DECLARE_bool(no_use_sw_fpga);
-DECLARE_bool(no_use_sw_cpu);
+DECLARE_bool(disable_smem_fpga);
+DECLARE_bool(disable_smem_cpu);
+DECLARE_bool(disable_sw_fpga);
+DECLARE_bool(disable_sw_cpu);
 DECLARE_int32(filter);
 DECLARE_int32(chunk_size);
 DECLARE_int32(max_fpga_thread);
@@ -83,8 +83,22 @@ DECLARE_string(H);
 DECLARE_string(I);
 
 //mark_dup
-DECLARE_bool(enable_markdup);
+DECLARE_bool(disable_markdup);
 
+//bucket_sort
+DECLARE_int32(num_buckets);
+
+//if use bucket sort
+DECLARE_bool(disable_bucketsort);
+
+//for sort_merge flow
+DECLARE_string(temp_dir);
+DECLARE_string(output);
+
+
+DECLARE_bool(disable_sort);
+DECLARE_bool(remove_duplicates);
+DECLARE_bool(filter_unmap);
 // Global parameters
 extern ktp_aux_t* aux;
 extern int mpi_rank;

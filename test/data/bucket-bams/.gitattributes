@@ -1,0 +1,5 @@
+baseline.bam filter=lfs diff=lfs merge=lfs -text
+part-000000.bam filter=lfs diff=lfs merge=lfs -text
+part-000001.bam filter=lfs diff=lfs merge=lfs -text
+part-000002.bam filter=lfs diff=lfs merge=lfs -text
+part-000003.bam filter=lfs diff=lfs merge=lfs -text

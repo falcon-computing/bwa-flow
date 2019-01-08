@@ -6,6 +6,7 @@
 #include <list>
 #include <unordered_map>
 
+#include "BamFileBuffer.h"
 #include "bwa/bwamem.h"
 #include "bwa/bntseq.h"
 #include "kflow/Pipeline.h"
@@ -19,6 +20,8 @@
 #define INPUT_DEPTH   64
 #define OUTPUT_DEPTH  64
 #define COMPUTE_DEPTH 64
+
+void sort_bams(int size, bam1_t** buffer);
 
 // Common data structures
 struct kseq_buf_t {
@@ -71,6 +74,15 @@ struct BamsRecord {
   const char* name = "BamsRecord";
 };
 #endif
+
+//Data structure for sort-merge pipe
+struct BamRecord {
+  int id;
+  int size;
+  bam1_t ** bams;
+
+  BamFileBuffer* fbuf;
+};
 
 template<typename Record>
 inline void freeRecord(Record &record) {
