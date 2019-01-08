@@ -8,7 +8,7 @@ BamRecord BamSortStage::compute(BamRecord const & input) {
 
   BamRecord output = input;
 
-  if (FLAGS_sort) {
+  if (!FLAGS_disable_sort) {
     uint64_t start_ts = getUs();
     sort_bams(output.size, output.bams);
 

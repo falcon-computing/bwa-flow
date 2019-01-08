@@ -790,7 +790,7 @@ BamsRecord SamsSort::compute(BamsRecord const & input)
   delete records_list;
 
   // step: sort
-  if(FLAGS_sort) {
+  if(!FLAGS_disable_sort) {
     //std::sort(bam_buffer, bam_buffer+bam_buffer_idx, bam1_lt);
     sort_bams(bam_buffer_idx, (bam1_p *)bam_buffer);
   }
