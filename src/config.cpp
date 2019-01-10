@@ -180,7 +180,7 @@ DEFINE_int32(output_flag, 1,
     "Flag to specify output format: "
     "0: BAM (compressed); 1: BAM (uncompressed); 2: SAM");
 
-DEFINE_int32(num_buckets, 64, 
+DEFINE_int32(num_buckets, 1024, 
     "Set output bucket number");
 
 DEFINE_bool(disable_markdup, false,
