@@ -63,8 +63,8 @@ add_subdirectory(bwa bwa_c)
 
 # set up for compilation
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -fPIC -DUSE_HTSLIB")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -rdynamic -Og")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -rdynamic -Wall -DUSELICENSE")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -DUSELICENSE")
 if ( USE_MPI )
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_LINK_FLAGS}")
 endif()
@@ -143,14 +143,14 @@ set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa-flow
   bwa-c
   kflow 
-  ${FPGA_LIBRARIES}
   ${FalconLM_LIBRARIES}
   ${HTS_LIBRARIES}
   ${Google_LIBRARIES}
-  ${CMAKE_THREAD_LIBS_INIT}
+  ${Boost_LIBRARIES}
   ${ZLIB_LIBRARIES}
   ${CMAKE_DL_LIBS}
-  ${Boost_LIBRARIES})
+  ${FPGA_LIBRARIES}
+  ${CMAKE_THREAD_LIBS_INIT})
 
 if ( USE_MPI )
   add_executable(bwa-mpi ${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp ${BWA_MPI_SRC_LIST} ${BWA_SRC_LIST})
