@@ -22,6 +22,55 @@ void BucketSortStage::closeBuckets() {
   //delete star_read_;
 }
 
+BucketSortStage::BucketSortStage(
+        ktp_aux_t* aux,
+        std::string out_dir,
+        int num_buckets,
+        int n):
+      kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0>(n),
+      aux_(aux),
+      num_buckets_(num_buckets) {
+  accumulate_length_.push_back(0);
+  int64_t acc_len = 0;
+  for (int i = 0; i < aux_->h->n_targets; i++) {
+    acc_len += aux_->h->target_len[i];
+    accumulate_length_.push_back(acc_len);
+  }
+  const char *modes[] = {"wb", "wb0", "w"};
+  int64_t contig_start_pos = 0;
+  int contig_id = 0;
+  bucket_size_ = (accumulate_length_[aux_->h->n_targets] + num_buckets - 1)/num_buckets;
+  for (int i = 0; i <= num_buckets; i++) {
+    std::stringstream ss;
+    ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bam";
+    buckets_[i] = new bucketFile(aux_, i, ss.str().c_str(), modes[FLAGS_output_flag]);
+
+    if (i == num_buckets) break;
+
+    std::stringstream ss2;
+    ss2 << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bed";
+    std::ofstream intv_file(ss2.str().c_str());
+    int64_t end = contig_start_pos + bucket_size_;
+    while (end > aux_->h->target_len[contig_id]) {
+      intv_file << aux_->h->target_name[contig_id] << "\t"
+                << contig_start_pos << "\t"
+                << aux_->h->target_len[contig_id] << "\n";
+      end -= aux_->h->target_len[contig_id];
+      contig_start_pos = 0;
+      contig_id ++;
+      
+      if (contig_id == aux_->h->n_targets) break;
+    }
+    if (contig_id < aux_->h->n_targets) {
+      intv_file << aux_->h->target_name[contig_id] << "\t"
+                << contig_start_pos << "\t"
+                << end << "\n";
+    }
+    contig_start_pos = end;
+    intv_file.close();
+  }
+}
+
 int BucketSortStage::compute(BamsRecord const & input) {
   uint64_t start = getUs();
   DLOG(INFO) << "Started BucketWrite()";
