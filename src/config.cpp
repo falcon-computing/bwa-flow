@@ -7,7 +7,8 @@
 #include "config.h"
 
 // Original BWA parameters
-DEFINE_string(R, "", "-R arg in original BWA");
+DEFINE_string(R, "@RG\\tID:sample\\tSM:sample\\tPL:illumina\\tLB:sample",
+    "-R arg in original BWA");
 
 DEFINE_int32(t, boost::thread::hardware_concurrency(),
     "-t arg in original BWA, total number of parallel threads");
@@ -189,10 +190,10 @@ DEFINE_bool(disable_markdup, false,
 DEFINE_bool(disable_bucketsort, false,
     "Enable bucket sort instead of normal sort, default true");
 
-DEFINE_string(temp_dir, "./bwa-flow", 
+DEFINE_string(temp_dir, "/tmp", 
     "Temp dir to store intermediate bucket bams");
 
-DEFINE_string(output, "./output.bam", "Path to output file");
+DEFINE_string(output, "", "Path to output file");
 
 // deprecated
 DEFINE_string(output_dir, "",
@@ -217,3 +218,6 @@ DEFINE_bool(remove_duplicates, false,
 
 DEFINE_bool(filter_unmap, false,
     "filter unmapped reads in the output");
+
+DEFINE_bool(merge_bams, true,
+    "merge bucket_sort bams");

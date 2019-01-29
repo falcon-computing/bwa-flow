@@ -94,7 +94,7 @@ DECLARE_bool(disable_bucketsort);
 //for sort_merge flow
 DECLARE_string(temp_dir);
 DECLARE_string(output);
-
+DECLARE_bool(merge_bams);
 
 DECLARE_bool(disable_sort);
 DECLARE_bool(remove_duplicates);
