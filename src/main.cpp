@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
   int chunk_size = FLAGS_chunk_size;
 
   // Get output file folder
-  std::string sam_dir = FLAGS_temp_dir + std::string("/tmp");
+  std::string sam_dir = FLAGS_temp_dir;
   if (!sam_dir.empty()) {
     if (!boost::filesystem::exists(sam_dir)) {
       // Create output folder if it does not exist
@@ -413,7 +413,7 @@ int main(int argc, char *argv[]) {
 
     t_real = realtime();
     
-    if (!FLAGS_disable_bucketsort) {
+    if (!FLAGS_disable_bucketsort && FLAGS_merge_bams) {
 
       kestrelFlow::Pipeline sort_pipeline(4, num_threads);
 
@@ -457,7 +457,7 @@ int main(int argc, char *argv[]) {
   }
 
   // delete temp_dir
-  if (!FLAGS_disable_bucketsort) {
+  if (!FLAGS_disable_bucketsort && FLAGS_merge_bams) {
     boost::filesystem::remove_all(sam_dir);
   }
 
