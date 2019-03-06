@@ -425,7 +425,7 @@ int main(int argc, char *argv[]) {
       //ReorderAndWriteStage  reorderwrite_stage(FLAGS_output, aux->h);
       BamWriteStage     bamwrite_stage(
           FLAGS_num_buckets + (!FLAGS_filter_unmap),
-          sam_dir, boost::filesystem::absolute(FLAGS_output).string(),
+          sam_dir, FLAGS_output,
           aux->h, FLAGS_t);
 
       sort_pipeline.addStage(0, &indexgen_stage);

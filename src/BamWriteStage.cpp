@@ -78,7 +78,7 @@ BamWriteStage::~BamWriteStage() {
        << std::setw(6) << std::setfill('0') << i
        << " ";
   }
-  ss << "> " << output_path_;
+  ss << "> " << boost::filesystem::absolute(output_path_).string();
 
   uint64_t start_ts = getUs();
 
