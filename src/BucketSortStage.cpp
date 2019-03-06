@@ -112,10 +112,8 @@ BucketSortStage::BucketSortStage(
     std::stringstream ss2;
     ss2 << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bed";
     std::ofstream intv_file(ss2.str().c_str());
-    intv_file << "2\n";
     int64_t end = contig_start_pos + bucket_size_ - (int)(i >= large_bucket);
     std::vector<std::vector<int64_t>> intv_vec_vec = get_intervals(contig_start_pos, end);
-    intv_file << "2\n";
     for (auto & intv_vec : intv_vec_vec) {
       intv_file << aux_->h->target_name[intv_vec[0]] << "\t"
                 << intv_vec[1] << "\t"
