@@ -1,8 +1,57 @@
 #include "BucketSortStage.h"
 #include "util.h"
 
+#include <string>
+#include <vector>
+#include <sstream>
+
 #define UNMAP_FLAG 4
 #define DUP_FLAG 1024
+
+std::vector<std::vector<int64_t>> BucketSortStage::get_intervals(int64_t start, int64_t end) {
+  if (start < 0 || end < 0) throw("pos less than 0");
+  if (start > end) throw("start pos larger than end");
+  if (start > accumulate_length_[aux_->h->n_targets]) throw("start pos out of reference boundary");
+  std::vector<std::vector<int64_t>> res;
+  std::vector<int64_t> tmp;
+  // calculate the start contig id;
+  int contig_id = 0;
+  while (contig_id < aux_->h->n_targets && 
+        start >= accumulate_length_[contig_id + 1]) {
+    contig_id ++;
+  }
+  while (contig_id < aux_->h->n_targets &&
+        end > accumulate_length_[contig_id + 1]) {
+    tmp.push_back(contig_id);
+    tmp.push_back(start - accumulate_length_[contig_id]);
+    tmp.push_back(end - accumulate_length_[contig_id]);
+    res.push_back(tmp);
+    tmp.clear();
+    start = accumulate_length_[contig_id + 1];
+    contig_id ++;
+  }
+  if (contig_id < aux_->h->n_targets) {
+    tmp.push_back(contig_id);
+    tmp.push_back(start - accumulate_length_[contig_id]);
+    tmp.push_back(end - accumulate_length_[contig_id]);
+    res.push_back(tmp);
+    tmp.clear();
+  }
+  return res;
+}
+
+int BucketSortStage::bucket_id_calculate(int32_t contig_id, int32_t read_pos) {
+  int64_t acc_pos = accumulate_length_[contig_id] + read_pos;
+  int large_bucket = (accumulate_length_[aux_->h->n_targets]%num_buckets_);
+  int64_t limit = large_bucket * bucket_size_;
+  return (acc_pos > limit)?
+        (
+          (bucket_size_ - 1)?
+          (large_bucket + (acc_pos - limit)/(bucket_size_ - 1)):
+          (large_bucket)
+        ):
+        (acc_pos/bucket_size_);
+}
 
 int BucketSortStage::get_bucket_id(bam1_t* read) {
   if (read->core.tid == -1) {
@@ -11,8 +60,7 @@ int BucketSortStage::get_bucket_id(bam1_t* read) {
   }
   int32_t contig_id = read->core.tid;
   int32_t read_pos = read->core.pos;
-  int64_t acc_pos = accumulate_length_[contig_id] + read_pos;
-  return (acc_pos-1)/bucket_size_;
+  return bucket_id_calculate(contig_id, read_pos);
 }
 
 void BucketSortStage::closeBuckets() {
@@ -40,6 +88,7 @@ BucketSortStage::BucketSortStage(
   int64_t contig_start_pos = 0;
   int contig_id = 0;
   bucket_size_ = (accumulate_length_[aux_->h->n_targets] + num_buckets - 1)/num_buckets;
+  int large_bucket = accumulate_length_[aux_->h->n_targets]%num_buckets;
   for (int i = 0; i <= num_buckets; i++) {
     std::stringstream ss;
     ss << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bam";
@@ -50,21 +99,12 @@ BucketSortStage::BucketSortStage(
     std::stringstream ss2;
     ss2 << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bed";
     std::ofstream intv_file(ss2.str().c_str());
-    int64_t end = contig_start_pos + bucket_size_;
-    while (end > aux_->h->target_len[contig_id]) {
-      intv_file << aux_->h->target_name[contig_id] << "\t"
-                << contig_start_pos << "\t"
-                << aux_->h->target_len[contig_id] << "\n";
-      end -= aux_->h->target_len[contig_id];
-      contig_start_pos = 0;
-      contig_id ++;
-      
-      if (contig_id == aux_->h->n_targets) break;
-    }
-    if (contig_id < aux_->h->n_targets) {
-      intv_file << aux_->h->target_name[contig_id] << "\t"
-                << contig_start_pos << "\t"
-                << end << "\n";
+    int64_t end = contig_start_pos + bucket_size_ - (int)(i >= large_bucket);
+    std::vector<std::vector<int64_t>> intv_vec_vec = get_intervals(contig_start_pos, end);
+    for (auto & intv_vec : intv_vec_vec) {
+      intv_file << aux_->h->target_name[intv_vec[0]] << "\t"
+                << intv_vec[1] << "\t"
+                << intv_vec[2] << "\n";
     }
     contig_start_pos = end;
     intv_file.close();

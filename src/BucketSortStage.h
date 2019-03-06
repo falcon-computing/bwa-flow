@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <sys/stat.h>
+#include <gtest/gtest.h>
 
 #include <boost/atomic.hpp>
 #include <boost/thread/mutex.hpp>
@@ -61,13 +62,18 @@ class BucketSortStage :
     }
     int compute(BamsRecord const & input);
     void closeBuckets();
+
   private:
-    ktp_aux_t* aux_;
     int num_buckets_;
-    std::unordered_map<int32_t, bucketFile*> buckets_;
     int64_t bucket_size_;
+    ktp_aux_t* aux_;
+    std::unordered_map<int32_t, bucketFile*> buckets_;
     std::vector<int64_t> accumulate_length_;
+    FRIEND_TEST(BucketTest, intervalTest);
+    
     int get_bucket_id(bam1_t* read);
+    int bucket_id_calculate(int32_t contig_id, int32_t read_pos);
+    std::vector<std::vector<int64_t>> get_intervals(int64_t start, int64_t end);
 };
 
 #endif
