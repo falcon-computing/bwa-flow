@@ -24,7 +24,7 @@ std::vector<std::vector<int64_t>> BucketSortStage::get_intervals(int64_t start, 
         end > accumulate_length_[contig_id + 1]) {
     tmp.push_back(contig_id);
     tmp.push_back(start - accumulate_length_[contig_id]);
-    tmp.push_back(end - accumulate_length_[contig_id]);
+    tmp.push_back(accumulate_length_[contig_id + 1] - accumulate_length_[contig_id]);
     res.push_back(tmp);
     tmp.clear();
     start = accumulate_length_[contig_id + 1];
@@ -42,7 +42,9 @@ std::vector<std::vector<int64_t>> BucketSortStage::get_intervals(int64_t start, 
 
 int BucketSortStage::bucket_id_calculate(int32_t contig_id, int32_t read_pos) {
   int64_t acc_pos = accumulate_length_[contig_id] + read_pos;
-  int large_bucket = (accumulate_length_[aux_->h->n_targets]%num_buckets_);
+  int large_bucket = (accumulate_length_[aux_->h->n_targets]%num_buckets_)?
+                      (accumulate_length_[aux_->h->n_targets]%num_buckets_):
+                      num_buckets_;
   int64_t limit = large_bucket * bucket_size_;
   return (acc_pos > limit)?
         (
@@ -68,6 +70,17 @@ void BucketSortStage::closeBuckets() {
     delete it->second;
   }
   //delete star_read_;
+}
+
+BucketSortStage::BucketSortStage(ktp_aux_t* aux, int num_buckets):
+  aux_(aux), num_buckets_(num_buckets) {
+  accumulate_length_.push_back(0);
+  int64_t acc_len = 0;
+  for (int i = 0; i < aux_->h->n_targets; i++) {
+    acc_len += aux_->h->target_len[i];
+    accumulate_length_.push_back(acc_len);
+  }
+  bucket_size_ = (accumulate_length_[aux_->h->n_targets] + num_buckets - 1)/num_buckets;
 }
 
 BucketSortStage::BucketSortStage(
@@ -99,8 +112,10 @@ BucketSortStage::BucketSortStage(
     std::stringstream ss2;
     ss2 << out_dir << "/part-" << std::setw(6) << std::setfill('0') << i << ".bed";
     std::ofstream intv_file(ss2.str().c_str());
+    intv_file << "2\n";
     int64_t end = contig_start_pos + bucket_size_ - (int)(i >= large_bucket);
     std::vector<std::vector<int64_t>> intv_vec_vec = get_intervals(contig_start_pos, end);
+    intv_file << "2\n";
     for (auto & intv_vec : intv_vec_vec) {
       intv_file << aux_->h->target_name[intv_vec[0]] << "\t"
                 << intv_vec[1] << "\t"

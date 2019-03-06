@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include <boost/atomic.hpp>
 #include <boost/thread/mutex.hpp>
@@ -49,6 +50,10 @@ class bucketFile :
 class BucketSortStage :
   public kestrelFlow::MapStage<BamsRecord, int, COMPUTE_DEPTH, 0> {
   public:
+    BucketSortStage( // for test only
+        ktp_aux_t* aux, 
+        int num_buckets);
+  
     BucketSortStage(
         ktp_aux_t* aux, 
         std::string out_dir, 
@@ -62,6 +67,9 @@ class BucketSortStage :
     }
     int compute(BamsRecord const & input);
     void closeBuckets();
+    int get_bucket_size() {
+      return bucket_size_;
+    }
 
   private:
     int num_buckets_;
