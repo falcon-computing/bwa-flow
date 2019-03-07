@@ -174,6 +174,10 @@ class BamTests : public ::testing::Test {
   ;
 };
 
+class BucketTest : public ::testing::Test {
+  ;
+};
+
 class FPGATests;
 
 #ifdef USE_MPI
