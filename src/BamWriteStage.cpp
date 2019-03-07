@@ -70,6 +70,11 @@ int BamWriteStage::compute(BamRecord const & input) {
 BamWriteStage::~BamWriteStage() {
   // TODO: check if the command will be too long
   // if so, we need to cat separately to append
+  char path_buf[2000];
+  realpath(output_path_.c_str(), path_buf);
+  
+  std::string ab_output = std::string(path_buf);
+
   std::stringstream ss;
   ss << "cd " << bam_dir_ << " && ";
   ss << "cat " << "./header ";
@@ -78,7 +83,7 @@ BamWriteStage::~BamWriteStage() {
        << std::setw(6) << std::setfill('0') << i
        << " ";
   }
-  ss << "> " << boost::filesystem::absolute(output_path_).string();
+  ss << "> " << ab_output;
 
   uint64_t start_ts = getUs();
 
