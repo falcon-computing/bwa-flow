@@ -1,6 +1,6 @@
 ExternalProject_Add(glog-download
     PREFIX "deps/glog"
-    URL https://s3.amazonaws.com/fcs-build-public/glog-falcon.tar.gz
+    URL ${CMAKE_SOURCE_DIR}/deps/glog-falcon.tar.gz
     URL_MD5 2b1bb4285ef4c8963d5e0e338f1952b8
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/glog/install"
     CONFIGURE_COMMAND ""
@@ -9,7 +9,7 @@ ExternalProject_Add(glog-download
 
 ExternalProject_Add(gflags-download
     PREFIX "deps/gflags"
-    URL https://s3.amazonaws.com/fcs-build-public/gflags.tar.gz
+    URL ${CMAKE_SOURCE_DIR}/deps/gflags.tar.gz
     URL_MD5 1de8187489fbced5cc86c2ba241440e4
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/gflags/install"
     CONFIGURE_COMMAND ""
@@ -18,7 +18,7 @@ ExternalProject_Add(gflags-download
 
 ExternalProject_Add(googletest-download
     PREFIX "deps/googletest"
-    URL https://s3.amazonaws.com/fcs-build-public/googletest.tar.gz
+    URL ${CMAKE_SOURCE_DIR}/deps/googletest.tar.gz
     URL_MD5 18fda945045354e264e3cca5428525d6
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/googletest/install"
     CONFIGURE_COMMAND ""
