@@ -1,6 +1,6 @@
 ExternalProject_Add(hts-download
     PREFIX "deps/hts"
-    URL ${CMAKE_SOURCE_DIR}/deps/htslib-1.3.1.tar.gz
+    URL ${DEPS}/htslib-1.3.1.tar.gz
     CONFIGURE_COMMAND ""
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/hts/install"
     BUILD_COMMAND ""
