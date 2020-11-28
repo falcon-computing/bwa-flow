@@ -40,7 +40,6 @@
 #include "allocation_wrapper.h"
 #include "bwa_wrapper.h"
 #include "config.h"
-#include "falcon-lic/genome.h"
 #include "Pipeline.h"
 #include "util.h"
 #include "BucketSortStage.h"
@@ -97,13 +96,6 @@ int main(int argc, char *argv[]) {
   // Initialize Google Log
   google::InitGoogleLogging(argv[0]);
   DLOG(INFO) << ss.str();
-
-  int licret = 0;
-  if (0 != (licret = license_verify())) {
-    LOG(ERROR) << "Cannot authorize software usage: " << licret;
-    LOG(ERROR) << "Please contact support@falcon-computing.com for details.";
-    return -1;
-  }
 
   // Preprocessing
   extern char *bwa_pg;

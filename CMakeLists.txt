@@ -23,7 +23,6 @@ endif()
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(Google REQUIRED)
-find_package(FalconLM REQUIRED)
 find_package(HTS REQUIRED)
 find_package(XilinxOCL)
 find_package(IntelOCL)
@@ -99,13 +98,11 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ./kflow/include
   ${Google_INCLUDE_DIRS}
-  ${FalconLM_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
   ${HTS_INCLUDE_DIRS})
 
 link_directories(
   ${Google_LIBRARY_DIRS}
-  ${FalconLM_LIBRARY_DIRS}
   ${Boost_LIBRARY_DIRS}
   ${HTS_LIBRARY_DIRS}
   ${ZLIB_LIBRARY_DIRS})
@@ -137,13 +134,12 @@ add_executable(bwa-flow
   ${BWA_SRC_LIST}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
-add_dependencies(bwa-flow Google FalconLM HTS)
+add_dependencies(bwa-flow Google HTS)
 
 set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
 target_link_libraries(bwa-flow
   bwa-c
   kflow 
-  ${FalconLM_LIBRARIES}
   ${HTS_LIBRARIES}
   ${Google_LIBRARIES}
   ${Boost_LIBRARIES}
@@ -154,7 +150,7 @@ target_link_libraries(bwa-flow
 
 if ( USE_MPI )
   add_executable(bwa-mpi ${CMAKE_CURRENT_SOURCE_DIR}/src/mpi_main.cpp ${BWA_MPI_SRC_LIST} ${BWA_SRC_LIST})
-  add_dependencies(bwa-mpi Google FalconLM HTS)
+  add_dependencies(bwa-mpi Google HTS)
 
   set (CMAKE_STATIC_LINKER_FLAGS "--as-needed")
   target_link_libraries(bwa-mpi
@@ -162,7 +158,6 @@ if ( USE_MPI )
     kflow 
     ${MPI_CXX_LIBRARIES}
     ${FPGA_LIBRARIES}
-    ${FalconLM_LIBRARIES}
     ${HTS_LIBRARIES}
     ${Google_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}

@@ -12,14 +12,13 @@ endif()
 
 add_executable(test_bwa ${BWA_TEST_LIST} ${BWA_SRC_LIST})
 
-add_dependencies(test_bwa Google FalconLM HTS)
+add_dependencies(test_bwa Google HTS)
 
 target_link_libraries(test_bwa
   kflow 
   bwa-c
   ${MPI_CXX_LIBRARIES}
   ${FPGA_LIBRARIES}
-  ${FalconLM_LIBRARIES}
   ${HTS_LIBRARIES}
   ${Google_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
